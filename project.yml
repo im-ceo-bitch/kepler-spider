@@ -6,8 +6,6 @@ packages:
   BIP39MnemonicKit:
     url: https://github.com/devdasx/bip39-mnemonic-kit.git
     exactVersion: 2.0.1
-  WalletCore:
-    path: Packages/WalletCore
 
 targets:
   Console:
@@ -18,10 +16,6 @@ targets:
       - path: Console
     dependencies:
       - package: BIP39MnemonicKit
-      - package: WalletCore
-        product: WalletCore
-      - package: WalletCore
-        product: WalletCoreSwiftProtobuf
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.console.beta
@@ -42,5 +36,12 @@ targets:
         INFOPLIST_FILE: Config/Console-Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
+      configs:
+        Release:
+          # Apply distribution signing only to the application target on iPhoneOS.
+          # Do not force a provisioning profile onto Swift Package targets.
+          CODE_SIGN_STYLE: Manual
+          "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "$(SPYDER_SIGNING_CERT_SHA1)"
+          "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]": "$(SPYDER_SIGNING_PROFILE_NAME)"
     scheme:
       testTargets: []

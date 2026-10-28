@@ -1,0 +1,23 @@
+# SPYDER_WALLET_FIX_20261028_V2
+
+Этот архив предназначен для загрузки одним ZIP-файлом в КОРЕНЬ репозитория kepler-spider.
+Его имя начинается с console-update, как требует текущий авто-распаковщик.
+
+Ожидаемый результат успешного запуска Console — Auto Unpack Update:
+- GitHub создаст коммит `bot: unpack Console update`;
+- в Console/Features/Onboarding/WalletOnboardingView.swift будет строка:
+  SecureField("12 или 24 слова, через пробел", text: $importText)
+  без `axis: .vertical`;
+- файл SPYDER_WALLET_FIX_20261028_V2.txt появится в корне.
+
+Если в GitHub исходник всё ещё содержит axis: .vertical, обновление НЕ ПРИМЕНИЛОСЬ: не запускайте TestFlight снова, сначала проверьте лог распаковщика и ветку.
+
+ВАЖНО: старый бот ЗАПРЕЩАЕТ заменять .github/workflows из ZIP.
+Отдельно замените в GitHub файл `.github/workflows/testflight-ios.yml`
+на spyder-testflight-workflow-fixed.yml из этой выдачи, сохранив целевой путь.
+Новый workflow требует Apple Distribution P12 и соответствующий App Store Connect profile
+для подписанной загрузки; проверка без подписи: build_only=true.
+Подробнее: SIGNING_SETUP_RU.md.
+
+Это локальная проверка статического синтаксиса и модели распаковки,
+не заявление об успешной компиляции Xcode или загрузке TestFlight.
