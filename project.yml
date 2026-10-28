@@ -20,6 +20,8 @@ targets:
       - package: BIP39MnemonicKit
       - package: WalletCore
         product: WalletCore
+      - package: WalletCore
+        product: WalletCoreSwiftProtobuf
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.console.beta
