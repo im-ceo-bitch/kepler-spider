@@ -211,7 +211,9 @@ final class SpiderDevnetStore: ObservableObject {
                     return try SpiderProtocolV1.account(mnemonic: words.joined(separator: " ")).address
                 }.value
                 address = a
-            } catch { error = error.localizedDescription }
+            } catch {
+                self.error = error.localizedDescription
+            }
             busy = false
         }
     }
