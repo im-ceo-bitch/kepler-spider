@@ -1,4 +1,4 @@
-name: Spyder Wallet - Intel TestFlight (Verified Signing)
+name: Spyder Wallet - Intel TestFlight (Build Fix)
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
         default: '1.3.0'
         type: string
       build_only:
-        description: 'Only verify Debug and Release compilation; do not sign/upload'
+        description: 'Compile Debug and Release only; skip signing/upload'
         required: true
         default: false
         type: boolean
@@ -35,7 +35,7 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Initialize temporary paths (runner-safe)
+      - name: Initialize temporary paths
         shell: bash
         run: |
           set -euo pipefail
@@ -46,19 +46,24 @@ jobs:
             printf 'EXPORT_PATH=%s\n' "$RUNNER_TEMP/SpyderWalletExport"
           } >> "$GITHUB_ENV"
 
-      - name: Verify Intel runner and Xcode 26
+      - name: Verify Intel runner and Xcode 26 (without broken pipes)
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$(uname -m)" != "x86_64" ]; then
-            echo '::error::Expected Intel runner (x86_64)'; exit 1
+          ARCH="$(uname -m)"
+          echo "Runner architecture: $ARCH"
+          if [ "$ARCH" != 'x86_64' ]; then
+            echo "::error::Expected Intel runner x86_64, got $ARCH"
+            exit 1
           fi
-          xcodebuild -version
-          xcodebuild -version | head -n 1 | grep -Eq '^Xcode 26\.' || {
-            echo '::error::Expected Xcode 26'; exit 1;
-          }
+          XCODE_VERSION_OUTPUT="$(xcodebuild -version)"
+          printf '%s\n' "$XCODE_VERSION_OUTPUT"
+          if [[ "$XCODE_VERSION_OUTPUT" != Xcode\ 26.* ]]; then
+            echo '::error::Expected Xcode 26'
+            exit 1
+          fi
 
-      - name: Validate repository content
+      - name: Validate source tree and server syntax
         shell: bash
         run: |
           set -euo pipefail
@@ -66,10 +71,17 @@ jobs:
           python3 -m py_compile ci/signing.py ci/verify_repo.py
           python3 -m unittest discover -s ci/tests -v
           if command -v node >/dev/null 2>&1; then
-            node --check server/src/index.js
+            if [ -f server/src/index.mjs ]; then
+              node --check server/src/index.mjs
+            elif [ -f server/src/index.js ]; then
+              node --check server/src/index.js
+            else
+              echo '::error::Missing Spyder Chat server entry point (index.mjs/index.js)'
+              exit 1
+            fi
           fi
 
-      - name: Check distribution signing inputs before building
+      - name: Validate signing inputs (upload jobs only)
         if: ${{ !inputs.build_only }}
         shell: bash
         env:
@@ -88,18 +100,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
           xcodegen --version
 
       - name: Generate Xcode project
         shell: bash
         run: |
           set -euo pipefail
+          test -f project.yml
           xcodegen generate
           test -d "$PROJECT"
           test -f Config/Console-Info.plist
 
-      - name: Compile Debug and Release for iOS Simulator without signing
+      - name: Compile Debug and Release for iOS Simulator (no signing)
         shell: bash
         run: |
           set -euo pipefail
@@ -116,7 +131,7 @@ jobs:
             echo '::endgroup::'
           done
 
-      - name: Import Apple Distribution signing identity and provisioning profile
+      - name: Install validated Apple Distribution identity and profile
         if: ${{ !inputs.build_only }}
         shell: bash
         env:
@@ -140,13 +155,16 @@ jobs:
           mkdir -p "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
           cp "$SIGNING_DIR/distribution.mobileprovision" \
             "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -Fq "$CERT_SHA1" || {
-            echo '::error::Apple Distribution identity not found in temporary keychain after importing P12'; exit 1;
-          }
-          echo "SPYDER_SIGNING_CERT_SHA1=$CERT_SHA1" >> "$GITHUB_ENV"
-          echo 'Apple Distribution certificate and profile are installed and match.'
+          # Capture complete output before searching: grep -q can break pipes under pipefail.
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")"
+          printf '%s\n' "$IDENTITIES"
+          if [[ "$IDENTITIES" != *"$CERT_SHA1"* ]]; then
+            echo '::error::Apple Distribution identity missing after P12 import'
+            exit 1
+          fi
+          echo 'Distribution identity and provisioning profile installed.'
 
-      - name: Archive for iOS with deterministic distribution signing
+      - name: Archive Release iOS application
         if: ${{ !inputs.build_only }}
         shell: bash
         env:
@@ -165,14 +183,15 @@ jobs:
             -archivePath "$ARCHIVE_PATH" \
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            SPYDER_SIGNING_CERT_SHA1="$SPYDER_SIGNING_CERT_SHA1" \
-            SPYDER_SIGNING_PROFILE_NAME="$PROFILE_NAME" \
+            CODE_SIGN_STYLE=Manual \
+            'CODE_SIGN_IDENTITY=Apple Distribution' \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             SUPPORTS_MACCATALYST=NO \
             MARKETING_VERSION="$MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             archive
 
-      - name: Verify signed archive and application identity
+      - name: Verify signed archive identity
         if: ${{ !inputs.build_only }}
         shell: bash
         run: |
@@ -183,14 +202,14 @@ jobs:
           ACTUAL_BUNDLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
           ACTUAL_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST")"
           if [ "$ACTUAL_BUNDLE" != "$BUNDLE_ID" ]; then
-            echo "::error::Incorrect bundle ID: $ACTUAL_BUNDLE"; exit 1
+            echo "::error::Incorrect bundle ID: $ACTUAL_BUNDLE"
+            exit 1
           fi
           if [ "$ACTUAL_NAME" != 'Spyder Wallet' ]; then
-            echo "::error::Incorrect app display name: $ACTUAL_NAME"; exit 1
+            echo "::error::Incorrect display name: $ACTUAL_NAME"
+            exit 1
           fi
-          test -f "$APP/embedded.mobileprovision" || {
-            echo '::error::Archive has no embedded provisioning profile'; exit 1;
-          }
+          test -f "$APP/embedded.mobileprovision"
           codesign --verify --strict --deep "$APP"
           echo "Verified signed archive: $ACTUAL_NAME ($ACTUAL_BUNDLE)"
 
@@ -221,7 +240,7 @@ jobs:
           PY
           plutil -lint "$RUNNER_TEMP/ExportOptions.plist"
 
-      - name: Upload signed build to TestFlight
+      - name: Export and upload to TestFlight
         if: ${{ !inputs.build_only }}
         shell: bash
         env:
@@ -238,14 +257,14 @@ jobs:
             -authenticationKeyPath "$SIGNING_DIR/AuthKey_${KEY_ID}.p8" \
             -authenticationKeyID "$KEY_ID" \
             -authenticationKeyIssuerID "$ISSUER_ID"
-          echo 'Apple accepted the export/upload command. Check App Store Connect for processing.'
+          echo 'Upload command completed; check TestFlight processing in App Store Connect.'
 
-      - name: Build-only outcome
+      - name: Build-only completion
         if: ${{ inputs.build_only }}
         shell: bash
-        run: echo 'Debug and Release simulator builds passed. TestFlight signing/upload was intentionally skipped.'
+        run: echo 'Debug and Release simulator builds succeeded; TestFlight upload skipped.'
 
-      - name: Clean temporary signing materials
+      - name: Clean signing materials
         if: always()
         shell: bash
         run: |
