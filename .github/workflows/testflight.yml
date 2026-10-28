@@ -30,13 +30,21 @@ jobs:
       PROJECT: Console.xcodeproj
       SCHEME: Console
       BUNDLE_ID: com.console.beta
-      SIGNING_DIR: ${{ runner.temp }}/spyder-signing
-      ARCHIVE_PATH: ${{ runner.temp }}/SpyderWallet.xcarchive
-      EXPORT_PATH: ${{ runner.temp }}/SpyderWalletExport
 
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
+
+      - name: Initialize temporary paths (runner-safe)
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${RUNNER_TEMP:?GitHub runner RUNNER_TEMP is missing}"
+          {
+            printf 'SIGNING_DIR=%s\n' "$RUNNER_TEMP/spyder-signing"
+            printf 'ARCHIVE_PATH=%s\n' "$RUNNER_TEMP/SpyderWallet.xcarchive"
+            printf 'EXPORT_PATH=%s\n' "$RUNNER_TEMP/SpyderWalletExport"
+          } >> "$GITHUB_ENV"
 
       - name: Verify Intel runner and Xcode 26
         shell: bash
@@ -242,5 +250,8 @@ jobs:
         shell: bash
         run: |
           security delete-keychain "$RUNNER_TEMP/spyder-signing.keychain-db" 2>/dev/null || true
-          rm -rf "$SIGNING_DIR" "$RUNNER_TEMP/ExportOptions.plist"
+          if [ -n "${SIGNING_DIR:-}" ] && [ "$SIGNING_DIR" = "$RUNNER_TEMP/spyder-signing" ]; then
+            rm -rf "$SIGNING_DIR"
+          fi
+          rm -f "$RUNNER_TEMP/ExportOptions.plist"
           echo 'Temporary signing material cleared.'
