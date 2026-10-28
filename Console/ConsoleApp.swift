@@ -7,6 +7,8 @@ struct ConsoleApp: App {
     @State private var showingBrand = true
     @StateObject private var walletAccess = WalletAccess()
     @StateObject private var walletChains = WalletChainStore()
+    @StateObject private var spyderChat = SpyderChatStore()
+    @StateObject private var spiderDevnet = SpiderDevnetStore()
     @Environment(\.scenePhase) private var scenePhase
 
     private var preferredScheme: ColorScheme? {
@@ -23,6 +25,8 @@ struct ConsoleApp: App {
                 }
                 .environmentObject(walletAccess)
                 .environmentObject(walletChains)
+                .environmentObject(spyderChat)
+                .environmentObject(spiderDevnet)
                 .opacity(showingBrand ? 0 : 1)
                 if showingBrand {
                     SpyderBrandHandoff()
@@ -36,6 +40,7 @@ struct ConsoleApp: App {
                 if phase == .background {
                     walletAccess.lock()
                     walletChains.clear()
+                    spiderDevnet.clear()
                 }
             }
             .overlay {

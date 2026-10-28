@@ -1,21 +1,10 @@
-# Spyder Wallet v0.3 — cumulative TestFlight build
+# Spyder Wallet — v0.5 devnet
 
-This source keeps the existing `com.console.beta` Apple identity and `Console` scheme.
-It combines Premium UI v0.2 with BIP39 onboarding and Keychain gating v0.3.
+Cumulative SwiftUI iOS wallet update, Bundle ID `com.console.beta`, Console scheme kept for TestFlight.
 
-**NOT READY FOR REAL FUNDS.** No on-chain addresses, transaction signing, backend chat, live RPC or asset balances.
-Store only test mnemonics in this unaudited build. Wallet secret is device-bound, does not sync to iCloud, and is unrecoverable without the offline phrase after device loss.
+- Wallet/Core: Premium UI, native launch and onboarding, BIP-39 encrypted Keychain vault, Wallet Core read-only ETH/SOL/BTC address previews.
+- Spider Chain: a test-only BIP-39/SLIP-0010-derived Bech32m `spider1…` address with an independent reference vector. No network transactions until actual Spider Chain RPC.
+- Chats: Cloudflare Worker/SQLite Durable Object backend with separate device identity, invitation requests/acceptance and near-realtime polling. NO E2EE yet. No cryptocurrency key transmitted by chat.
+- No fake coins, fake transactions, or default demo contacts in real Chats. Touch remains a labeled local UI prototype.
 
-## TestFlight signing (October 2026)
-
-See **SIGNING_SETUP_RU.md**. The new workflow requires Apple Distribution P12 and
-App Store Connect provisioning profile secrets for deterministic CI signing.
-Run `build_only=true` to validate Debug/Release without distribution secrets.
-Note: the legacy auto-unpack bot protects `.github/workflows` and does not update workflows.
-
-## Build
-
-The `console-update*.zip` patch contains the source changes and **does not replace any existing `.github/workflows`**. Upload one update ZIP to the repository root, wait for the auto-unpack workflow, and run the existing tested Intel TestFlight workflow.
-`project.yml` includes the pinned Swift Package `BIP39MnemonicKit` version 2.0.1, resolved on GitHub Actions.
-
-See `PATCH_README_RU.md` for details.
+See `PATCH_README_RU.md`, `server/README.md`, `contracts/SPIDER_CHAIN_RPC_HANDOFF.md`.

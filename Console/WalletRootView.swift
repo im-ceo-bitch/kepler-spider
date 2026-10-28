@@ -6,7 +6,7 @@ struct WalletRootView: View {
     @State private var selectedTab: WalletTab = .wallet
     @State private var path = NavigationPath()
     @State private var presented: WalletModal?
-    @State private var selectedContact: WalletContact = WalletContact.samples[0]
+    @State private var selectedContact: WalletContact = WalletContact(id: "", name: "Не выбран", handle: "", letter: "", preview: "", time: "")
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -59,13 +59,10 @@ struct WalletRootView: View {
                 .presentationDetents([.medium, .large])
         case .touch:
             WalletTouchView(onConnect: { contact in
-                selectedContact = contact
+                // Spyder Touch is still a visual demo. It cannot create an authorized chat.
                 presented = nil
                 selectedTab = .chats
                 path = NavigationPath()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    path.append(WalletRoute.chat(contact))
-                }
             })
         case .profile:
             WalletSettingsView()

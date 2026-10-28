@@ -1,32 +1,11 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "console-realtime",
-  "main": "src/index.js",
-  "compatibility_date": "2026-09-01",
+  "name": "spyder-chat-devnet",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-10-01",
   "workers_dev": true,
-  "observability": {
-    "enabled": true
-  },
   "durable_objects": {
-    "bindings": [
-      {
-        "name": "TERMINALS",
-        "class_name": "TerminalRoom"
-      },
-      {
-        "name": "NETWORK",
-        "class_name": "NetworkRegistry"
-      }
-    ]
+    "bindings": [{"name":"CHAT_HUB","class_name":"ChatHub"}]
   },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": ["TerminalRoom"]
-    },
-    {
-      "tag": "v2",
-      "new_sqlite_classes": ["NetworkRegistry"]
-    }
-  ]
+  "migrations": [{"tag":"v1","new_sqlite_classes":["ChatHub"]}]
 }

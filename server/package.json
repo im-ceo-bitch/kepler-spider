@@ -1,14 +1,11 @@
 {
-  "name": "console-realtime-server",
-  "private": true,
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "check": "node --check src/index.js",
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev"
+  "name":"spyder-chat-devnet",
+  "private":true,
+  "type":"module",
+  "scripts":{
+    "check":"node --check src/index.mjs && npm test",
+    "test":"node --test test/*.mjs",
+    "deploy":"wrangler deploy"
   },
-  "devDependencies": {
-    "wrangler": "^4.0.0"
-  }
+  "devDependencies":{"wrangler":"^4.0.0"}
 }

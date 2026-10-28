@@ -1,7 +1,9 @@
 import SwiftUI
+import UIKit
 
 struct WalletHomeView: View {
     @EnvironmentObject private var chains: WalletChainStore
+    @EnvironmentObject private var spider: SpiderDevnetStore
     let onAction: (WalletModal) -> Void
     let onActivity: () -> Void
 
@@ -43,6 +45,9 @@ struct WalletHomeView: View {
                 assetSection
                     .spyderReveal(0.17)
 
+                spiderSection
+                    .spyderReveal(0.18)
+
                 VStack(alignment: .leading, spacing: 17) {
                     HStack {
                         Text("Последние операции")
@@ -73,6 +78,51 @@ struct WalletHomeView: View {
             .padding(.bottom, 25)
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
+    }
+
+    private var spiderSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Spider Chain")
+                    .font(.system(size: 23, weight: .bold)).foregroundStyle(WalletTheme.ink)
+                Spacer()
+                Text("DEVNET").font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(WalletTheme.secondary)
+            }
+            WalletCard {
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack {
+                        Image(systemName: "network")
+                            .font(.system(size: 22))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("SPD · собственная сеть").font(.system(size: 16, weight: .semibold))
+                            Text("Spider Protocol v0.1 · 9 decimals")
+                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    if let address = spider.address {
+                        Text(address).font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(WalletTheme.ink).textSelection(.enabled)
+                        Button {
+                            UIPasteboard.general.string = address
+                            UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        } label: { Label("Скопировать тестовый адрес", systemImage: "doc.on.doc")
+                            .font(.system(size: 14, weight: .medium)).foregroundStyle(WalletTheme.ink) }
+                    } else {
+                        Button { spider.deriveAddress() } label: {
+                            Label(spider.busy ? "Создаём адрес…" : "Создать SPD-адрес", systemImage: "key.horizontal")
+                                .font(.system(size: 14, weight: .semibold)).foregroundStyle(WalletTheme.ink)
+                        }.disabled(spider.busy)
+                    }
+                    Text("Переводы SPD пока недоступны: у текущего Spider Chain нет сетевого RPC и подтверждения транзакций. Это только локальный тестовый адрес.")
+                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }.foregroundStyle(WalletTheme.ink)
+            }
+        }
+        .alert("Spider Chain", isPresented: Binding(get: { spider.error != nil }, set: { if !$0 { spider.error = nil } })) {
+            Button("Понятно", role: .cancel) { spider.error = nil }
+        } message: { Text(spider.error ?? "") }
     }
 
     private var assetSection: some View {
