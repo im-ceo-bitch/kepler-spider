@@ -1,21 +1,14 @@
-.dart_tool/
-.packages
-.pub/
-build/
-.flutter-plugins
-.flutter-plugins-dependencies
-.idea/
-.vscode/
+# Xcode / XcodeGen
+Console.xcodeproj/
+*.xcworkspace/xcuserdata/
+DerivedData/
+.build/
 .DS_Store
-*.iml
-
-# Flutter generated platform build artifacts
-ios/Pods/
-ios/.symlinks/
-ios/Flutter/ephemeral/
-android/.gradle/
-
-# Cloudflare
-server/node_modules/
-server/.wrangler/
-server/.dev.vars
+*.ipa
+*.xcarchive
+# Never commit credentials
+*.p12
+*.p8
+*.mobileprovision
+*.pem
+.env*

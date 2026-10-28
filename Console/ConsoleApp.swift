@@ -2,18 +2,15 @@ import SwiftUI
 
 @main
 struct ConsoleApp: App {
-    @UIApplicationDelegateAdaptor(ConsoleAppDelegate.self) private var appDelegate
-    @StateObject private var session = ConsoleSession()
-    @AppStorage("console.appearance") private var appearanceRaw = ConsoleAppearance.system.rawValue
+    @AppStorage("spyder.wallet.appearance") private var appearance = WalletAppearance.system.rawValue
 
     private var preferredScheme: ColorScheme? {
-        ConsoleAppearance(rawValue: appearanceRaw)?.colorScheme
+        WalletAppearance(rawValue: appearance)?.colorScheme
     }
 
     var body: some Scene {
         WindowGroup {
-            ConsoleRootView()
-                .environmentObject(session)
+            WalletRootView()
                 .preferredColorScheme(preferredScheme)
         }
     }
