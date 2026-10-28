@@ -27,6 +27,7 @@ struct ChatsHomeView: View {
                             .overlay(Capsule().stroke(WalletTheme.divider, lineWidth: 1))
                     }
                 }
+                .spyderReveal(0.03)
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(WalletTheme.secondary)
@@ -39,6 +40,7 @@ struct ChatsHomeView: View {
                 .frame(height: 47)
                 .background(WalletTheme.surface, in: Capsule())
                 .overlay(Capsule().stroke(WalletTheme.divider, lineWidth: 1))
+                .spyderReveal(0.07)
 
                 VStack(spacing: 0) {
                     ForEach(filtered) { contact in
@@ -46,6 +48,7 @@ struct ChatsHomeView: View {
                             contactRow(contact)
                         }
                         .buttonStyle(.plain)
+                        .spyderReveal(contact.id == "alex" ? 0.10 : 0.16)
                         if contact.id != filtered.last?.id {
                             Rectangle()
                                 .fill(WalletTheme.divider)
@@ -67,7 +70,9 @@ struct ChatsHomeView: View {
                     }
                     .foregroundStyle(WalletTheme.ink)
                 }
+                .spyderReveal(0.20)
                 WalletDemoLabel().frame(maxWidth: .infinity)
+                    .spyderReveal(0.24)
             }
             .padding(.horizontal, 20)
             .padding(.top, 14)

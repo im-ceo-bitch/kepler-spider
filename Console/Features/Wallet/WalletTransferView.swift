@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WalletTransferView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
     let isRequest: Bool
     let contact: WalletContact
@@ -10,14 +11,13 @@ struct WalletTransferView: View {
 
     private var amountIsValid: Bool {
         guard let number = Decimal(string: amount.replacingOccurrences(of: ",", with: ".")) else { return false }
-        return number > 0 && (isRequest || number <= 1240)
+        return number > 0
     }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Button("Закрыть") { dismiss() }
-                    .font(.system(size: 15))
+                SpyderNavigationButton(symbol: "xmark", label: "Закрыть", action: { dismiss() })
                 Spacer()
                 WalletDemoLabel()
             }
@@ -46,7 +46,7 @@ struct WalletTransferView: View {
                                 .font(.system(size: 34, weight: .semibold, design: .rounded))
                                 .keyboardType(.decimalPad)
                                 .foregroundStyle(WalletTheme.ink)
-                            Text("Демонстрационный баланс: 1 240 SPD")
+                            Text("Баланс недоступен · сеть не подключена")
                                 .font(.system(size: 12))
                                 .foregroundStyle(WalletTheme.secondary)
                             Divider()
@@ -67,12 +67,15 @@ struct WalletTransferView: View {
                             }
                             .foregroundStyle(WalletTheme.ink)
                         }
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
                 .padding(20)
             }
             Button {
-                if isReview { dismiss() } else { isReview = true }
+                if isReview { dismiss() } else {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { isReview = true }
+                }
             } label: {
                 Text(isReview ? "Завершить просмотр" : "Продолжить")
                     .spyderPrimaryButton()
@@ -95,7 +98,7 @@ struct WalletReceiveView: View {
                     .font(.system(size: 25, weight: .bold))
                     .foregroundStyle(WalletTheme.ink)
                 Spacer()
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }
+                SpyderNavigationButton(symbol: "xmark", label: "Закрыть", action: { dismiss() })
             }
             WalletCard {
                 VStack(spacing: 18) {

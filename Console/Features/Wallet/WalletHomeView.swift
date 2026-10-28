@@ -27,14 +27,17 @@ struct WalletHomeView: View {
                     }
                     .accessibilityLabel("Профиль")
                 }
+                .spyderReveal(0.02)
 
                 balanceCard
+                    .spyderReveal(0.07)
 
                 HStack(alignment: .top, spacing: 11) {
                     actionTile("Отправить", symbol: "arrow.up.right", dark: false) { onAction(.send) }
                     actionTile("Получить", symbol: "arrow.down.left", dark: false) { onAction(.receive) }
                     actionTile("Touch", symbol: "viewfinder", dark: true) { onAction(.touch) }
                 }
+                .spyderReveal(0.13)
 
                 VStack(alignment: .leading, spacing: 17) {
                     HStack {
@@ -46,11 +49,20 @@ struct WalletHomeView: View {
                             .font(.system(size: 15))
                             .foregroundStyle(WalletTheme.secondary)
                     }
-                    transactionRow("Получено от Alex", caption: "Сегодня · демонстрация", amount: "+50 SPD", icon: "arrow.down.left")
-                    transactionRow("Отправлено Maya", caption: "Вчера · демонстрация", amount: "−25 SPD", icon: "arrow.up.right")
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Пока нет операций")
+                                .font(.system(size: 15, weight: .semibold))
+                            Text("История появится после подключения блокчейна.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(WalletTheme.secondary)
+                        }.foregroundStyle(WalletTheme.ink)
+                    }
                 }
+                .spyderReveal(0.19)
                 WalletDemoLabel()
                     .frame(maxWidth: .infinity)
+                    .spyderReveal(0.23)
             }
             .padding(.horizontal, 20)
             .padding(.top, 13)
@@ -66,18 +78,19 @@ struct WalletHomeView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(Color.white.opacity(0.85))
                 Spacer()
-                Text("TESTNET")
+                Text("NO NETWORK")
                     .font(.system(size: 10, weight: .semibold))
                     .tracking(0.6)
                     .foregroundStyle(Color.white.opacity(0.52))
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("Доступный баланс")
+                Text("Баланс · сеть не подключена")
                     .font(.system(size: 14))
                     .foregroundStyle(Color.white.opacity(0.58))
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("1 240.00")
+                    Text("—")
                         .font(.system(size: 36, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.white)
                         .monospacedDigit()
                         .minimumScaleFactor(0.7)
                         .lineLimit(1)
@@ -85,12 +98,12 @@ struct WalletHomeView: View {
                         .font(.system(size: 21, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.76))
                 }
-                Text("Тестовые монеты · без стоимости в USD")
+                Text("Баланс станет доступен после подключения сети")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.white.opacity(0.55))
             }
             HStack {
-                Text("Адрес появится после создания кошелька")
+                Text("Адрес появится после подключения сети")
                     .font(.system(size: 11))
                     .foregroundStyle(Color.white.opacity(0.65))
                 Spacer()
@@ -101,6 +114,7 @@ struct WalletHomeView: View {
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(red: 0.07, green: 0.075, blue: 0.085), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 18, y: 7)
         .accessibilityElement(children: .combine)
     }
 
@@ -152,18 +166,26 @@ struct WalletHomeView: View {
 }
 
 struct WalletActivityView: View {
+    let onBack: () -> Void
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+                HStack {
+                    SpyderNavigationButton(symbol: "chevron.left", label: "Назад", action: onBack)
+                    Spacer()
+                }
+                .spyderReveal(0.01)
                 Text("Операции")
                     .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(WalletTheme.ink)
                 WalletDemoLabel()
                 WalletCard {
                     VStack(alignment: .leading, spacing: 18) {
-                        Label("+50 SPD · Alex", systemImage: "arrow.down.left")
-                        Divider()
-                        Label("−25 SPD · Maya", systemImage: "arrow.up.right")
+                        Label("Операций пока нет", systemImage: "clock")
+                        Text("Реальные транзакции появятся после подключения блокчейн-сетей.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(WalletTheme.secondary)
                     }
                     .font(.system(size: 16))
                     .foregroundStyle(WalletTheme.ink)
@@ -171,9 +193,7 @@ struct WalletActivityView: View {
             }
             .padding(20)
         }
-        .navigationTitle("Операции")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
         .background(WalletTheme.canvas.ignoresSafeArea())
     }
 }

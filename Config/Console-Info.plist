@@ -26,12 +26,21 @@
 	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.finance</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Face ID защищает доступ к Spyder Wallet и секретной фразе восстановления.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<key>UIColorName</key>
+		<string>SpyderLaunchCanvas</string>
+		<key>UIImageName</key>
+		<string>SpyderLaunchLogo</string>
+		<key>UIImageRespectsSafeAreaInsets</key>
+		<true/>
+	</dict>
 	<key>UIRequiresFullScreen</key>
 	<false/>
 	<key>UISupportedInterfaceOrientations</key>
@@ -47,7 +56,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>CONSOLE_SERVER_URL</key>
-	<string>$(CONSOLE_SERVER_URL)</string>
 </dict>
 </plist>

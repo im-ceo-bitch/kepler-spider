@@ -2,6 +2,11 @@ name: Console
 options:
   createIntermediateGroups: true
 
+packages:
+  BIP39MnemonicKit:
+    url: https://github.com/devdasx/bip39-mnemonic-kit.git
+    exactVersion: 2.0.1
+
 targets:
   Console:
     type: application
@@ -9,6 +14,8 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Console
+    dependencies:
+      - package: BIP39MnemonicKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.console.beta
@@ -27,7 +34,6 @@ targets:
         # Explicit plist preserves the existing Apple application record and allows rebranding.
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Config/Console-Info.plist
-        CONSOLE_SERVER_URL: ""
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
     scheme:

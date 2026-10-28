@@ -3,6 +3,10 @@ import SwiftUI
 @main
 struct ConsoleApp: App {
     @AppStorage("spyder.wallet.appearance") private var appearance = WalletAppearance.system.rawValue
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showingBrand = true
+    @StateObject private var walletAccess = WalletAccess()
+    @Environment(\.scenePhase) private var scenePhase
 
     private var preferredScheme: ColorScheme? {
         WalletAppearance(rawValue: appearance)?.colorScheme
@@ -10,8 +14,39 @@ struct ConsoleApp: App {
 
     var body: some Scene {
         WindowGroup {
-            WalletRootView()
-                .preferredColorScheme(preferredScheme)
+            ZStack {
+                Group {
+                    if !walletAccess.hasWallet || walletAccess.finishingSetup { WalletOnboardingView() }
+                    else if !walletAccess.unlocked { WalletUnlockView() }
+                    else { WalletRootView() }
+                }
+                .environmentObject(walletAccess)
+                .opacity(showingBrand ? 0 : 1)
+                if showingBrand {
+                    SpyderBrandHandoff()
+                        .transition(.opacity)
+                        .zIndex(1)
+                }
+            }
+            .preferredColorScheme(preferredScheme)
+            .tint(WalletTheme.ink)
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { walletAccess.lock() }
+            }
+            .overlay {
+                if scenePhase != .active {
+                    Color("SpyderLaunchCanvas").ignoresSafeArea()
+                }
+            }
+            .task {
+                guard showingBrand else { return }
+                if !reduceMotion {
+                    try? await Task.sleep(nanoseconds: 550_000_000)
+                }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.32)) {
+                    showingBrand = false
+                }
+            }
         }
     }
 }

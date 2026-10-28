@@ -1,1 +1,27 @@
-Временный миграционный ZIP: upload as `console-update-spyder-wallet-v1.zip` в корень репозитория. Старый `console-auto-unpack` распакует и удалит Console Swift-код. GitHub Actions и старый сервер Cloudflare остаются до ручного перехода на новый `testflight-ios.yml` из полного архива. Обновление не содержит реальной криптографии, чата или переводов. Использовать для TestFlight UI, не для App Store production.
+# Spyder Wallet — ONE ZIP cumulative UI v0.2 + secure onboarding v0.3
+
+## Для какой версии
+ZIP устанавливается поверх Spyder Wallet v0.1 (бывший Console, Bundle ID com.console.beta).
+Предыдущий ZIP Premium UI v0.2 устанавливать НЕ требуется — все его ресурсы включены сюда.
+
+## Сборка
+1. Загрузить ТОЛЬКО этот `console-update*.zip` в корень старого GitHub-репозитория Console.
+2. Дождаться выполнения штатного `Console — Auto Unpack Update`.
+3. Запустить уже работающий `testflight-ios.yml` (Intel). В workflows ничего не меняем.
+4. Проверить через TestFlight на iPhone с настроенным код-паролем.
+
+## Что нового
+- Весь Premium UI v0.2: фирменный паук и native launch screen, мягкие анимации, адаптивные светлый/тёмный режимы, compact Liquid Glass кнопки навигации, обычные CTA.
+- Новый self-custody onboarding: выбор «создать» или «восстановить», BIP-39 12 английских слов, 24 слова при тестовом импорте, контрольная сумма, подтверждение 3 слов.
+- Keychain storage: kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly + userPresence (Face ID / системный код-пароль). Нет синхронизации между устройствами.
+- Автоматическая блокировка при уходе приложения в фон, локальная разблокировка.
+- В настройках: повторный показ фразы после системной аутентификации.
+- Убраны вымышленные 1240 SPD и фальшивая история операций: реальный баланс пока НЕ подключён.
+
+## ВАЖНО: не production crypto wallet
+- Нет настоящих адресов, RPC, derivation для BTC/ETH/SOL, подписания транзакций, отправки денег. Из генерации BIP-39 фразы ещё НЕ получается адрес.
+- Не вводить в этот TestFlight приложение фразу с реальными деньгами. Для импорта есть отдельное подтверждение, что это тестовая фраза.
+- Новая SPM зависимость `BIP39MnemonicKit` pinned на 2.0.1. GitHub Actions должен иметь доступ к GitHub Swift Package Registry / репозиторию при сборке.
+- История чатов и Spyder Touch по-прежнему демонстрационные.
+- Настоящая iOS компиляция и security audit не выполнялись в этом контейнере: сначала запусти Intel Action.
+- Переход на этот релиз не переносит старые данные Console; Bundle ID и схему Apple сохраняем.

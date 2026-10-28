@@ -52,6 +52,7 @@ struct WalletCard<Content: View>: View {
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 25, style: .continuous))
+            .shadow(color: .black.opacity(0.025), radius: 13, y: 4)
     }
 }
 

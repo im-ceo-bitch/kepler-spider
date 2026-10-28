@@ -1,6 +1,8 @@
 import SwiftUI
+import UIKit
 
 struct WalletRootView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedTab: WalletTab = .wallet
     @State private var path = NavigationPath()
     @State private var presented: WalletModal?
@@ -30,7 +32,7 @@ struct WalletRootView: View {
                         presented = action
                     })
                 case .activity:
-                    WalletActivityView()
+                    WalletActivityView(onBack: { if !path.isEmpty { path.removeLast() } })
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
@@ -88,8 +90,9 @@ struct WalletRootView: View {
         let isSelected = selectedTab == tab
         return Button {
             if selectedTab != tab {
+                UISelectionFeedbackGenerator().selectionChanged()
                 path = NavigationPath()
-                withAnimation(.easeInOut(duration: 0.22)) { selectedTab = tab }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) { selectedTab = tab }
             }
         } label: {
             HStack(spacing: 10) {

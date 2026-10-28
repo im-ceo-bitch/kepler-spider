@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ChatDetailView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let contact: WalletContact
     let onBack: () -> Void
     let onAction: (WalletModal) -> Void
@@ -10,11 +11,7 @@ struct ChatDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 36, height: 40)
-                }
+                SpyderNavigationButton(symbol: "chevron.left", label: "Назад", action: onBack)
                 Text(contact.letter)
                     .font(.system(size: 14, weight: .semibold))
                     .frame(width: 36, height: 36)
@@ -34,6 +31,7 @@ struct ChatDetailView: View {
             .foregroundStyle(WalletTheme.ink)
             .padding(.horizontal, 14)
             .frame(height: 65)
+            .spyderReveal(0.01)
             Divider().overlay(WalletTheme.divider)
             ScrollView {
                 VStack(spacing: 13) {
@@ -43,7 +41,9 @@ struct ChatDetailView: View {
                         .foregroundStyle(WalletTheme.secondary)
                         .padding(.vertical, 14)
                     bubble("Привет! Как дела?", outgoing: false)
+                        .spyderReveal(0.05)
                     bubble("Привет! Сейчас отправлю SPD.", outgoing: true)
+                        .spyderReveal(0.10)
                     HStack {
                         Spacer(minLength: 50)
                         VStack(alignment: .leading, spacing: 10) {
@@ -60,9 +60,12 @@ struct ChatDetailView: View {
                         .padding(18)
                         .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     }
+                    .spyderReveal(0.14)
                     bubble("Получил, спасибо!", outgoing: false)
+                        .spyderReveal(0.18)
                     ForEach(localMessages) { message in
                         bubble(message.text, outgoing: message.outgoing)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
                 .padding(.horizontal, 18)
@@ -134,7 +137,9 @@ struct ChatDetailView: View {
     private func sendLocalMessage() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        localMessages.append(WalletChatMessage(text: text, outgoing: true))
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.26)) {
+            localMessages.append(WalletChatMessage(text: text, outgoing: true))
+        }
         draft = ""
     }
 }
