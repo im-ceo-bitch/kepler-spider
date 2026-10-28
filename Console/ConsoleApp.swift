@@ -6,6 +6,7 @@ struct ConsoleApp: App {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingBrand = true
     @StateObject private var walletAccess = WalletAccess()
+    @StateObject private var walletChains = WalletChainStore()
     @Environment(\.scenePhase) private var scenePhase
 
     private var preferredScheme: ColorScheme? {
@@ -21,6 +22,7 @@ struct ConsoleApp: App {
                     else { WalletRootView() }
                 }
                 .environmentObject(walletAccess)
+                .environmentObject(walletChains)
                 .opacity(showingBrand ? 0 : 1)
                 if showingBrand {
                     SpyderBrandHandoff()
@@ -31,7 +33,10 @@ struct ConsoleApp: App {
             .preferredColorScheme(preferredScheme)
             .tint(WalletTheme.ink)
             .onChange(of: scenePhase) { _, phase in
-                if phase == .background { walletAccess.lock() }
+                if phase == .background {
+                    walletAccess.lock()
+                    walletChains.clear()
+                }
             }
             .overlay {
                 if scenePhase != .active {

@@ -63,7 +63,7 @@ struct WalletSettingsView: View {
                             }
                             .buttonStyle(.plain)
                             Divider()
-                            Label("Мультичейн адреса · в разработке", systemImage: "network")
+                            Label("Ethereum · Solana · Bitcoin: адреса в разделе Wallet", systemImage: "network")
                                 .font(.system(size: 14))
                                 .foregroundStyle(WalletTheme.secondary)
                         }
