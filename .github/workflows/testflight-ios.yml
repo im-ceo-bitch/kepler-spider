@@ -26,14 +26,12 @@ jobs:
       PROJECT: Console.xcodeproj
       SCHEME: Console
       BUNDLE_ID: com.console.beta
-      ARCHIVE_PATH: ${{ runner.temp }}/SpyderWallet.xcarchive
-      EXPORT_PATH: ${{ runner.temp }}/SpyderWalletExport
 
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Verify Intel runner and select Xcode 26
+      - name: Verify Intel runner and Xcode 26
         shell: bash
         run: |
           set -euo pipefail
@@ -42,13 +40,11 @@ jobs:
             echo '::error::Expected Intel runner (x86_64)'
             exit 1
           fi
-          XCODE_APP="$(find /Applications -maxdepth 1 -type d -name 'Xcode_26*.app' ! -iname '*beta*' | sort -V | tail -1)"
-          if [ -z "$XCODE_APP" ]; then
-            echo '::error::Xcode 26 not found on Intel runner'
+          xcodebuild -version
+          if ! xcodebuild -version | head -n 1 | grep -Eq '^Xcode 26\.'; then
+            echo '::error::This workflow requires Xcode 26 on macos-26-intel'
             exit 1
           fi
-          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
-          xcodebuild -version
 
       - name: Install XcodeGen
         shell: bash
@@ -75,7 +71,7 @@ jobs:
             fi
           done
           echo 'App Store Connect credentials are configured.'
-          echo 'No P12 certificate or .mobileprovision secret is required by this workflow.'
+          echo 'This workflow uses API key-based automatic signing (P12/profile secrets not required).'
 
       - name: Generate Xcode project
         shell: bash
@@ -125,6 +121,13 @@ jobs:
           chmod 600 "$KEY_PATH"
           echo "path=$KEY_PATH" >> "$GITHUB_OUTPUT"
 
+      - name: Configure temporary build paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ARCHIVE_PATH=$RUNNER_TEMP/SpyderWallet.xcarchive" >> "$GITHUB_ENV"
+          echo "EXPORT_PATH=$RUNNER_TEMP/SpyderWalletExport" >> "$GITHUB_ENV"
+
       - name: Archive for iOS with automatic Apple signing
         shell: bash
         env:
@@ -135,7 +138,7 @@ jobs:
           MARKETING_VERSION: ${{ inputs.marketing_version }}
         run: |
           set -euo pipefail
-          BUILD_NUMBER="${GITHUB_RUN_NUMBER}${GITHUB_RUN_ATTEMPT}"
+          BUILD_NUMBER="$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))"
           echo "Version $MARKETING_VERSION ($BUILD_NUMBER)"
           xcodebuild \
             -project "$PROJECT" \
