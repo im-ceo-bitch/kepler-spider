@@ -1,15 +1,18 @@
-Spyder Wallet v0.5.3 — Xcode SwiftCompile hotfix
+Spyder Wallet — Chat compile compatibility hotfix v0.5.6
 
-Причина: Swift compiler failed in Console/SpiderDevnet/SpiderProtocolV1.swift:214.
-В catch системная константа error была ошибочно использована как изменяемое свойство класса.
-Исправлено: self.error = error.localizedDescription.
+Устраняет ошибки SwiftCompile из GitHub Actions 29.10.2026:
+ChatsHomeView.swift:155,158,168 — отсутствующие probeServer, checkingServer, serverStatus в SpyderChatStore.
 
-УСТАНОВКА
-1. Загрузить ZIP console-update-spyder-wallet-buildfix-v053.zip в корень репозитория kepler-spider.
-2. Убедиться, что Auto Unpack Update завершился успешно.
-3. Проверить в GitHub, что Console/SpiderDevnet/SpiderProtocolV1.swift содержит self.error.
-4. Запустить имеющийся TestFlight workflow сначала с build_only=true.
+Изменяет только Console/ChatLive/SpyderChatService.swift.
+Добавлены два Published-состояния и async probeServer() для /health.
+Сохранены клиент чата, настройки Apple, Bundle ID и существующий workflow.
 
-Проверки: извлечены v0.5 + v0.5.2, наложен этот файл; swiftc -frontend -parse по 17 Swift-файлам; изолированный Swift typecheck и запуск ветки catch; npm run check чата; ZIP CRC.
-Полная Xcode сборка недоступна из Linux; результат всей iOS сборки не гарантирован.
-Никакие файлы workflows, Bundle ID, Apple Secrets или блокчейн-репозиторий не меняются.
+Проверено:
+- 27 Swift-файлов собранного дерева предыдущих патчей: swiftc -frontend -parse PASS.
+- Согласованность всех 15 вызовов chat.* на ChatsHomeView с API SpyderChatStore PASS.
+- Node серверный тест чата 1/1 PASS.
+- ZIP integrity PASS.
+
+ВАЖНО: нет macOS/Xcode; реальная Xcode сборка не выполнялась. Этот патч снимает доказанный конфликт API, но нельзя считать релиз подтвержденным до зеленого build-only на macOS.
+
+Установка: через существующий распаковщик загрузить ZIP в корень репозитория kepler-spider. Не менять workflow. Сначала запустить build_only=true и проверить Debug/Release; при успехе отдельно запускать TestFlight upload. Не удалять приложение / Keychain.

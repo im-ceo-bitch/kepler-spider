@@ -99,6 +99,8 @@ final class SpyderChatStore: ObservableObject {
     @Published var errorMessage: String?
     @Published private(set) var working = false
     @Published private(set) var connected = false
+    @Published private(set) var checkingServer = false
+    @Published private(set) var serverStatus: String?
 
     private var identity: SpyderChatIdentity?
     private static let serverKey = "spyder.chat.server.url.v1"
@@ -162,6 +164,31 @@ final class SpyderChatStore: ObservableObject {
         }
         guard let decoded = try? JSONDecoder().decode(T.self, from: data) else { throw SpyderChatNetworkError.invalidResponse }
         return decoded
+    }
+
+    /// Check the deployed Spyder Chat devnet endpoint before registration.
+    /// A valid response must identify the expected service and protocol version.
+    func probeServer() async {
+        guard !checkingServer else { return }
+        checkingServer = true
+        defer { checkingServer = false }
+        do {
+            try configureServer()
+            struct Health: Decodable {
+                let status: String
+                let service: String
+                let version: Int
+            }
+            let health: Health = try await perform("/health", anonymous: true)
+            guard health.status == "ok",
+                  health.service == "spyder-chat-devnet",
+                  health.version == 1 else {
+                throw SpyderChatNetworkError.invalidResponse
+            }
+            serverStatus = "Сервер Spyder Chat доступен"
+        } catch {
+            serverStatus = "Не удалось подключиться к серверу: " + error.localizedDescription
+        }
     }
 
     func register(name: String) async {
