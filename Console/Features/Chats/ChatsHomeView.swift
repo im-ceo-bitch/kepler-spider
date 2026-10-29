@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-struct ChatsHomeView: View {
+struct SpyderDevnetChatsHomeView: View {
     @EnvironmentObject private var chat: SpyderChatStore
     let onOpen: (WalletContact) -> Void
     let onAdd: () -> Void
@@ -136,7 +136,7 @@ struct ChatsHomeView: View {
         VStack(alignment: .leading, spacing: 17) {
             Text("Общение без адресов кошельков")
                 .font(.system(size: 23, weight: .bold)).foregroundStyle(WalletTheme.ink)
-            Text("Подключи свой сервер Spyder Chat и создай отдельный профиль для переписок. Сид-фраза не используется.")
+            Text("Чат станет доступен после запуска сервера Spyder Chat. Для теста между двумя iPhone обоим нужен один HTTPS-сервер. Сид-фраза не используется.")
                 .font(.system(size: 14)).foregroundStyle(WalletTheme.secondary)
             WalletCard {
                 VStack(alignment: .leading, spacing: 14) {
@@ -152,11 +152,32 @@ struct ChatsHomeView: View {
                 }
             }
             Button {
+                Task { await chat.probeServer() }
+            } label: {
+                HStack(spacing: 8) {
+                    if chat.checkingServer { ProgressView() }
+                    Text(chat.checkingServer ? "Проверяем сервер…" : "Проверить подключение")
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(WalletTheme.ink)
+                .frame(maxWidth: .infinity)
+                .frame(height: 46)
+                .overlay(Capsule().stroke(WalletTheme.divider, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(chat.checkingServer || chat.serverAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if let status = chat.serverStatus {
+                Text(status)
+                    .font(.system(size: 12))
+                    .foregroundStyle(WalletTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button {
                 Task { await chat.register(name: name) }
             } label: {
                 Text(chat.working ? "Подключаем…" : "Начать общение").spyderPrimaryButton()
             }.buttonStyle(.plain).disabled(chat.working || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Text("Devnet: сервер может читать сообщения. Не отправляй пароли, сид-фразы и приватные ключи.")
+            Text("Сначала разверни Cloudflare Worker из папки server/ через GitHub Actions. Его URL появится в логе Deploy. Devnet: сообщения без сквозного шифрования.")
                 .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
         }.spyderReveal(0.08)
     }
