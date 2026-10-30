@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Existing Console conversations, rendered inside the approved Spyder Wallet design.
 // Does not create another account or overwrite the user's saved Console identity.
@@ -6,6 +7,8 @@ struct LegacyConsoleChatsView: View {
     @EnvironmentObject private var legacy: LegacyConsoleChatStore
     @State private var handle = ""
     @State private var lookup = ""
+    @State private var advancedServer = false
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         Group {
@@ -55,7 +58,7 @@ struct LegacyConsoleChatsView: View {
             HStack(spacing: 7) {
                 Circle().fill(legacy.online ? Color.green : WalletTheme.secondary)
                     .frame(width: 7, height: 7)
-                Text(legacy.online ? "Console · соединение активно" : "Console · проверка соединения")
+                Text(legacy.online ? "Spyder Chat · на связи" : "Spyder Chat · нет соединения")
                     .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                 Spacer()
                 Button {
@@ -68,39 +71,69 @@ struct LegacyConsoleChatsView: View {
                 }
                 .accessibilityLabel("Обновить")
             }
-            Text("Чат использует прежнюю сеть Console. Сообщения пока без E2E-шифрования.")
+            Text("Общение и контакты. Сообщения пока без сквозного шифрования.")
                 .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
         }
     }
 
+    // Only onboarding is visible to users. The server is provisioned by the app build,
+    // restored from a previous Console install, or configured in diagnostics as a fallback.
     private var accountSetup: some View {
         VStack(alignment: .leading, spacing: 17) {
-            Text("Подключение прежнего Console")
-                .font(.system(size: 22, weight: .bold)).foregroundStyle(WalletTheme.ink)
-            Text("Мы сохраняем старые контакты и сетевой профиль. При обновлении поверх Console данные Keychain и адрес сервера должны оставаться доступными.")
-                .font(.system(size: 14)).foregroundStyle(WalletTheme.secondary)
-            WalletCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("Сервер Console (HTTPS)").font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                    TextField("https://console-realtime…workers.dev", text: $legacy.serverText)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .keyboardType(.URL).font(.system(size: 14))
-                    Divider()
-                    Text("Имя Console").font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                    TextField("Твой прежний @handle", text: $handle)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+            if legacy.serverText.isEmpty {
+                WalletCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Image(systemName: "wifi.exclamationmark")
+                            .font(.system(size: 25)).foregroundStyle(WalletTheme.ink)
+                        Text("Чат временно недоступен")
+                            .font(.system(size: 19, weight: .semibold))
+                        Text("Приложение не получило адрес сервера сообщений. Данные кошелька и прежние контакты не затронуты.")
+                            .font(.system(size: 14)).foregroundStyle(WalletTheme.secondary)
+                        Button(advancedServer ? "Скрыть диагностику" : "Настроить соединение") {
+                            advancedServer.toggle()
+                        }
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(WalletTheme.ink)
+                    }
                 }
+            } else {
+                Text("Твой профиль")
+                    .font(.system(size: 23, weight: .bold))
+                    .foregroundStyle(WalletTheme.ink)
+                Text("Выбери уникальное имя. Друзья смогут найти тебя по @username. Адрес кошелька и сид-фраза не используются.")
+                    .font(.system(size: 14)).foregroundStyle(WalletTheme.secondary)
             }
-            Button {
-                Task { await legacy.begin(handle: handle) }
-            } label: {
-                Text(legacy.busy ? "Подключаемся…" : "Подключить Console")
-                    .spyderPrimaryButton()
+
+            if !legacy.serverText.isEmpty || advancedServer {
+                WalletCard {
+                    VStack(alignment: .leading, spacing: 13) {
+                        if advancedServer {
+                            Text("HTTPS-сервер · диагностика")
+                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                            TextField("https://…workers.dev", text: $legacy.serverText)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .keyboardType(.URL).font(.system(size: 14))
+                            Divider()
+                        }
+                        Text("Имя пользователя")
+                            .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                        TextField("@username", text: $handle)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .font(.system(size: 17))
+                            .submitLabel(.done)
+                    }
+                }
+                Button {
+                    Task { await legacy.begin(handle: handle) }
+                } label: {
+                    Text(legacy.busy ? "Подключаемся…" : "Продолжить")
+                        .spyderPrimaryButton()
+                }
+                .buttonStyle(.plain)
+                .disabled(legacy.busy || legacy.serverText.isEmpty || handle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Text("Сид-фраза и приватные ключи не передаются серверу чата.")
+                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
             }
-            .buttonStyle(.plain)
-            .disabled(legacy.busy || legacy.serverText.isEmpty || handle.isEmpty)
-            Text("Не вводи сид-фразу кошелька. Для старого чата она никогда не нужна.")
-                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
         }
     }
 
@@ -108,8 +141,11 @@ struct LegacyConsoleChatsView: View {
         VStack(alignment: .leading, spacing: 17) {
             HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass").foregroundStyle(WalletTheme.secondary)
-                TextField("Найти человека по @handle", text: $lookup)
+                TextField("Найти по @username", text: $lookup)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .focused($searchFocused)
+                    .submitLabel(.search)
+                    .onSubmit { Task { await legacy.search(lookup) } }
                 Button {
                     Task { await legacy.search(lookup) }
                 } label: {
@@ -152,7 +188,7 @@ struct LegacyConsoleChatsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Image(systemName: "message").font(.system(size: 27))
                         Text("Нет активных чатов").font(.headline)
-                        Text("Найди контакт по @handle и прими приглашение — история хранится на прежнем сервере Console.")
+                        Text("Найди друга по @username, отправь приглашение и начинай переписку.")
                             .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
                     }
                 }
@@ -193,6 +229,8 @@ private struct LegacyConsoleConversationView: View {
     @ObservedObject var socket: ConsoleSocket
     @State private var draft = ""
     @State private var isSending = false
+    @FocusState private var composing: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -204,6 +242,7 @@ private struct LegacyConsoleConversationView: View {
                         .frame(width: 44, height: 44)
                         .background(WalletTheme.surface, in: Circle())
                 }
+                .accessibilityLabel("Назад к чатам")
                 VStack(alignment: .leading, spacing: 3) {
                     Text("@" + terminal.peer.handle).font(.system(size: 17, weight: .semibold))
                     Text(socket.status == .connected ? "На связи" : "Подключаемся…")
@@ -215,36 +254,33 @@ private struct LegacyConsoleConversationView: View {
             Divider()
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: 9) {
                         Text("Console · сообщения без E2E-шифрования")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(WalletTheme.secondary)
                             .padding(.vertical, 12)
                         ForEach(legacy.messages) { message in
-                            HStack {
-                                if legacy.isOutgoing(message) { Spacer(minLength: 38) }
-                                VStack(alignment: .trailing, spacing: 4) {
-                                    Text(message.content)
-                                        .font(.system(size: 15))
-                                        .foregroundStyle(legacy.isOutgoing(message) ? Color.white : WalletTheme.ink)
-                                        .padding(.horizontal, 15).padding(.vertical, 12)
-                                        .background(legacy.isOutgoing(message) ? Color.black : WalletTheme.surface,
-                                                    in: RoundedRectangle(cornerRadius: 19))
-                                    if legacy.isOutgoing(message) {
-                                        Text(message.delivery.rawValue)
-                                            .font(.system(size: 10)).foregroundStyle(WalletTheme.secondary)
-                                    }
-                                }
-                                if !legacy.isOutgoing(message) { Spacer(minLength: 38) }
-                            }.id(message.id)
+                            SpyderDirectMessageBubble(
+                                message: message,
+                                outgoing: legacy.isOutgoing(message)
+                            )
+                            .id(message.id)
                         }
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 15)
                 }
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: composing) { _, focused in
+                    if focused, let last = legacy.messages.last {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
+                    }
+                }
                 .onChange(of: legacy.messages.count) { _, _ in
                     if let last = legacy.messages.last {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                             proxy.scrollTo(last.id, anchor: .bottom)
                         }
                     }
@@ -253,13 +289,17 @@ private struct LegacyConsoleConversationView: View {
             HStack(spacing: 10) {
                 TextField("Сообщение…", text: $draft, axis: .vertical)
                     .lineLimit(1...4).font(.system(size: 15))
+                    .focused($composing)
                     .padding(.horizontal, 15).padding(.vertical, 10)
                     .background(WalletTheme.surface, in: Capsule())
                 Button {
                     let text = draft
                     isSending = true
                     Task {
-                        if await legacy.send(text) { draft = "" }
+                        if await legacy.send(text) {
+                            draft = ""
+                            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                        }
                         isSending = false
                     }
                 } label: {
@@ -283,5 +323,61 @@ private struct LegacyConsoleConversationView: View {
                 await legacy.reloadHistory()
             }
         }
+    }
+}
+
+// Presentation adapted from the independently working iumrah care-chat patterns:
+// direction, neutral bubbles, copy action, timestamp and delivery state.
+// Transport and identities remain the existing Console protocol, not booking APIs.
+private struct SpyderDirectMessageBubble: View {
+    let message: TerminalMessage
+    let outgoing: Bool
+
+    private var timeText: String {
+        guard let date = ISO8601DateFormatter().date(from: message.createdAt) else { return "" }
+        return date.formatted(date: .omitted, time: .shortened)
+    }
+
+    private var deliveryText: String {
+        switch message.delivery {
+        case .queued, .sending: return "Отправляется"
+        case .sent: return "Отправлено"
+        case .delivered: return "Доставлено"
+        case .read: return "Прочитано"
+        case .failed: return "Ошибка отправки"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: outgoing ? .trailing : .leading, spacing: 4) {
+            HStack(alignment: .bottom, spacing: 0) {
+                if outgoing { Spacer(minLength: 60) }
+                Text(message.content)
+                    .font(.system(size: 16))
+                    .foregroundStyle(outgoing ? WalletTheme.contrast : WalletTheme.ink)
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 11)
+                    .background(outgoing ? WalletTheme.accent : WalletTheme.surface,
+                                in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .contextMenu {
+                        Button {
+                            UIPasteboard.general.string = message.content
+                        } label: {
+                            Label("Копировать", systemImage: "doc.on.doc")
+                        }
+                    }
+                    .accessibilityLabel(message.content)
+                if !outgoing { Spacer(minLength: 60) }
+            }
+            HStack(spacing: 5) {
+                if outgoing { Text(deliveryText) }
+                if !timeText.isEmpty { Text(timeText) }
+            }
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(WalletTheme.secondary)
+            .padding(.horizontal, 6)
+        }
+        .frame(maxWidth: .infinity, alignment: outgoing ? .trailing : .leading)
+        .padding(.vertical, 2)
     }
 }
