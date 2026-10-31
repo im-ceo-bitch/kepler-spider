@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "spyder-messagechain-devnet",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [{ "name": "MESSAGE_ROOMS", "class_name": "SpyderMessageRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SpyderMessageRoom"] }]
+}
