@@ -3,7 +3,7 @@ import Foundation
 import Security
 
 final class IdentityStore {
-    private let service = "com.console.beta.identity"
+    private let service = "com.spyder.wallet.identity"
     private let privateKeyAccount = "ed25519-private-key"
     private let metadataAccount = "identity-metadata"
     private let profileKey = "console.profile"

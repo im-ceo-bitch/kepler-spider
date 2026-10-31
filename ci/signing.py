@@ -84,7 +84,7 @@ def run(command: list[str], *, env: dict | None = None) -> bytes:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=pathlib.Path, required=True)
-    parser.add_argument("--bundle-id", default="com.console.beta")
+    parser.add_argument("--bundle-id", default="com.spyder.wallet")
     args = parser.parse_args()
     directory = args.out.resolve()
     directory.mkdir(parents=True, exist_ok=True)

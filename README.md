@@ -1,6 +1,8 @@
+> New Apple ID / TestFlight: see [SPYDER_NEW_APPLE_V060_README_RU.md](SPYDER_NEW_APPLE_V060_README_RU.md). This app is now `com.spyder.wallet`. Old Console signing guidance is obsolete.
+
 # Spyder Wallet — v0.5 devnet
 
-Cumulative SwiftUI iOS wallet update, Bundle ID `com.console.beta`, Console scheme kept for TestFlight.
+Cumulative SwiftUI iOS wallet update, Bundle ID `com.spyder.wallet`, Console scheme kept for TestFlight.
 
 - Wallet/Core: Premium UI, native launch and onboarding, BIP-39 encrypted Keychain vault, Wallet Core read-only ETH/SOL/BTC address previews.
 - Spider Chain: a test-only BIP-39/SLIP-0010-derived Bech32m `spider1…` address with an independent reference vector. No network transactions until actual Spider Chain RPC.

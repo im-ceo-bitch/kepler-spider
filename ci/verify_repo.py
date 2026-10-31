@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import plistlib
 import sys
+import re
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -18,6 +19,10 @@ def main() -> None:
     require(plist.get("CFBundleDisplayName") == "Spyder Wallet", "wrong app display name")
     require(plist.get("NSFaceIDUsageDescription"), "missing Face ID usage description")
     require((ROOT / "project.yml").exists(), "missing XcodeGen spec")
+    project = (ROOT / "project.yml").read_text(encoding="utf-8")
+    require(re.search(r"^\s*PRODUCT_BUNDLE_IDENTIFIER:\s*com\.spyder\.wallet\s*$", project, re.M) is not None,
+            "project.yml must use com.spyder.wallet")
+    require("com.console.beta" not in project, "old Console Bundle ID still present in project.yml")
     require((ROOT / "Console/ConsoleApp.swift").exists(), "missing SwiftUI app entry point")
     require((ROOT / "Console/Security/WalletVault.swift").exists(), "missing Keychain implementation")
     swift_files = list((ROOT / "Console").rglob("*.swift"))

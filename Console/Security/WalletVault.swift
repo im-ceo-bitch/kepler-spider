@@ -7,7 +7,7 @@ import BIP39MnemonicKit
 /// No seed is written to UserDefaults, logs, files, network services or analytics.
 /// This vault is intentionally independent from the future per-chain derivation/signing layer.
 enum WalletVault {
-    private static let service = "com.console.beta.spyder.wallet.v1"
+    private static let service = "com.spyder.wallet.spyder.wallet.v1"
     private static let account = "bip39-english-mnemonic"
 
     enum VaultError: LocalizedError {

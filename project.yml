@@ -24,14 +24,11 @@ targets:
         product: WalletCoreSwiftProtobuf
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.console.beta
+        PRODUCT_BUNDLE_IDENTIFIER: com.spyder.wallet
         PRODUCT_NAME: Console
         MARKETING_VERSION: 1.3.0
-        CURRENT_PROJECT_VERSION: 2
+        CURRENT_PROJECT_VERSION: 200
         SWIFT_VERSION: 5.10
-        # Optional build-time endpoint from the original Console infrastructure.
-        # Must be a real HTTPS workers.dev / custom-domain URL; never a placeholder.
-        CONSOLE_SERVER_URL: ""
 
         # One SwiftUI product for iPhone + iPad + Mac Catalyst.
         TARGETED_DEVICE_FAMILY: "1,2"

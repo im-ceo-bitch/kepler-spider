@@ -35,7 +35,7 @@ private struct SpyderChatHistory: Decodable { let messages: [SpyderServerMessage
 private struct SpyderChatErrorResponse: Decodable { let error: String }
 
 private enum SpyderChatKeychain {
-    static let service = "com.console.beta.spyder.chat.devnet.v1"
+    static let service = "com.spyder.wallet.spyder.chat.devnet.v1"
     static let account = "device-identity"
 
     static func load() -> Data? {
