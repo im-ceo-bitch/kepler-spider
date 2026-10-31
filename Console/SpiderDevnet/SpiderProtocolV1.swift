@@ -83,6 +83,13 @@ enum SpiderProtocolV1 {
         return try Curve25519.Signing.PrivateKey(rawRepresentation: Data(material.prefix(32)))
     }
 
+    // Reuses the existing wallet's explicitly versioned SLIP-0010 devnet profile.
+    // A 12/24-word recovery phrase recreates the same SPD address after reinstall.
+    // This is an experimental derivation path, not a Spider mainnet standard.
+    static func devnetSigningKey(mnemonic: String) throws -> Curve25519.Signing.PrivateKey {
+        try privateKey(mnemonic: mnemonic)
+    }
+
     static func account(mnemonic: String) throws -> Account {
         let key = try privateKey(mnemonic: mnemonic)
         let publicBytes = key.publicKey.rawRepresentation
@@ -194,27 +201,3 @@ enum SpiderProtocolV1 {
     }
 }
 
-@MainActor
-final class SpiderDevnetStore: ObservableObject {
-    @Published private(set) var address: String?
-    @Published private(set) var busy = false
-    @Published var error: String?
-    func clear() { address = nil }
-    func deriveAddress() {
-        guard !busy else { return }
-        busy = true
-        Task {
-            do {
-                let a = try await Task.detached(priority: .userInitiated) {
-                    try SpiderProtocolV1.verifyPublicTestVector()
-                    let words = try WalletVault.revealForBackup()
-                    return try SpiderProtocolV1.account(mnemonic: words.joined(separator: " ")).address
-                }.value
-                address = a
-            } catch {
-                self.error = error.localizedDescription
-            }
-            busy = false
-        }
-    }
-}

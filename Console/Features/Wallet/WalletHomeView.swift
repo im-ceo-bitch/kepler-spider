@@ -59,13 +59,25 @@ struct WalletHomeView: View {
                             .foregroundStyle(WalletTheme.secondary)
                     }
                     WalletCard {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Пока нет операций")
-                                .font(.system(size: 15, weight: .semibold))
-                            Text("История появится после подключения блокчейна.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(WalletTheme.secondary)
-                        }.foregroundStyle(WalletTheme.ink)
+                        if spider.activities.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Нет сертифицированных операций SPD")
+                                    .font(.system(size: 15, weight: .semibold))
+                                Text("После подключения Devnet здесь появятся финализированные переводы.")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(WalletTheme.secondary)
+                            }.foregroundStyle(WalletTheme.ink)
+                        } else {
+                            VStack(spacing: 13) {
+                                ForEach(Array(spider.activities.prefix(3))) { entry in
+                                    let outgoing = entry.transaction.payload.sender == spider.address
+                                    transactionRow(outgoing ? "Отправлено · SPD" : "Получено · SPD",
+                                                   caption: "Блок \(entry.height) · \(entry.id.prefix(12))…",
+                                                   amount: (outgoing ? "−" : "+") + SpiderDevnetStore.displayAmount(entry.transaction.payload.amount),
+                                                   icon: outgoing ? "arrow.up.right" : "arrow.down.left")
+                                }
+                            }
+                        }
                     }
                 }
                 .spyderReveal(0.19)
@@ -86,38 +98,76 @@ struct WalletHomeView: View {
                 Text("Spider Chain")
                     .font(.system(size: 23, weight: .bold)).foregroundStyle(WalletTheme.ink)
                 Spacer()
-                Text("DEVNET").font(.system(size: 11, weight: .semibold))
+                Text("TEST DEVNET").font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(WalletTheme.secondary)
             }
             WalletCard {
-                VStack(alignment: .leading, spacing: 13) {
-                    HStack {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 11) {
                         Image(systemName: "network")
-                            .font(.system(size: 22))
+                            .font(.system(size: 23))
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("SPD · собственная сеть").font(.system(size: 16, weight: .semibold))
-                            Text("Spider Protocol v0.1 · 9 decimals")
+                            Text("SPD · SpiderBFT")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text(spider.connected ? "Сертифицированная сеть · блок \(spider.certifiedHeight ?? 0)" :
+                                 (spider.hasConfiguration ? "Нет подтверждённого соединения" : "HTTPS-шлюз не настроен"))
                                 .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                         }
+                        Spacer(minLength: 4)
+                        Circle().fill(spider.connected ? Color.green : WalletTheme.secondary)
+                            .frame(width: 8, height: 8)
                     }
                     if let address = spider.address {
-                        Text(address).font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(WalletTheme.ink).textSelection(.enabled)
-                        Button {
-                            UIPasteboard.general.string = address
-                            UINotificationFeedbackGenerator().notificationOccurred(.success)
-                        } label: { Label("Скопировать тестовый адрес", systemImage: "doc.on.doc")
-                            .font(.system(size: 14, weight: .medium)).foregroundStyle(WalletTheme.ink) }
+                        Text(address)
+                            .font(.system(size: 12, design: .monospaced))
+                            .textSelection(.enabled)
+                            .privacySensitive()
+                        HStack(spacing: 14) {
+                            Button {
+                                UIPasteboard.general.string = address
+                                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                            } label: { Label("Копировать", systemImage: "doc.on.doc") }
+                            if spider.hasConfiguration {
+                                Button {
+                                    Task { await spider.refresh() }
+                                } label: {
+                                    Label(spider.refreshing ? "Проверяем…" : "Обновить", systemImage: "arrow.clockwise")
+                                }.disabled(spider.refreshing)
+                            }
+                        }
+                        .font(.system(size: 13, weight: .medium))
+                        if spider.connected {
+                            Text("Баланс: \(spider.balanceText) тестовых SPD")
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                        }
+                        if let pending = spider.pendingForAddress {
+                            Divider()
+                            Label(pending.queued ? "Ожидает финализации SpiderBFT" : "Отправка не подтверждена — проверить статус",
+                                  systemImage: "clock.arrow.circlepath")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Tx \(pending.id.prefix(14))… · \(SpiderDevnetStore.displayAmount(pending.amountAtomic)) SPD")
+                                .font(.system(size: 12, design: .monospaced))
+                                .textSelection(.enabled)
+                            Text("Не отправляйте повторно, пока транзакция не будет подтверждена или безопасно разрешена.")
+                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                        }
+                        if let confirmed = spider.latestConfirmed {
+                            Label("Подтверждено в блоке \(confirmed.height)", systemImage: "checkmark.seal")
+                                .font(.system(size: 13, weight: .medium))
+                        }
                     } else {
                         Button { spider.deriveAddress() } label: {
-                            Label(spider.busy ? "Создаём адрес…" : "Создать SPD-адрес", systemImage: "key.horizontal")
-                                .font(.system(size: 14, weight: .semibold)).foregroundStyle(WalletTheme.ink)
+                            Label(spider.busy ? "Проверяем Face ID…" : "Открыть SPD-адрес",
+                                  systemImage: "key.horizontal")
+                                .font(.system(size: 14, weight: .semibold))
                         }.disabled(spider.busy)
                     }
-                    Text("Переводы SPD пока недоступны: у текущего Spider Chain нет сетевого RPC и подтверждения транзакций. Это только локальный тестовый адрес.")
+                    Text("Только тестовые SPD. Никаких настоящих токенов или USDT. Статус 202 — очередь, не успешный перевод.")
                         .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                }.foregroundStyle(WalletTheme.ink)
+                }
+                .foregroundStyle(WalletTheme.ink)
             }
         }
         .alert("Spider Chain", isPresented: Binding(get: { spider.error != nil }, set: { if !$0 { spider.error = nil } })) {
@@ -291,6 +341,7 @@ struct WalletHomeView: View {
 }
 
 struct WalletActivityView: View {
+    @EnvironmentObject private var spider: SpiderDevnetStore
     let onBack: () -> Void
 
     var body: some View {
@@ -304,17 +355,39 @@ struct WalletActivityView: View {
                 Text("Операции")
                     .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(WalletTheme.ink)
-                WalletDemoLabel()
+                Text("Только финализированные операции тестовой Spider Chain (последние 20 блоков).")
+                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                Button("Обновить операции") { Task { await spider.refresh() } }
+                    .disabled(spider.refreshing || !spider.connected)
                 WalletCard {
-                    VStack(alignment: .leading, spacing: 18) {
-                        Label("Операций пока нет", systemImage: "clock")
-                        Text("Реальные транзакции появятся после подключения блокчейн-сетей.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(WalletTheme.secondary)
+                    if spider.activities.isEmpty {
+                        Label("Сертифицированных операций пока нет", systemImage: "clock")
+                            .font(.system(size: 14))
+                    } else {
+                        VStack(alignment: .leading, spacing: 16) {
+                            ForEach(spider.activities) { entry in
+                                let isOutgoing = entry.transaction.payload.sender == spider.address
+                                VStack(alignment: .leading, spacing: 5) {
+                                    HStack {
+                                        Label(isOutgoing ? "Отправлено" : "Получено",
+                                              systemImage: isOutgoing ? "arrow.up.right" : "arrow.down.left")
+                                        Spacer()
+                                        Text((isOutgoing ? "−" : "+") + SpiderDevnetStore.displayAmount(entry.transaction.payload.amount) + " SPD")
+                                            .monospacedDigit()
+                                    }
+                                    .font(.system(size: 14, weight: .semibold))
+                                    Text("Подтверждено · блок \(entry.height)")
+                                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                    Text(entry.id)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .textSelection(.enabled)
+                                    Divider()
+                                }
+                            }
+                        }
                     }
-                    .font(.system(size: 16))
-                    .foregroundStyle(WalletTheme.ink)
                 }
+                .foregroundStyle(WalletTheme.ink)
             }
             .padding(20)
         }

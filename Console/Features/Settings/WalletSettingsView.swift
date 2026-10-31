@@ -5,6 +5,7 @@ struct WalletSettingsView: View {
     @AppStorage("spyder.wallet.appearance") private var appearance = WalletAppearance.system.rawValue
     @State private var backupWords: [String] = []
     @State private var showBackup = false
+    @State private var showDevnetSettings = false
     @State private var vaultError: String?
 
     var body: some View {
@@ -69,6 +70,21 @@ struct WalletSettingsView: View {
                         }
                         .foregroundStyle(WalletTheme.ink)
                     }
+                    WalletCard {
+                        Button { showDevnetSettings = true } label: {
+                            HStack(spacing: 13) {
+                                Image(systemName: "network").font(.system(size: 24))
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Spider Chain · Devnet").font(.system(size: 16, weight: .semibold))
+                                    Text("HTTPS gateway, genesis, токен, состояние сети")
+                                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                            }
+                            .foregroundStyle(WalletTheme.ink)
+                        }.buttonStyle(.plain)
+                    }
                     Text("Храни фразу офлайн. Даже Spyder не сможет восстановить её при потере телефона без твоей резервной копии.")
                         .font(.system(size: 12))
                         .foregroundStyle(WalletTheme.secondary)
@@ -77,6 +93,11 @@ struct WalletSettingsView: View {
             }
             .background(WalletTheme.canvas.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+        }
+        .sheet(isPresented: $showDevnetSettings) {
+            SpiderDevnetSettingsView()
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(30)
         }
         .sheet(isPresented: $showBackup, onDismiss: { backupWords.removeAll() }) {
             WalletRecoverySheet(words: backupWords)
