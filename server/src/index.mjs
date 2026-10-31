@@ -9,6 +9,10 @@ const validSecret = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(
 const validInvite = value => typeof value === 'string' && /^[A-F0-9]{24}$/.test(value);
 const validClient = value => typeof value === 'string' && /^[a-f0-9-]{36}$/.test(value);
 const sanitizedName = value => String(value ?? '').trim().slice(0, 36);
+// Usernames are public, case-insensitive, unique identifiers. They are not credentials.
+const normalizedUsername = value => typeof value === 'string' ? value.trim().replace(/^@/, '').toLowerCase() : '';
+const validUsername = value => /^[a-z][a-z0-9_]{2,19}$/.test(value) && !['admin', 'support', 'spyder', 'system', 'security'].includes(value);
+const usernameKey = value => 'handle:' + value;
 const isText = value => typeof value === 'string' && value.trim().length > 0 && value.length <= 2000;
 const sha256 = async str => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)))).map(x => x.toString(16).padStart(2,'0')).join('');
 const equal = (a,b) => { if (a.length !== b.length) return false; let v=0; for(let i=0;i<a.length;i++)v |= a.charCodeAt(i)^b.charCodeAt(i); return v===0; };
@@ -35,28 +39,58 @@ export class ChatHub {
     if(method==='POST'&&path==='/v1/register') {
       const b=await this.body(request);
       if(!b||!validId(b.id)||!validSecret(b.secret)||!validInvite(b.invite_code)||!sanitizedName(b.name))return bad('invalid_registration');
+      const username = normalizedUsername(b.username);
+      if(b.username != null && !validUsername(username))return bad('invalid_username');
       if(await this.ctx.storage.get('user:'+b.id))return bad('identity_exists',409);
       if(await this.ctx.storage.get('code:'+b.invite_code))return bad('code_taken',409);
-      const u={id:b.id,name:sanitizedName(b.name),invite_code:b.invite_code,secretHash:await sha256(b.secret)};
+      if(username && await this.ctx.storage.get(usernameKey(username)))return bad('username_taken',409);
+      const u={id:b.id,name:sanitizedName(b.name),username:username || null,invite_code:b.invite_code,secretHash:await sha256(b.secret)};
       await this.ctx.storage.put('user:'+u.id,u);
       await this.ctx.storage.put('code:'+u.invite_code,u.id);
-      return json({id:u.id,name:u.name,invite_code:u.invite_code},201);
+      if(username) await this.ctx.storage.put(usernameKey(username),u.id);
+      return json({id:u.id,name:u.name,username:u.username,invite_code:u.invite_code},201);
     }
     const me=await this.read(request);
     if(!me)return bad('unauthorized',401);
-    if(method==='GET'&&path==='/v1/me')return json({id:me.id,name:me.name,invite_code:me.invite_code});
+    if(method==='GET'&&path==='/v1/me')return json({id:me.id,name:me.name,username:me.username || null,invite_code:me.invite_code});
+    if(method==='POST'&&path==='/v1/profile/username') {
+      const b=await this.body(request);
+      const username=normalizedUsername(b?.username);
+      if(!validUsername(username))return bad('invalid_username');
+      const existing=await this.ctx.storage.get(usernameKey(username));
+      if(existing && existing!==me.id)return bad('username_taken',409);
+      if(me.username===username)return json({username});
+      if(me.username)await this.ctx.storage.delete(usernameKey(me.username));
+      await this.ctx.storage.put(usernameKey(username),me.id);
+      me.username=username;
+      await this.ctx.storage.put('user:'+me.id,me);
+      return json({username});
+    }
+    if(method==='GET'&&path==='/v1/users/search') {
+      const q=normalizedUsername(url.searchParams.get('q'));
+      if(!/^[a-z][a-z0-9_]{1,19}$/.test(q))return json({users:[]});
+      const matches=await this.ctx.storage.list({prefix:usernameKey(q),limit:25});
+      const users=[];
+      for(const [key,id] of matches){
+        if(id===me.id)continue;
+        const peer=await this.ctx.storage.get('user:'+id);
+        if(peer && peer.username && users.length<12)users.push({id:peer.id,name:peer.name,username:peer.username});
+      }
+      return json({users});
+    }
     if(method==='GET'&&path==='/v1/contacts') {
       const contacts=[],requests=[];
       const entries=await this.ctx.storage.list({prefix:'invite:'+me.id+':'});
-      for(const [key,invite] of entries) { if(invite.status==='pending') {const peer=await this.ctx.storage.get('user:'+invite.from); if(peer)requests.push({id:peer.id,name:peer.name});} }
+      for(const [key,invite] of entries) { if(invite.status==='pending') {const peer=await this.ctx.storage.get('user:'+invite.from); if(peer)requests.push({id:peer.id,name:peer.name,username:peer.username || null});} }
       const links=await this.ctx.storage.list({prefix:'contact:'+me.id+':'});
-      for(const [key,val] of links) {const peer=await this.ctx.storage.get('user:'+val.peer); if(peer)contacts.push({id:peer.id,name:peer.name});}
+      for(const [key,val] of links) {const peer=await this.ctx.storage.get('user:'+val.peer); if(peer)contacts.push({id:peer.id,name:peer.name,username:peer.username || null});}
       return json({contacts,requests,invite_code:me.invite_code});
     }
     if(method==='POST'&&path==='/v1/invites') {
       const b=await this.body(request);
-      if(!validInvite(b?.code))return bad('invalid_invite_code');
-      const to=await this.ctx.storage.get('code:'+b.code);
+      const username=normalizedUsername(b?.username);
+      if(!validInvite(b?.code) && !validUsername(username))return bad('invalid_recipient_lookup');
+      const to=validUsername(username) ? await this.ctx.storage.get(usernameKey(username)) : await this.ctx.storage.get('code:'+b.code);
       if(!to||to===me.id)return bad('invalid_recipient',404);
       if(await this.ctx.storage.get(linkKey(me.id,to)))return json({status:'already_connected'});
       await this.ctx.storage.put('invite:'+to+':'+me.id,{from:me.id,to,status:'pending'});

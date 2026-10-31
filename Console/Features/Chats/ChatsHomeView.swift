@@ -7,6 +7,9 @@ struct SpyderDevnetChatsHomeView: View {
     let onAdd: () -> Void
     @State private var search = ""
     @State private var name = ""
+    @State private var username = ""
+    @State private var lookup = ""
+    @State private var claim = ""
     @State private var invitation = ""
     @State private var adding = false
     @State private var inviteSent = false
@@ -37,13 +40,26 @@ struct SpyderDevnetChatsHomeView: View {
                 else {
                     HStack(spacing: 8) {
                         Circle().fill(chat.connected ? Color.green : WalletTheme.secondary).frame(width: 7, height: 7)
-                        Text(chat.connected ? "Spyder Chat · Devnet" : "Нет подключения к серверу")
+                        Text(chat.connected ? "Spyder Chat · @\(chat.myUsername.isEmpty ? "username" : chat.myUsername)" : "Нет подключения к серверу")
                             .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                         Spacer()
                         Button { Task { await chat.refresh() } } label: {
                             Image(systemName: "arrow.clockwise").foregroundStyle(WalletTheme.ink)
                         }.accessibilityLabel("Обновить чаты")
                     }.spyderReveal(0.08)
+
+                    if chat.myUsername.isEmpty {
+                        WalletCard {
+                            VStack(alignment: .leading, spacing: 9) {
+                                Text("Создай свой @username").font(.system(size: 15, weight: .semibold))
+                                TextField("your_username", text: $claim)
+                                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                Button("Сохранить username") { Task { _ = await chat.claimUsername(claim) } }
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .disabled(claim.count < 3)
+                            }
+                        }
+                    }
 
                     HStack(spacing: 10) {
                         Image(systemName: "magnifyingglass").foregroundStyle(WalletTheme.secondary)
@@ -87,12 +103,13 @@ struct SpyderDevnetChatsHomeView: View {
                     } else {
                         VStack(spacing: 0) {
                             ForEach(filtered) { person in
-                                Button { onOpen(WalletContact(id: person.id, name: person.name, handle: "Spyder Chat", letter: String(person.name.prefix(1)).uppercased(), preview: "Открыть переписку", time: "")) } label: {
+                                Button { onOpen(WalletContact(id: person.id, name: person.name, handle: person.username.map { "@" + $0 } ?? "Spyder Chat", letter: String(person.name.prefix(1)).uppercased(), preview: "Открыть переписку", time: "")) } label: {
                                     HStack(spacing: 14) {
                                         avatar(person.name)
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(person.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(WalletTheme.ink)
-                                            Text("Открыть переписку").font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
+                                            Text(person.username.map { "@" + $0 } ?? "Открыть переписку")
+                                                .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
                                         }
                                         Spacer()
                                         Image(systemName: "chevron.right").foregroundStyle(WalletTheme.secondary)
@@ -136,7 +153,7 @@ struct SpyderDevnetChatsHomeView: View {
         VStack(alignment: .leading, spacing: 17) {
             Text("Общение без адресов кошельков")
                 .font(.system(size: 23, weight: .bold)).foregroundStyle(WalletTheme.ink)
-            Text("Чат станет доступен после запуска сервера Spyder Chat. Для теста между двумя iPhone обоим нужен один HTTPS-сервер. Сид-фраза не используется.")
+            Text("Создай профиль с уникальным username и найди друзей по @имени. Оба устройства должны быть подключены к одному серверу. Сид-фраза не используется.")
                 .font(.system(size: 14)).foregroundStyle(WalletTheme.secondary)
             WalletCard {
                 VStack(alignment: .leading, spacing: 14) {
@@ -149,6 +166,13 @@ struct SpyderDevnetChatsHomeView: View {
                     Text("Имя для чата").font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                     TextField("Как тебя зовут?", text: $name).font(.system(size: 16))
                         .foregroundStyle(WalletTheme.ink)
+                    Divider()
+                    Text("Username · уникальный, публичный").font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                    TextField("your_username", text: $username)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .font(.system(size: 16)).foregroundStyle(WalletTheme.ink)
+                    Text("3–20 символов: a–z, 0–9, _. Начинай с буквы.")
+                        .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
                 }
             }
             Button {
@@ -173,11 +197,11 @@ struct SpyderDevnetChatsHomeView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Button {
-                Task { await chat.register(name: name) }
+                Task { await chat.register(name: name, username: username) }
             } label: {
                 Text(chat.working ? "Подключаем…" : "Начать общение").spyderPrimaryButton()
-            }.buttonStyle(.plain).disabled(chat.working || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Text("Сначала разверни Cloudflare Worker из папки server/ через GitHub Actions. Его URL появится в логе Deploy. Devnet: сообщения без сквозного шифрования.")
+            }.buttonStyle(.plain).disabled(chat.working || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || username.count < 3)
+            Text("Нужен развёрнутый Cloudflare Worker из server/. Если адрес сервера не задан в сборке, введи HTTPS URL вручную. Сообщения пока без E2EE.")
                 .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
         }.spyderReveal(0.08)
     }
@@ -190,6 +214,43 @@ struct SpyderDevnetChatsHomeView: View {
                     Spacer()
                     Button("Готово") { adding = false }.foregroundStyle(WalletTheme.ink)
                 }
+                if !chat.myUsername.isEmpty {
+                    Text("Мой профиль: @" + chat.myUsername)
+                        .font(.system(size: 16, weight: .semibold)).textSelection(.enabled)
+                }
+                Text("Найти человека по username")
+                    .font(.system(size: 19, weight: .semibold))
+                HStack(spacing: 9) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(WalletTheme.secondary)
+                    TextField("Поиск @username", text: $lookup)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+                .padding(14).background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 17))
+                .task(id: lookup) {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    guard !Task.isCancelled else { return }
+                    await chat.searchUsers(lookup)
+                }
+                if chat.searching { ProgressView() }
+                ForEach(chat.searchResults) { person in
+                    HStack(spacing: 12) {
+                        avatar(person.name)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(person.name).font(.system(size: 15, weight: .semibold))
+                            Text("@" + (person.username ?? ""))
+                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                        }
+                        Spacer()
+                        if chat.contacts.contains(where: { $0.id == person.id }) {
+                            Text("В контактах").font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                        } else {
+                            Button("Добавить") {
+                                Task { if await chat.inviteUsername(person.username ?? "") { inviteSent = true } }
+                            }.font(.system(size: 13, weight: .semibold))
+                        }
+                    }.padding(.vertical, 5)
+                }
+                Divider()
                 Text("Твой код приглашения")
                     .font(.system(size: 14)).foregroundStyle(WalletTheme.secondary)
                 Text(chat.inviteCode)
@@ -199,7 +260,7 @@ struct SpyderDevnetChatsHomeView: View {
                     Label("Скопировать мой код", systemImage: "doc.on.doc").spyderPrimaryButton()
                 }.buttonStyle(.plain)
                 Divider()
-                Text("Добавить человека").font(.system(size: 20, weight: .semibold))
+                Text("Пригласить по коду").font(.system(size: 20, weight: .semibold))
                 TextField("Код приглашения друга", text: $invitation)
                     .textInputAutocapitalization(.characters).autocorrectionDisabled()
                     .font(.system(size: 16, design: .monospaced))

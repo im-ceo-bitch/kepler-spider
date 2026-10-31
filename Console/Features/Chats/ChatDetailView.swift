@@ -19,7 +19,7 @@ struct ChatDetailView: View {
                     .frame(width: 38, height: 38).background(WalletTheme.divider, in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     Text(contact.name).font(.system(size: 16, weight: .semibold))
-                    Text("Spyder Chat · Devnet").font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                    Text(contact.handle.isEmpty ? "Spyder Chat" : contact.handle).font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                 }
                 Spacer()
                 Button { Task { await chat.loadMessages(peer: contact.id) } } label: {

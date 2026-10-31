@@ -2,7 +2,6 @@ import SwiftUI
 import UIKit
 
 struct WalletRootView: View {
-    @EnvironmentObject private var legacyChat: LegacyConsoleChatStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedTab: WalletTab = .wallet
     @State private var path = NavigationPath()
@@ -40,7 +39,7 @@ struct WalletRootView: View {
         }
         .tint(WalletTheme.ink)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if path.isEmpty && !legacyChat.showingConversation { bottomBar }
+            if path.isEmpty { bottomBar }
         }
         .sheet(item: $presented) { modal in
             modalView(modal)

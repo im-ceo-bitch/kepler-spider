@@ -7,6 +7,7 @@ struct ConsoleApp: App {
     @State private var showingBrand = true
     @StateObject private var walletAccess = WalletAccess()
     @StateObject private var walletChains = WalletChainStore()
+    @StateObject private var publicAssets = WalletPublicAssetsStore()
     @StateObject private var spyderChat = SpyderChatStore()
     @StateObject private var legacyChat = LegacyConsoleChatStore()
     @StateObject private var spiderDevnet = SpiderDevnetStore()
@@ -26,6 +27,7 @@ struct ConsoleApp: App {
                 }
                 .environmentObject(walletAccess)
                 .environmentObject(walletChains)
+                .environmentObject(publicAssets)
                 .environmentObject(spyderChat)
                 .environmentObject(legacyChat)
                 .environmentObject(spiderDevnet)

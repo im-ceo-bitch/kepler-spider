@@ -24,6 +24,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.finance</string>
+	<key>SpyderChatServerURL</key>
+	<string>$(SPYDER_CHAT_SERVER_URL)</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Face ID защищает доступ к Spyder Wallet и секретной фразе восстановления.</string>
 	<key>LSRequiresIPhoneOS</key>

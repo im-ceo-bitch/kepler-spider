@@ -3,6 +3,7 @@ import UIKit
 
 struct WalletHomeView: View {
     @EnvironmentObject private var chains: WalletChainStore
+    @EnvironmentObject private var publicAssets: WalletPublicAssetsStore
     @EnvironmentObject private var spider: SpiderDevnetStore
     let onAction: (WalletModal) -> Void
     let onActivity: () -> Void
@@ -90,6 +91,10 @@ struct WalletHomeView: View {
             .padding(.bottom, 25)
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
+        .refreshable { await publicAssets.refresh(addresses: chains.addresses) }
+        .task(id: chains.addresses) {
+            if !chains.addresses.isEmpty { await publicAssets.refresh(addresses: chains.addresses) }
+        }
     }
 
     private var spiderSection: some View {
@@ -222,9 +227,28 @@ struct WalletHomeView: View {
                                     .foregroundStyle(WalletTheme.secondary)
                             }
                             Spacer()
-                            Text("— " + chain.ticker)
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(WalletTheme.secondary)
+                            VStack(alignment: .trailing, spacing: 4) {
+                                if let balance = publicAssets.balances[chain] {
+                                    Text(WalletPublicAssetsStore.formatted(balance) + " " + chain.ticker)
+                                        .font(.system(size: 15, weight: .medium)).monospacedDigit()
+                                    if let price = publicAssets.prices[chain] {
+                                        Text("≈ $" + WalletPublicAssetsStore.formatted(balance * price, fractionDigits: 2))
+                                            .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                    }
+                                } else {
+                                    Text("— " + chain.ticker)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundStyle(WalletTheme.secondary)
+                                }
+                            }
+                            if let value = chains.address(for: chain),
+                               let explorer = explorerURL(for: chain, address: value) {
+                                Link(destination: explorer) {
+                                    Image(systemName: "arrow.up.right.square")
+                                        .font(.system(size: 17))
+                                        .foregroundStyle(WalletTheme.secondary)
+                                }.accessibilityLabel("Открыть адрес в блокчейн-обозревателе")
+                            }
                         }
                         .padding(.vertical, 13)
                         if chain != SpyderChain.allCases.last { Divider().overlay(WalletTheme.divider) }
@@ -233,9 +257,53 @@ struct WalletHomeView: View {
                 .foregroundStyle(WalletTheme.ink)
                 .padding(.horizontal, 17)
                 .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 24))
-                Text("Балансы не загружаются · публичные сети ещё не подключены")
-                    .font(.system(size: 12))
-                    .foregroundStyle(WalletTheme.secondary)
+                if chains.address(for: .ethereum) != nil {
+                    VStack(spacing: 12) {
+                        ForEach(["USDT", "USDC"], id: \.self) { ticker in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(ticker).font(.system(size: 15, weight: .semibold))
+                                    Text("Ethereum · ERC-20").font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                                }
+                                Spacer()
+                                Text(publicAssets.stablecoins[ticker].map {
+                                    WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + ticker
+                                } ?? "— " + ticker)
+                                .font(.system(size: 14)).monospacedDigit()
+                            }
+                        }
+                    }
+                    .foregroundStyle(WalletTheme.ink)
+                    .padding(16)
+                    .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 20))
+                    ForEach(["USDT", "USDC"], id: \.self) { ticker in
+                        if let detail = publicAssets.stablecoinFailures[ticker] {
+                            Text(ticker + ": " + detail)
+                                .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    Text("USDT / USDC: только сеть Ethereum. Для переводов требуется ETH на газ. Токены пока только для просмотра и получения.")
+                        .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                }
+                HStack {
+                    Text(publicAssets.loading ? "Получаем балансы из блокчейнов…" :
+                         (publicAssets.updatedAt == nil ? "Проверь балансы в публичных сетях" : "Баланс из публичных сетей · только чтение"))
+                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                    Spacer()
+                    Button {
+                        Task { await publicAssets.refresh(addresses: chains.addresses) }
+                    } label: { Image(systemName: "arrow.clockwise") }
+                    .disabled(publicAssets.loading)
+                }
+                ForEach(SpyderChain.allCases) { chain in
+                    if let detail = publicAssets.failures[chain] {
+                        Text(chain.ticker + ": " + detail)
+                            .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                    }
+                }
+                if let detail = publicAssets.priceError {
+                    Text(detail).font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                }
             }
         }
         .alert("Не удалось создать адреса", isPresented: Binding(
@@ -244,6 +312,16 @@ struct WalletHomeView: View {
         )) {
             Button("Понятно", role: .cancel) { chains.errorMessage = nil }
         } message: { Text(chains.errorMessage ?? "") }
+    }
+
+    private func explorerURL(for chain: SpyderChain, address: String) -> URL? {
+        let prefix: String
+        switch chain {
+        case .ethereum: prefix = "https://etherscan.io/address/"
+        case .solana: prefix = "https://solscan.io/account/"
+        case .bitcoin: prefix = "https://blockstream.info/address/"
+        }
+        return URL(string: prefix + address)
     }
 
     private var balanceCard: some View {
@@ -259,11 +337,11 @@ struct WalletHomeView: View {
                     .foregroundStyle(Color.white.opacity(0.52))
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("Баланс · сеть не подключена")
+                Text(publicAssets.totalUSD == nil ? "Стоимость портфеля" : "Публичные сети · BTC / ETH / SOL")
                     .font(.system(size: 14))
                     .foregroundStyle(Color.white.opacity(0.58))
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("—")
+                    Text(publicAssets.totalUSD.map { WalletPublicAssetsStore.formatted($0, fractionDigits: 2) } ?? "—")
                         .font(.system(size: 36, weight: .semibold, design: .rounded))
                         .foregroundStyle(Color.white)
                         .monospacedDigit()
@@ -273,7 +351,7 @@ struct WalletHomeView: View {
                         .font(.system(size: 21, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.76))
                 }
-                Text("Стоимость портфеля появится после подключения сетей")
+                Text(publicAssets.totalUSD == nil ? "Оценка появится, когда все сети и курсы ответят" : "Оценка BTC / ETH / SOL без USDT и USDC")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.white.opacity(0.55))
             }

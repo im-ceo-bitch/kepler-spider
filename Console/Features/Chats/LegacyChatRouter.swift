@@ -1,14 +1,12 @@
 import SwiftUI
 
-// One source of truth: the existing Console identity, contact and WebSocket protocol.
-// Iumrah supplies interaction patterns only; its booking-specific API is not used here.
+// Spyder Chat is the active chat implementation. The legacy Console screen remains
+// in the repository for migration, but must never override the deployed Spyder API.
 struct ChatsHomeView: View {
-    @EnvironmentObject private var legacy: LegacyConsoleChatStore
     let onOpen: (WalletContact) -> Void
     let onAdd: () -> Void
 
     var body: some View {
-        LegacyConsoleChatsView()
-            .task { await legacy.bootstrap() }
+        SpyderDevnetChatsHomeView(onOpen: onOpen, onAdd: onAdd)
     }
 }

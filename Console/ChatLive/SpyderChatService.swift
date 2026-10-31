@@ -9,12 +9,14 @@ private struct SpyderChatIdentity: Codable {
     var secret: String
     var inviteCode: String
     var name: String
+    var username: String?
     var token: String { "\(id).\(secret)" }
 }
 
 struct SpyderChatPerson: Identifiable, Codable, Hashable {
     let id: String
     let name: String
+    let username: String?
 }
 
 struct SpyderServerMessage: Codable, Identifiable, Hashable {
@@ -31,6 +33,7 @@ private struct SpyderChatList: Decodable {
     let requests: [SpyderChatPerson]
     let invite_code: String
 }
+private struct SpyderChatSearchResult: Decodable { let users: [SpyderChatPerson] }
 private struct SpyderChatHistory: Decodable { let messages: [SpyderServerMessage] }
 private struct SpyderChatErrorResponse: Decodable { let error: String }
 
@@ -91,6 +94,9 @@ private enum SpyderChatNetworkError: LocalizedError {
 final class SpyderChatStore: ObservableObject {
     @Published private(set) var hasIdentity = false
     @Published private(set) var myName = ""
+    @Published private(set) var myUsername = ""
+    @Published private(set) var searchResults: [SpyderChatPerson] = []
+    @Published private(set) var searching = false
     @Published private(set) var inviteCode = ""
     @Published private(set) var contacts: [SpyderChatPerson] = []
     @Published private(set) var requests: [SpyderChatPerson] = []
@@ -106,11 +112,14 @@ final class SpyderChatStore: ObservableObject {
     private static let serverKey = "spyder.chat.server.url.v1"
 
     init() {
-        serverAddress = UserDefaults.standard.string(forKey: Self.serverKey) ?? ""
+        let bundled = Bundle.main.object(forInfoDictionaryKey: "SpyderChatServerURL") as? String ?? ""
+        let configured = bundled.hasPrefix("https://") ? bundled : ""
+        serverAddress = UserDefaults.standard.string(forKey: Self.serverKey) ?? configured
         if let data = SpyderChatKeychain.load(), let saved = try? JSONDecoder().decode(SpyderChatIdentity.self, from: data) {
             identity = saved
             hasIdentity = true
             myName = saved.name
+            myUsername = saved.username ?? ""
             inviteCode = saved.inviteCode
         }
     }
@@ -191,7 +200,7 @@ final class SpyderChatStore: ObservableObject {
         }
     }
 
-    func register(name: String) async {
+    func register(name: String, username: String) async {
         guard !working, identity == nil else { return }
         working = true
         defer { working = false }
@@ -199,16 +208,22 @@ final class SpyderChatStore: ObservableObject {
             try configureServer()
             let cleaned = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(36))
             guard !cleaned.isEmpty else { errorMessage = "Введите имя для чата."; return }
-            let candidate = SpyderChatIdentity(id: try randomHex(16), secret: try randomHex(32), inviteCode: try randomHex(12).uppercased(), name: cleaned)
-            struct Register: Encodable { let id: String; let secret: String; let invite_code: String; let name: String }
-            struct Ack: Decodable { let id: String; let name: String; let invite_code: String }
-            let body = try JSONEncoder().encode(Register(id: candidate.id, secret: candidate.secret, invite_code: candidate.inviteCode, name: candidate.name))
+            let handle = username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().replacingOccurrences(of: "@", with: "")
+            guard handle.range(of: "^[a-z][a-z0-9_]{2,19}$", options: .regularExpression) != nil else {
+                errorMessage = "Username: 3–20 символов, латинские буквы, цифры и _. Начни с буквы."
+                return
+            }
+            let candidate = SpyderChatIdentity(id: try randomHex(16), secret: try randomHex(32), inviteCode: try randomHex(12).uppercased(), name: cleaned, username: handle)
+            struct Register: Encodable { let id: String; let secret: String; let invite_code: String; let name: String; let username: String }
+            struct Ack: Decodable { let id: String; let name: String; let username: String?; let invite_code: String }
+            let body = try JSONEncoder().encode(Register(id: candidate.id, secret: candidate.secret, invite_code: candidate.inviteCode, name: candidate.name, username: handle))
             let response: Ack = try await perform("/v1/register", method: "POST", payload: body, anonymous: true)
             guard response.id == candidate.id, response.invite_code == candidate.inviteCode else { throw SpyderChatNetworkError.invalidResponse }
             try SpyderChatKeychain.save(JSONEncoder().encode(candidate))
             identity = candidate
             hasIdentity = true
             myName = candidate.name
+            myUsername = handle
             inviteCode = candidate.inviteCode
             connected = true
             await refresh()
@@ -224,6 +239,44 @@ final class SpyderChatStore: ObservableObject {
             inviteCode = result.invite_code
             connected = true
         } catch { connected = false }
+    }
+
+    func claimUsername(_ value: String) async -> Bool {
+        do {
+            struct Payload: Encodable { let username: String }
+            struct Ack: Decodable { let username: String }
+            let handle = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().replacingOccurrences(of: "@", with: "")
+            let ack: Ack = try await perform("/v1/profile/username", method: "POST", payload: JSONEncoder().encode(Payload(username: handle)))
+            guard var current = identity else { throw SpyderChatNetworkError.missingAccount }
+            current.username = ack.username
+            try SpyderChatKeychain.save(JSONEncoder().encode(current))
+            identity = current
+            myUsername = ack.username
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
+    }
+
+    func searchUsers(_ term: String) async {
+        let q = term.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().replacingOccurrences(of: "@", with: "")
+        guard q.count >= 2, q.range(of: "^[a-z][a-z0-9_]{1,19}$", options: .regularExpression) != nil else { searchResults = []; return }
+        searching = true
+        defer { searching = false }
+        do {
+            guard let escaped = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return }
+            let response: SpyderChatSearchResult = try await perform("/v1/users/search?q=\(escaped)")
+            searchResults = response.users
+            connected = true
+        } catch { searchResults = []; errorMessage = error.localizedDescription }
+    }
+
+    func inviteUsername(_ username: String) async -> Bool {
+        do {
+            struct Payload: Encodable { let username: String }
+            struct Ack: Decodable { let status: String }
+            let _: Ack = try await perform("/v1/invites", method: "POST", payload: JSONEncoder().encode(Payload(username: username)))
+            await refresh()
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
     }
 
     func invite(_ code: String) async -> Bool {

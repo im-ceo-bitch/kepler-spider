@@ -241,7 +241,7 @@ struct WalletReceiveView: View {
                 }
                 WalletCard {
                     VStack(spacing: 17) {
-                        Label(selected == nil ? "SPIDER TEST DEVNET ONLY" : "MAINNET ADDRESS · TESTING ONLY",
+                        Label(selected == nil ? "SPIDER TEST DEVNET ONLY" : "MAINNET · CHECK NETWORK",
                               systemImage: "exclamationmark.shield")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(WalletTheme.secondary)
@@ -275,7 +275,9 @@ struct WalletReceiveView: View {
                                     .font(.system(size: 36, weight: .ultraLight))
                                     .foregroundStyle(WalletTheme.secondary)
                                     .frame(maxWidth: .infinity, minHeight: 90)
-                                Toggle("Понимаю: это ранняя тестовая версия. Не отправлять реальные средства.", isOn: $acknowledge)
+                                Toggle(selected == nil ? "Понимаю: SPD — только тестовая сеть." :
+                                       "Понимаю риски: приложение не прошло аудит; сначала проверю сеть и тестовый перевод.",
+                                       isOn: $acknowledge)
                                     .font(.system(size: 13))
                                     .tint(WalletTheme.ink)
                                     .foregroundStyle(WalletTheme.ink)
@@ -302,7 +304,9 @@ struct WalletReceiveView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                Text("Spider Chain — исследовательская Devnet. Другие адреса показаны только для тестирования. Не используйте этот экран для реальных депозитов.")
+                Text(selected == nil ?
+                     "Spider Chain — исследовательская Devnet, SPD не имеет реальной стоимости." :
+                     "BTC, SOL и ETH — реальные адреса Mainnet. USDT и USDC принимаются только как ERC-20 на Ethereum-адрес. Для вывода токенов понадобится ETH на комиссию. Реальная отправка из Spyder Wallet пока не активирована; приложение не прошло аудит.")
                     .font(.system(size: 12))
                     .foregroundStyle(WalletTheme.secondary)
             }
