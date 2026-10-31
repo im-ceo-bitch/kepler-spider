@@ -203,7 +203,7 @@ final class SpiderDevnetStore: ObservableObject {
                 address = result
                 if hasConfiguration { await refresh() }
             } catch {
-                if epoch == sessionEpoch { error = error.localizedDescription }
+                if epoch == sessionEpoch { self.error = error.localizedDescription }
             }
         }
     }
@@ -246,7 +246,7 @@ final class SpiderDevnetStore: ObservableObject {
         } catch {
             if epoch == sessionEpoch {
                 connected = false
-                error = error.localizedDescription
+                self.error = error.localizedDescription
             }
         }
     }

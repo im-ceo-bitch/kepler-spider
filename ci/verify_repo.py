@@ -32,6 +32,11 @@ def main() -> None:
         require("\x00" not in data, f"NUL byte in {source.relative_to(ROOT)}")
         require('SecureField("12 или 24 слова, через пробел", text: $importText, axis:' not in data,
                 f"unsupported SecureField multiline initializer in {source.relative_to(ROOT)}")
+    # Regression: in a `catch` block, implicit `error` is the immutable caught
+    # exception, not SpiderDevnetStore.error. This previously broke TestFlight.
+    devnet_store = (ROOT / "Console/SpiderDevnet/SpiderDevnetStore.swift").read_text(encoding="utf-8")
+    require(re.search(r"(?<![.\w])error\s*=\s*error\.localizedDescription\b", devnet_store) is None,
+            "SpiderDevnetStore catch shadowing: assign to self.error")
     catalog = ROOT / "Console/Resources/Assets.xcassets"
     count = 0
     for json_path in catalog.rglob("Contents.json"):

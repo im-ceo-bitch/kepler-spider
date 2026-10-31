@@ -26,8 +26,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.spyder.wallet
         PRODUCT_NAME: Console
-        MARKETING_VERSION: 1.3.0
-        CURRENT_PROJECT_VERSION: 200
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: 1
         SWIFT_VERSION: 5.10
 
         # One SwiftUI product for iPhone + iPad + Mac Catalyst.
