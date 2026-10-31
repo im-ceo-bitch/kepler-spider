@@ -66,28 +66,56 @@ jobs:
           echo "Building Spyder Wallet ${MARKETING_VERSION} (${BUILD_NUMBER})"
           echo "### Spyder Wallet ${MARKETING_VERSION} (${BUILD_NUMBER})" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Select working Xcode 26 on Intel runner
+      # The image includes Xcode 26.0.1, but its iOS 26.0 simulator SDK
+      # does not match any of the installed simulator runtimes (26.2/26.4/26.5).
+      # Use the most recent installed Xcode compatible with an installed runtime.
+      - name: Select Xcode with matching iOS Simulator runtime
         run: |
           set -euo pipefail
           echo "Runner: $(uname -m) / macOS $(sw_vers -productVersion)"
           test "$(uname -m)" = x86_64 || { echo '::error::Expected macos-26-intel x86_64'; exit 1; }
           FOUND=''
-          for APP in /Applications/Xcode_26*.app /Applications/Xcode.app; do
+          # Ordered explicitly; a wildcard picks 26.0.1 first and breaks actool.
+          for APP in \
+            /Applications/Xcode_26.6.app \
+            /Applications/Xcode_26.5.app \
+            /Applications/Xcode_26.4.1.app \
+            /Applications/Xcode_26.3.app \
+            /Applications/Xcode_26.2.app; do
             [[ -d "$APP/Contents/Developer" ]] || continue
-            echo "Testing $APP"
-            if OUTPUT="$(DEVELOPER_DIR="$APP/Contents/Developer" xcodebuild -version 2>&1)"; then
-              printf '%s\n' "$OUTPUT"
-              if grep -Eq '^Xcode 26([.]|$)' <<< "$OUTPUT"; then
-                FOUND="$APP/Contents/Developer"
-                break
-              fi
-            else
-              echo "::warning::xcodebuild failed under $APP; checking next installation"
-              printf '%s\n' "$OUTPUT" | tail -10
+            DEVDIR="$APP/Contents/Developer"
+            echo "Checking $APP"
+            if ! OUTPUT="$(DEVELOPER_DIR="$DEVDIR" xcodebuild -version 2>&1)"; then
+              echo "::warning::xcodebuild unavailable at $APP"
+              continue
             fi
+            printf '%s\n' "$OUTPUT"
+            if ! grep -Eq '^Xcode 26([.]|$)' <<< "$OUTPUT"; then
+              continue
+            fi
+            if ! SIM_SDK="$(DEVELOPER_DIR="$DEVDIR" xcrun --sdk iphonesimulator --show-sdk-version 2>&1)"; then
+              echo "::warning::Simulator SDK unavailable at $APP"
+              continue
+            fi
+            if ! RUNTIMES="$(DEVELOPER_DIR="$DEVDIR" xcrun simctl list runtimes 2>&1)"; then
+              echo "::warning::Simulator runtimes cannot be listed with $APP"
+              continue
+            fi
+            echo "iOS Simulator SDK: $SIM_SDK"
+            echo "$RUNTIMES"
+            if grep -Fq "iOS $SIM_SDK " <<< "$RUNTIMES" && \
+               grep -F "iOS $SIM_SDK " <<< "$RUNTIMES" | grep -Fq 'com.apple.CoreSimulator.SimRuntime.iOS-'; then
+              FOUND="$DEVDIR"
+              break
+            fi
+            echo "::warning::No installed iOS $SIM_SDK runtime for $APP; trying next Xcode"
           done
-          [[ -n "$FOUND" ]] || { echo '::error::No functioning Xcode 26 installation on this GitHub runner'; exit 1; }
+          [[ -n "$FOUND" ]] || {
+            echo '::error::No Xcode 26 with compatible iOS Simulator runtime on runner'
+            exit 1
+          }
           echo "DEVELOPER_DIR=$FOUND" >> "$GITHUB_ENV"
+          echo "Selected $FOUND"
           DEVELOPER_DIR="$FOUND" xcrun --sdk iphoneos --show-sdk-version
 
       - name: Verify Spyder source and tests
