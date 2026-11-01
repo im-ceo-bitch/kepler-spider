@@ -21,7 +21,7 @@ struct WalletChatMessage: Identifiable {
     let outgoing: Bool
 }
 
-enum WalletTab: Hashable { case wallet, chats }
+enum WalletTab: Hashable { case wallet, chats, terminal }
 enum WalletRoute: Hashable { case chat(WalletContact), activity, asset(SpyderChain) }
 enum WalletModal: String, Identifiable {
     case send, receive, touch, profile, request, accounts, security, addressBook, devnetTransfer

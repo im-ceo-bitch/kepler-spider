@@ -13,35 +13,58 @@ public enum SpyderChatDisplayMode: String, CaseIterable, Identifiable {
 public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
     private let context: TerminalActionContext
     private let chatContent: () -> ChatContent
+    private let showsChatSwitch: Bool
+    private let actionHost: any TerminalActionHost
     private let engine = try? TerminalEngine()
     @StateObject private var controller: Session
     @State private var selection: SpyderChatDisplayMode = .chat
     @State private var settings = TerminalSettingsStore().load()
     @Environment(\.colorScheme) private var systemColorScheme
+    @AppStorage("spyder.wallet.language") private var appLanguage = "ru"
     @State private var showSettings = false
 
     public init(context: TerminalActionContext, host: any TerminalActionHost,
+                showsChatSwitch: Bool = true,
                 @ViewBuilder chatContent: @escaping () -> ChatContent) {
         self.context = context
         self.chatContent = chatContent
+        self.showsChatSwitch = showsChatSwitch
+        self.actionHost = host
+        _selection = State(initialValue: showsChatSwitch ? .chat : .terminal)
         _controller = StateObject(wrappedValue: Session(host: host))
     }
 
-    private var english: Bool { settings.language == .en }
+    private var english: Bool {
+        settings.language == .en || (settings.language == .auto && appLanguage == "en")
+    }
     private var accent: Color {
         settings.accent == .signalRed ? Color(red: 0.93, green: 0.22, blue: 0.25) :
             Color(red: 0.20, green: 0.53, blue: 1.00)
     }
 
+    private var palette: TerminalThemePalette {
+        TerminalThemePalette(appearance: settings.appearance,
+                             systemScheme: systemColorScheme, accent: settings.accent)
+    }
+    private var terminalScheme: ColorScheme {
+        settings.appearance == .system ? systemColorScheme : (settings.appearance == .light ? .light : .dark)
+    }
+
     public var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Picker("Display", selection: $selection) {
+                if showsChatSwitch {
+                    Picker("Display", selection: $selection) {
                     Text(english ? "Chat" : "Чат").tag(SpyderChatDisplayMode.chat)
                     Text(english ? "Terminal" : "Терминал").tag(SpyderChatDisplayMode.terminal)
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("spyder.chat.terminalPicker")
+                } else {
+                    Text("SPYDER TERMINAL")
+                        .font(.system(.headline, design: .monospaced))
+                }
+                Spacer(minLength: 0)
                 if selection == .terminal {
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape")
@@ -52,16 +75,19 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
+            .environment(\.colorScheme, selection == .terminal ? terminalScheme : systemColorScheme)
 
             // Keep the existing chat subtree mounted while the terminal is visible.
             // This preserves local scroll/input state when toggling between modes.
             ZStack {
-                chatContent()
+                if showsChatSwitch {
+                    chatContent()
                     .opacity(selection == .chat ? 1 : 0)
                     .allowsHitTesting(selection == .chat)
                     .accessibilityHidden(selection != .chat)
+                }
                 terminalContent
-                    .environment(\.colorScheme, settings.appearance == .system ? systemColorScheme : .dark)
+                    .environment(\.colorScheme, terminalScheme)
                     .opacity(selection == .terminal ? 1 : 0)
                     .allowsHitTesting(selection == .terminal)
                     .disabled(selection != .terminal)
@@ -69,6 +95,7 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(selection == .terminal ? palette.background : .clear)
         .sheet(isPresented: $showSettings) {
             NavigationStack {
                 SpyderTerminalSettingsView(settings: $settings)
@@ -78,12 +105,21 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
                         }
                     }
             }
+            .environment(\.colorScheme, terminalScheme)
         }
         .onChange(of: settings) { _, newValue in
             try? TerminalSettingsStore().save(newValue)
             if !newValue.historyEnabled { controller.clearHistory() }
         }
         .onChange(of: context) { _, _ in controller.changeConversation() }
+    }
+
+    private func supportedCommands() -> Set<String> {
+        let local: Set<String> = ["terminal.settings.open", "terminal.help", "terminal.history.open",
+                                  "terminal.mode.set", "terminal.clear", "terminal.capabilities"]
+        .union(TerminalPreferenceCommands.actionIDs)
+        let registered = (actionHost as? TerminalActionRegistryHost)?.availableCommandIDs ?? []
+        return local.union(registered)
     }
 
     private var terminalContent: some View {
@@ -94,7 +130,7 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
                     .font(.system(.caption, design: .monospaced, weight: .bold))
                 Spacer()
                 Circle().fill(.green).frame(width: 7, height: 7)
-                Text("READY").font(.system(.caption2, design: .monospaced))
+                Text(english ? "READY" : "ГОТОВ").font(.system(.caption2, design: .monospaced))
             }
             .foregroundStyle(.secondary)
             .padding(16)
@@ -104,8 +140,10 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(controller.entries) { entry in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("❯ " + entry.command)
-                                    .foregroundStyle(accent)
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    Text("❯").foregroundStyle(accent)
+                                    TerminalSyntaxText.render(entry.command, palette: palette)
+                                }
                                 Text(entry.output)
                                     .foregroundStyle(.primary)
                                     .textSelection(.enabled)
@@ -130,13 +168,13 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
                 approvalView(approval)
             }
 
-            SpyderTerminalInputView(settings: $settings) { input, interpretation in
+            SpyderTerminalInputView(settings: $settings, availableCommands: { supportedCommands() }) { input, interpretation in
                 run(input, interpretation)
             }
             .disabled(controller.isRunning || controller.approval != nil)
             .padding(12)
         }
-        .background(settings.appearance == .oled ? Color.black : Color.gray.opacity(0.08))
+        .background(palette.background)
         .accessibilityIdentifier("spyder.chat.terminal")
     }
 
@@ -152,7 +190,7 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
                 }
                 .buttonStyle(.bordered)
                 Button(english ? "Confirm" : "Подтвердить") {
-                    Task { await controller.confirm(approval.id, retainHistory: settings.historyEnabled) }
+                    Task { await controller.confirm(approval.id, retainHistory: settings.historyEnabled, english: english) }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(accent)
@@ -167,33 +205,45 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
     private func run(_ input: String, _ interpretation: TerminalInterpretation) {
         // Internal commands are never forwarded to a financial/network host.
         if case .matched(let match) = interpretation {
+            if match.commandID == "terminal.clear" {
+                controller.clearHistory()
+                return
+            }
+            if match.commandID == "terminal.capabilities" {
+                let ids = supportedCommands()
+                let commands = (engine?.catalog(language: english ? .en : .ru) ?? [])
+                    .filter { ids.contains($0.id) }
+                    .compactMap { $0.standard.first }
+                controller.append(command: input, output: commands.joined(separator: "\n"),
+                                  retainHistory: settings.historyEnabled)
+                return
+            }
             if match.commandID == "terminal.settings.open" {
                 showSettings = true
                 return
             }
             if match.commandID == "terminal.help" {
-                let sample = (engine?.catalog(language: match.language) ?? []).prefix(12)
+                let ids = supportedCommands()
+                let sample = (engine?.catalog(language: match.language) ?? [])
+                    .filter { ids.contains($0.id) }.prefix(20)
                     .compactMap { $0.standard.first }.joined(separator: "\n")
                 controller.append(command: input, output: sample, retainHistory: settings.historyEnabled)
                 return
             }
-            if match.commandID == "terminal.mode.set" {
-                let value = match.parameters["mode"]?.lowercased() ?? ""
-                if let mode = TerminalLevel(rawValue: value) {
-                    settings.level = mode
-                    controller.append(command: input, output: "Mode: \(value)", retainHistory: settings.historyEnabled)
-                } else {
-                    controller.append(command: input, output: "Modes: beginner / standard / developer", retainHistory: settings.historyEnabled)
-                }
+            if TerminalPreferenceCommands.actionIDs.contains(match.commandID) {
+                let output = TerminalPreferenceCommands.apply(match, settings: &settings) ?? ""
+                controller.append(command: input, output: output, retainHistory: settings.historyEnabled)
                 return
             }
             if match.commandID == "terminal.history.open" {
-                controller.append(command: input, output: "\(controller.entries.count) entries in this session", retainHistory: settings.historyEnabled)
+                let total = controller.entries.count
+                let output = english ? "\(total) entries in this session" : "Записей в текущей сессии: \(total)"
+                controller.append(command: input, output: output, retainHistory: settings.historyEnabled)
                 return
             }
         }
         Task { await controller.handle(input: input, interpretation: interpretation,
-                                        context: context, retainHistory: settings.historyEnabled) }
+                                        context: context, retainHistory: settings.historyEnabled, english: english) }
     }
 }
 
@@ -220,30 +270,42 @@ private final class Session: ObservableObject {
     }
 
     func handle(input: String, interpretation: TerminalInterpretation,
-                context: TerminalActionContext, retainHistory: Bool) async {
+                context: TerminalActionContext, retainHistory: Bool, english: Bool) async {
         guard !isRunning else { return }
         isRunning = true
         defer { isRunning = false }
-        activeCommand = input
+        // An approval preview can display the message, but the scrollback must not
+        // copy an outgoing message body or future financial operation details.
+        let displayedCommand: String
+        if case .matched(let match) = interpretation, match.risk == .sensitive {
+            displayedCommand = "[protected: " + match.commandID + "]"
+        } else {
+            displayedCommand = input
+        }
+        activeCommand = displayedCommand
         let callGeneration = conversationGeneration
         let result: TerminalDispatchOutcome
         switch interpretation {
         case .matched(let match): result = await gate.submit(match, context: context)
-        case .developerInput: result = .rejected("JavaScript runtime is not connected")
-        case .suggestions: result = .rejected("Choose a suggested command")
-        case .unrecognized: result = .rejected("Unknown command / Неизвестная команда")
+        case .developerInput: result = .rejected(english ? "JavaScript runtime is not connected" : "Исполнитель JavaScript пока не подключён")
+        case .suggestions: result = .rejected(english ? "Choose a suggested command" : "Выберите предложенную команду")
+        case .unrecognized: result = .rejected(english ? "Unknown command" : "Неизвестная команда")
         }
         guard callGeneration == conversationGeneration else { return }
-        render(result, command: input, retainHistory: retainHistory)
+        render(result, command: displayedCommand, retainHistory: retainHistory, english: english)
     }
 
-    func confirm(_ id: UUID, retainHistory: Bool) async {
+    func confirm(_ id: UUID, retainHistory: Bool, english: Bool) async {
         guard !isRunning else { return }
         isRunning = true
         defer { isRunning = false }
+        let callGeneration = conversationGeneration
+        let command = activeCommand
         let result = await gate.approve(id)
+        // Do not echo an earlier conversation's result into a newly selected chat.
+        guard callGeneration == conversationGeneration else { return }
         approval = nil
-        render(result, command: activeCommand, retainHistory: retainHistory)
+        render(result, command: command, retainHistory: retainHistory, english: english)
     }
 
     func cancel() { gate.cancelApproval(); approval = nil }
@@ -254,14 +316,14 @@ private final class Session: ObservableObject {
         clearHistory()
     }
 
-    private func render(_ result: TerminalDispatchOutcome, command: String, retainHistory: Bool) {
+    private func render(_ result: TerminalDispatchOutcome, command: String, retainHistory: Bool, english: Bool) {
         switch result {
         case .completed(let value): append(command: command, output: value.message, retainHistory: retainHistory)
         case .needsInput(let missing):
-            append(command: command, output: "Required: " + missing.joined(separator: ", "), retainHistory: retainHistory)
+            append(command: command, output: (english ? "Required: " : "Необходимо указать: ") + missing.joined(separator: ", "), retainHistory: retainHistory)
         case .confirmationRequired(let value):
             approval = value
-            append(command: command, output: "Review required before execution", retainHistory: retainHistory)
+            append(command: command, output: english ? "Review required before execution" : "Для выполнения требуется подтверждение", retainHistory: retainHistory)
         case .rejected(let message): append(command: command, output: message, retainHistory: retainHistory)
         }
     }

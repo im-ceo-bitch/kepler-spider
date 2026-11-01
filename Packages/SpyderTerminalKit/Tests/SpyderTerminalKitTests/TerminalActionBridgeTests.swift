@@ -33,6 +33,7 @@ final class TerminalActionBridgeTests: XCTestCase {
         XCTAssertEqual(executed.count, 1)
         XCTAssertTrue(previews.isEmpty)
         XCTAssertEqual(executed.first?.commandID, "chat.theme.set")
+        XCTAssertEqual(executed.first?.language, .en)
         XCTAssertEqual(executed.first?.parameters["theme"], "cyberpunk")
         XCTAssertEqual(executed.first?.context.conversationID, "conversation-1")
     }
@@ -58,6 +59,25 @@ final class TerminalActionBridgeTests: XCTestCase {
         guard case .rejected = replay else { return XCTFail("Approval replay must fail") }
         let replayCount = await host.executions.count
         XCTAssertEqual(replayCount, 1)
+    }
+
+    func testCurrentChatSendCannotRunBeforeReview() async {
+        let host = await RecordingHost()
+        let gate = await TerminalExecutionGate(host: host)
+        let parsed = match("sp send Hello, Ali!")
+        XCTAssertEqual(parsed.risk, .sensitive)
+        let request = await gate.submit(parsed, context: .init(conversationID: "ali"))
+        guard case .confirmationRequired(let approval) = request else {
+            return XCTFail("Chat send must require preview")
+        }
+        let sentBefore = await host.executions.count
+        XCTAssertEqual(sentBefore, 0)
+        let result = await gate.approve(approval.id)
+        guard case .completed = result else { return XCTFail("Expected confirmed send") }
+        let sentAfter = await host.executions
+        XCTAssertEqual(sentAfter.count, 1)
+        XCTAssertEqual(sentAfter.first?.parameters["text"], "Hello, Ali!")
+        XCTAssertEqual(sentAfter.first?.context.conversationID, "ali")
     }
 
     func testCancellationForbidsExecution() async {

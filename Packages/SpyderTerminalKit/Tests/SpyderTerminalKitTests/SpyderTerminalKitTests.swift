@@ -28,6 +28,28 @@ final class SpyderTerminalKitTests: XCTestCase {
         XCTAssertEqual(matched("сп тема чата гром", level: .standard).parameters["theme"], "thunder")
     }
 
+    func testShortThemeCommandsRUEN() {
+        XCTAssertEqual(matched("сп измени тему на гром", level: .standard).parameters["theme"], "thunder")
+        XCTAssertEqual(matched("sp change theme to Chrome", level: .standard).parameters["theme"], "chrome")
+    }
+
+    func testSendingRequiresConfirmationAndPreservesMessage() {
+        let message = matched("сп отправь Привет, Али!", level: .standard)
+        XCTAssertEqual(message.commandID, "chat.send")
+        XCTAssertTrue(message.needsConfirmation)
+        XCTAssertEqual(message.parameters["text"], "Привет, Али!")
+        let english = matched("sp send Hello, Ali!", level: .standard)
+        XCTAssertEqual(english.risk, .sensitive)
+    }
+
+    func testBeginnerNaturalLanguageToggleIsEffective() {
+        let settings = TerminalSettings(level: .beginner, naturalLanguageEnabled: false)
+        switch engine.interpret("поставь киберпанк в чате", settings: settings) {
+        case .matched: XCTFail("Free-form alias is disabled")
+        default: break
+        }
+    }
+
     func testBeginnerParaphrase() {
         XCTAssertEqual(matched("поставь киберпанк в чате", level: .beginner).commandID, "chat.theme.set")
         XCTAssertEqual(matched("show my contacts", level: .beginner).commandID, "contacts.list")
@@ -65,6 +87,11 @@ final class SpyderTerminalKitTests: XCTestCase {
         XCTAssertEqual(match.parameters["text"], "Привет, Ёжик!")
     }
 
+    func testMessageWhitespaceIsNotRewritten() {
+        let match = matched("сп отправь Привет,  Али!", level: .standard)
+        XCTAssertEqual(match.parameters["text"], "Привет,  Али!")
+    }
+
     func testProfessionalModeDoesNotExecuteUserCode() {
         switch engine.interpret("await spyder.chat.setTheme('cyberpunk')", settings: .init(level: .developer)) {
         case .developerInput: break
@@ -97,6 +124,29 @@ final class SpyderTerminalKitTests: XCTestCase {
     func testSettingsCoding() throws {
         let settings = TerminalSettings(language: .auto, level: .beginner)
         XCTAssertEqual(try JSONDecoder().decode(TerminalSettings.self, from: JSONEncoder().encode(settings)), settings)
+    }
+
+    func testContextRestrictedSuggestionsNeverOfferUnavailableFinancialActions() {
+        let settings = TerminalSettings(level: .standard)
+        let available: Set<String> = ["wallet.balance", "terminal.help"]
+        let wallet = engine.suggestions(for: "sp wallet b", settings: settings,
+                                         availableCommandIDs: available)
+        XCTAssertTrue(wallet.contains { $0.commandID == "wallet.balance" })
+        let forbidden = engine.suggestions(for: "sp wallet s", settings: settings,
+                                            availableCommandIDs: available)
+        XCTAssertFalse(forbidden.contains { $0.commandID == "wallet.send" })
+        let russian = engine.suggestions(for: "сп пе", settings: settings,
+                                          availableCommandIDs: available)
+        XCTAssertFalse(russian.contains { $0.commandID == "wallet.send" })
+    }
+
+    func testExtendedDictionaryAliasesAreBilingual() {
+        XCTAssertEqual(matched("сп баланс кошелька", level: .standard).commandID, "wallet.balance")
+        XCTAssertEqual(matched("sp wallet balance", level: .standard).commandID, "wallet.balance")
+        XCTAssertEqual(matched("сп очисти терминал", level: .standard).commandID, "terminal.clear")
+        XCTAssertEqual(matched("sp clear", level: .standard).commandID, "terminal.clear")
+        XCTAssertEqual(matched("сп доступные команды", level: .standard).commandID, "terminal.capabilities")
+        XCTAssertEqual(matched("sp capabilities", level: .standard).commandID, "terminal.capabilities")
     }
 
     private func matched(_ input: String, level: TerminalLevel) -> TerminalMatch {

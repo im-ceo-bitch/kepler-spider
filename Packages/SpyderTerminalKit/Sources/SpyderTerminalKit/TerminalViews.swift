@@ -6,20 +6,26 @@ public struct SpyderTerminalInputView: View {
     @Binding private var settings: TerminalSettings
     private let engine: TerminalEngine?
     private let onCommand: (String, TerminalInterpretation) -> Void
+    private let availableCommands: () -> Set<String>?
     @State private var input = ""
+    @Environment(\.colorScheme) private var systemColorScheme
 
     public init(settings: Binding<TerminalSettings>,
+                availableCommands: @escaping () -> Set<String>? = { nil },
                 onInterpretation: @escaping (TerminalInterpretation) -> Void) {
         _settings = settings
         self.engine = try? TerminalEngine()
+        self.availableCommands = availableCommands
         self.onCommand = { _, result in onInterpretation(result) }
     }
 
     /// Use this initializer when the chat shell also needs the raw user command for its transcript.
     public init(settings: Binding<TerminalSettings>,
+                availableCommands: @escaping () -> Set<String>? = { nil },
                 onCommand: @escaping (String, TerminalInterpretation) -> Void) {
         _settings = settings
         self.engine = try? TerminalEngine()
+        self.availableCommands = availableCommands
         self.onCommand = onCommand
     }
 
@@ -28,8 +34,14 @@ public struct SpyderTerminalInputView: View {
             Color(red: 0.20, green: 0.53, blue: 1.00)
     }
 
+    private var palette: TerminalThemePalette {
+        TerminalThemePalette(appearance: settings.appearance,
+                             systemScheme: systemColorScheme, accent: settings.accent)
+    }
+
     private var suggestions: [TerminalSuggestion] {
-        engine?.suggestions(for: input, settings: settings) ?? []
+        engine?.suggestions(for: input, settings: settings,
+                            availableCommandIDs: availableCommands()) ?? []
     }
 
     private var isEnglish: Bool {
@@ -58,9 +70,8 @@ public struct SpyderTerminalInputView: View {
                                 }
                             } label: {
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(item.completion)
+                                    TerminalSyntaxText.render(item.completion, palette: palette)
                                         .font(.system(size: CGFloat(settings.fontSize), design: .monospaced))
-                                        .foregroundStyle(.primary)
                                     Text(item.summary)
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
@@ -75,12 +86,32 @@ public struct SpyderTerminalInputView: View {
                 }
                 .frame(maxHeight: 210)
                 .padding(.horizontal, 12)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .background(palette.panel, in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.border, lineWidth: 0.5))
             }
             HStack(spacing: 10) {
                 Text("❯")
                     .foregroundStyle(accent)
                     .font(.system(size: CGFloat(settings.fontSize + 3), weight: .bold, design: .monospaced))
+                #if canImport(UIKit)
+                ZStack(alignment: .topLeading) {
+                    SpyderSyntaxEditor(text: $input, palette: palette,
+                                       fontSize: settings.fontSize,
+                                       multiline: settings.level == .developer,
+                                       onSubmit: submit)
+                        .frame(height: settings.level == .developer ? 116 : 28)
+                    if input.isEmpty {
+                        Text(settings.level == .developer ?
+                             (isEnglish ? "// SpyderScript preview" : "// Предпросмотр SpyderScript") :
+                             (isEnglish ? "Enter command..." : "Введите команду..."))
+                            .font(.system(size: CGFloat(settings.fontSize), design: .monospaced))
+                            .foregroundStyle(palette.secondary)
+                            .padding(.top, 3)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
+                #else
                 TextField(isEnglish ? "Enter command..." : "Введите команду...", text: $input)
                     .font(.system(size: CGFloat(settings.fontSize), design: .monospaced))
                     .textInputAutocapitalization(.never)
@@ -88,6 +119,7 @@ public struct SpyderTerminalInputView: View {
                     .submitLabel(.go)
                     .onSubmit(submit)
                     .accessibilityIdentifier("spyder.terminal.commandInput")
+                #endif
                 Button(action: submit) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title2)
@@ -97,7 +129,8 @@ public struct SpyderTerminalInputView: View {
                 .accessibilityLabel(isEnglish ? "Parse command" : "Распознать команду")
             }
             .padding(12)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 18))
+            .background(palette.editor, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(palette.border, lineWidth: 0.5))
         }
     }
 
@@ -159,9 +192,13 @@ public struct SpyderTerminalSettingsView: View {
             Section(title("Оформление терминала", "Terminal appearance")) {
                 Picker(title("Тема терминала", "Terminal theme"), selection: $settings.appearance) {
                     Text(title("Системная", "System")).tag(TerminalAppearance.system)
+                    Text(title("Светлая · белый фон", "Light · white background")).tag(TerminalAppearance.light)
                     Text(title("Тёмная", "Dark")).tag(TerminalAppearance.dark)
                     Text("OLED").tag(TerminalAppearance.oled)
                 }
+                Text(title("Подсветка команд и SpyderScript: ключевые слова, строки, параметры и числа.",
+                           "Syntax colors for commands and SpyderScript: keywords, strings, parameters and numbers."))
+                    .font(.footnote).foregroundStyle(.secondary)
                 Picker(title("Акцент", "Accent"), selection: $settings.accent) {
                     Text("Signal Red").tag(TerminalAccent.signalRed)
                     Text("Electric Blue").tag(TerminalAccent.electricBlue)

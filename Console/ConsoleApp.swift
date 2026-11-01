@@ -59,11 +59,7 @@ struct ConsoleApp: App {
             }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
-                addressBook.selectWallet(walletAccess.activeWalletID)
                 await liveMarket.run()
-            }
-            .onChange(of: walletAccess.activeWalletID) { _, id in
-                addressBook.selectWallet(id)
             }
             .onReceive(marketData.$quotes) { quotes in
                 publicAssets.applyMarketQuotes(quotes)
@@ -84,6 +80,9 @@ struct ConsoleApp: App {
                 } else if let failure = notification.userInfo?["error"] as? String {
                     spyderChat.reportPushFailure(failure)
                 }
+            }
+            .onChange(of: walletAccess.activeWalletID) { _, id in
+                addressBook.selectWallet(id)
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {

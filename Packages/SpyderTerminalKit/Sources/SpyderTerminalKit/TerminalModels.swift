@@ -13,7 +13,7 @@ public enum TerminalRisk: String, Codable, Sendable {
 }
 
 public enum TerminalAppearance: String, Codable, CaseIterable, Sendable {
-    case system, dark, oled
+    case system, light, dark, oled
 }
 
 public enum TerminalAccent: String, Codable, CaseIterable, Sendable {

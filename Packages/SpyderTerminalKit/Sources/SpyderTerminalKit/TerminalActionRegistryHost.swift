@@ -27,6 +27,9 @@ public final class TerminalActionRegistryHost: TerminalActionHost {
     private var actions: [String: Action] = [:]
     private var reviews: [String: Review] = [:]
 
+    /// Actions actually connected to this host, never merely listed in a dictionary.
+    public var availableCommandIDs: Set<String> { Set(actions.keys) }
+
     public init() throws {
         knownIDs = Set(try TerminalEngine().catalog(language: .en).map(\.id))
     }

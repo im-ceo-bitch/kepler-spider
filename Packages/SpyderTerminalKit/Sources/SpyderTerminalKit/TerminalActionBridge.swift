@@ -16,12 +16,14 @@ public struct TerminalActionRequest: Sendable, Equatable {
     public let commandID: String
     public let parameters: [String: String]
     public let risk: TerminalRisk
+    public let language: TerminalLanguage
     public let context: TerminalActionContext
 
     public init(match: TerminalMatch, context: TerminalActionContext) {
         commandID = match.commandID
         parameters = match.parameters
         risk = match.risk
+        language = match.language
         self.context = context
     }
 }

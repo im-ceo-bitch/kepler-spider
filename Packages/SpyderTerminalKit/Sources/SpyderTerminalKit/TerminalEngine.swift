@@ -19,14 +19,26 @@ public struct TerminalEngine: Sendable {
     }
 
     public func interpret(_ text: String, settings: TerminalSettings = .init()) -> TerminalInterpretation {
-        if settings.level == .developer { return .developerInput }
+        if settings.level == .developer {
+            // Allow switching modes and modifying local terminal preferences even
+            // while a JavaScript runtime is not installed. No wallet/chat actions
+            // can slip through this developer-mode administrative path.
+            var standard = settings
+            standard.level = .standard
+            if case .matched(let match) = interpret(text, settings: standard),
+               TerminalPreferenceCommands.actionIDs.contains(match.commandID) ||
+                ["terminal.settings.open", "terminal.help", "terminal.clear"].contains(match.commandID) {
+                return .matched(match)
+            }
+            return .developerInput
+        }
         let query = Self.normalize(text)
         guard !query.isEmpty else { return .unrecognized }
         let locales = dictionaries(for: text, preferred: settings.language)
         var matches: [(match: TerminalMatch, specificity: Int, languageOrder: Int)] = []
         for (languageOrder, entry) in locales.enumerated() {
             for command in entry.commands {
-                let patterns = settings.level == .beginner
+                let patterns = settings.level == .beginner && settings.naturalLanguageEnabled
                     ? command.standard + command.beginner : command.standard
                 for pattern in patterns {
                     if let args = Self.capture(text, template: pattern) {
@@ -82,7 +94,8 @@ public struct TerminalEngine: Sendable {
             }
     }
 
-    public func suggestions(for input: String, settings: TerminalSettings = .init()) -> [TerminalSuggestion] {
+    public func suggestions(for input: String, settings: TerminalSettings = .init(),
+                            availableCommandIDs: Set<String>? = nil) -> [TerminalSuggestion] {
         guard settings.autocompleteEnabled, settings.level != .developer else { return [] }
         let query = Self.normalize(input)
         guard query.count >= settings.autocompleteAfterCharacters else { return [] }
@@ -91,9 +104,31 @@ public struct TerminalEngine: Sendable {
         var ranked: [(TerminalSuggestion, Int, Int)] = []
         for (languageOrder, entry) in locales.enumerated() {
             for command in entry.commands {
-                let patterns = settings.level == .beginner
+                if let availableCommandIDs, !availableCommandIDs.contains(command.id) { continue }
+                let patterns = settings.level == .beginner && settings.naturalLanguageEnabled
                     ? command.standard + command.beginner : command.standard
                 for pattern in patterns {
+                    // Suggest valid enum-like arguments after the user types a command prefix.
+                    // Nothing is executed: a suggestion only fills the input field.
+                    if let range = pattern.range(of: #"\{[a-zA-Z][a-zA-Z0-9_]*\}"#, options: .regularExpression),
+                       range.upperBound == pattern.endIndex {
+                        let parameter = String(pattern[range]).dropFirst().dropLast()
+                        let prefix = String(pattern[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                        let normalizedPrefix = Self.normalize(prefix)
+                        if query == normalizedPrefix || query.hasPrefix(normalizedPrefix + " ") {
+                            let valuePrefix = String(query.dropFirst(normalizedPrefix.count))
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            for choice in Self.argumentChoices(commandID: command.id,
+                                                               parameter: String(parameter), language: entry.language) {
+                                if Self.normalize(choice).hasPrefix(valuePrefix) {
+                                    ranked.append((TerminalSuggestion(commandID: command.id,
+                                                title: command.title, summary: command.summary,
+                                                completion: prefix + " " + choice,
+                                                language: entry.language), 1600 + valuePrefix.count, languageOrder))
+                                }
+                            }
+                        }
+                    }
                     let normalized = Self.normalize(pattern)
                     let score: Int
                     if normalized.hasPrefix(query) { score = 1000 + query.count }
@@ -118,6 +153,28 @@ public struct TerminalEngine: Sendable {
         }.prefix(settings.autocompleteLimit).map { $0 }
     }
 
+    private static func argumentChoices(commandID: String, parameter: String,
+                                        language: TerminalLanguage) -> [String] {
+        let ru = language == .ru
+        switch (commandID, parameter) {
+        case ("chat.theme.set", "theme"), ("chat.background.change", "background"):
+            return ru ? ["хром", "киберпанк", "гром"] : ["chrome", "cyberpunk", "thunder"]
+        case ("settings.theme.set", "theme"):
+            return ru ? ["тёмная", "светлая", "системная"] : ["dark", "light", "system"]
+        case ("settings.language.set", "language"), ("terminal.language.set", "language"):
+            return ru ? ["русский", "английский", "auto"] : ["ru", "en", "auto"]
+        case ("terminal.mode.set", "mode"):
+            return ["beginner", "standard", "developer"]
+        case ("terminal.accent.set", "accent"):
+            return ru ? ["красный", "синий"] : ["red", "blue"]
+        case ("terminal.appearance.set", "appearance"):
+            return ["system", "dark", "oled"]
+        case ("terminal.autocomplete.set", "state"):
+            return ru ? ["вкл", "выкл"] : ["on", "off"]
+        default: return []
+        }
+    }
+
     private func dictionaries(for text: String, preferred: TerminalLanguage) -> [(language: TerminalLanguage, commands: [TerminalCommand])] {
         let t = Self.normalize(text)
         let detected: TerminalLanguage
@@ -139,8 +196,8 @@ public struct TerminalEngine: Sendable {
     private static func capture(_ text: String, template: String) -> [String: String]? {
         // Keep user arguments exactly as typed (case, accents and message text).
         // Normalization is only used for indexing and ranking autocomplete.
+        // Match flexible command whitespace without altering user message bodies.
         let input = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
         let normalizedTemplate = template.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
         let placeholder = try! NSRegularExpression(pattern: #"\{([a-zA-Z][a-zA-Z0-9_]*)\}"#)

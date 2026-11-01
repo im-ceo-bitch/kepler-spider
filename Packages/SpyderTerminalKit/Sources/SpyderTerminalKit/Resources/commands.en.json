@@ -9,12 +9,17 @@
     "summary": "Change theme of current chat",
     "standard": [
       "sp change chat theme to {theme}",
-      "sp chat theme {theme}"
+      "sp chat theme {theme}",
+      "sp change theme to {theme}",
+      "sp set chat theme {theme}",
+      "sp switch chat theme to {theme}"
     ],
     "beginner": [
       "change chat theme to {theme}",
       "set chat theme to {theme}",
-      "make chat theme {theme}"
+      "make chat theme {theme}",
+      "make chat look {theme}",
+      "set my chat look to {theme}"
     ]
   },
   {
@@ -26,7 +31,9 @@
     "standard": [
       "sp change background",
       "sp change background to {background}",
-      "sp chat background"
+      "sp chat background",
+      "sp background",
+      "sp edit background"
     ],
     "beginner": [
       "change background",
@@ -37,7 +44,7 @@
   },
   {
     "id": "chat.send",
-    "risk": "write",
+    "risk": "sensitive",
     "requiredParameters": [
       "text"
     ],
@@ -45,7 +52,9 @@
     "summary": "Send a message to the current conversation",
     "standard": [
       "sp send {text}",
-      "sp chat send {text}"
+      "sp chat send {text}",
+      "sp send message {text}",
+      "sp message {text}"
     ],
     "beginner": [
       "send message {text}",
@@ -79,7 +88,9 @@
     "summary": "Search within the current chat",
     "standard": [
       "sp search chat {query}",
-      "sp chat search {query}"
+      "sp chat search {query}",
+      "sp find message {query}",
+      "sp search messages {query}"
     ],
     "beginner": [
       "find in chat {query}"
@@ -132,7 +143,9 @@
     "summary": "List saved contacts",
     "standard": [
       "sp show contacts",
-      "sp contacts list"
+      "sp contacts list",
+      "sp contacts",
+      "sp list contacts"
     ],
     "beginner": [
       "show my contacts",
@@ -148,7 +161,9 @@
     "title": "Find contact",
     "summary": "Find a contact by name",
     "standard": [
-      "sp find contact {query}"
+      "sp find contact {query}",
+      "sp search contact {query}",
+      "sp contact {query}"
     ],
     "beginner": [
       "search contacts for {query}"
@@ -162,7 +177,9 @@
     "summary": "Show my own profile",
     "standard": [
       "sp show profile",
-      "sp profile show"
+      "sp profile show",
+      "sp profile",
+      "sp my profile"
     ],
     "beginner": [
       "open my profile",
@@ -209,7 +226,9 @@
     "title": "Profile photo",
     "summary": "Open avatar picker",
     "standard": [
-      "sp change profile photo"
+      "sp change profile photo",
+      "sp profile photo",
+      "sp open profile"
     ],
     "beginner": [
       "update my avatar"
@@ -223,7 +242,9 @@
     "summary": "Show wallet balance",
     "standard": [
       "sp show balance",
-      "sp wallet balance"
+      "sp wallet balance",
+      "sp balance",
+      "sp show wallet balance"
     ],
     "beginner": [
       "how much crypto do i have",
@@ -238,7 +259,9 @@
     "summary": "Show receiving address and QR",
     "standard": [
       "sp wallet receive",
-      "sp receive crypto"
+      "sp receive crypto",
+      "sp receive",
+      "sp receive address"
     ],
     "beginner": [
       "show my receiving address"
@@ -251,7 +274,10 @@
     "title": "Wallet activity",
     "summary": "Show transaction history",
     "standard": [
-      "sp wallet transactions"
+      "sp wallet transactions",
+      "sp transactions",
+      "sp transaction history",
+      "sp wallet history"
     ],
     "beginner": [
       "show my transactions"
@@ -284,7 +310,8 @@
     "summary": "Set application appearance",
     "standard": [
       "sp app theme {theme}",
-      "sp change app theme to {theme}"
+      "sp change app theme to {theme}",
+      "sp application theme {theme}"
     ],
     "beginner": [
       "make the app {theme}"
@@ -299,7 +326,9 @@
     "title": "App language",
     "summary": "Change app language",
     "standard": [
-      "sp app language {language}"
+      "sp app language {language}",
+      "sp change app language to {language}",
+      "sp interface language {language}"
     ],
     "beginner": [
       "switch app to {language}"
@@ -339,7 +368,10 @@
     "summary": "Show available network status",
     "standard": [
       "sp network status",
-      "sp mesh status"
+      "sp mesh status",
+      "sp status",
+      "sp network",
+      "sp connection status"
     ],
     "beginner": [
       "show network status"
@@ -365,7 +397,9 @@
     "title": "Terminal settings",
     "summary": "Open terminal settings",
     "standard": [
-      "sp terminal settings"
+      "sp terminal settings",
+      "sp settings terminal",
+      "sp terminal preferences"
     ],
     "beginner": [
       "open terminal settings"
@@ -379,7 +413,9 @@
     "summary": "Open command catalog",
     "standard": [
       "sp help",
-      "sp commands"
+      "sp commands",
+      "sp list commands",
+      "sp command help"
     ],
     "beginner": [
       "what can you do",
@@ -393,7 +429,8 @@
     "title": "History",
     "summary": "Open command history",
     "standard": [
-      "sp history"
+      "sp history",
+      "sp command history"
     ],
     "beginner": [
       "show my command history"
@@ -408,10 +445,118 @@
     "title": "Terminal level",
     "summary": "Switch terminal mode",
     "standard": [
-      "sp terminal mode {mode}"
+      "sp terminal mode {mode}",
+      "sp level {mode}",
+      "sp change terminal mode {mode}"
     ],
     "beginner": [
       "switch terminal to {mode} mode"
+    ]
+  },
+  {
+    "id": "terminal.clear",
+    "title": "Clear terminal",
+    "summary": "Clears current terminal scrollback",
+    "risk": "write",
+    "standard": [
+      "sp clear",
+      "sp clear terminal",
+      "sp clear history"
+    ],
+    "beginner": [],
+    "requiredParameters": []
+  },
+  {
+    "id": "terminal.capabilities",
+    "title": "Available commands",
+    "summary": "Lists commands supported by this screen",
+    "risk": "read",
+    "standard": [
+      "sp available commands",
+      "sp capabilities",
+      "sp what can you do"
+    ],
+    "beginner": [],
+    "requiredParameters": []
+  },
+  {
+    "id": "terminal.language.set",
+    "title": "Terminal language",
+    "summary": "Change terminal command language",
+    "risk": "write",
+    "standard": [
+      "sp terminal language {language}",
+      "sp command language {language}"
+    ],
+    "beginner": [
+      "i want terminal commands in {language}"
+    ],
+    "requiredParameters": [
+      "language"
+    ]
+  },
+  {
+    "id": "terminal.accent.set",
+    "title": "Terminal accent",
+    "summary": "Choose Signal Red or Electric Blue",
+    "risk": "write",
+    "standard": [
+      "sp terminal accent {accent}",
+      "sp terminal color {accent}"
+    ],
+    "beginner": [
+      "make terminal {accent}"
+    ],
+    "requiredParameters": [
+      "accent"
+    ]
+  },
+  {
+    "id": "terminal.appearance.set",
+    "title": "Terminal appearance",
+    "summary": "Choose System, Light, Dark or OLED",
+    "risk": "write",
+    "standard": [
+      "sp terminal appearance {appearance}",
+      "sp terminal theme {appearance}"
+    ],
+    "beginner": [
+      "make terminal {appearance}"
+    ],
+    "requiredParameters": [
+      "appearance"
+    ]
+  },
+  {
+    "id": "terminal.autocomplete.set",
+    "title": "Terminal suggestions",
+    "summary": "Enable or disable autocomplete",
+    "risk": "write",
+    "standard": [
+      "sp autocomplete {state}",
+      "sp terminal suggestions {state}"
+    ],
+    "beginner": [
+      "{state} terminal suggestions"
+    ],
+    "requiredParameters": [
+      "state"
+    ]
+  },
+  {
+    "id": "terminal.font.set",
+    "title": "Terminal font",
+    "summary": "Change terminal font size",
+    "risk": "write",
+    "standard": [
+      "sp terminal font size {size}",
+      "sp terminal font {size}"
+    ],
+    "beginner": [
+      "set terminal font size {size}"
+    ],
+    "requiredParameters": [
+      "size"
     ]
   }
 ]
