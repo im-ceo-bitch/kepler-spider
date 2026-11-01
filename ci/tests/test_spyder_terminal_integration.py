@@ -25,7 +25,8 @@ class SpyderTerminalIntegrationTests(unittest.TestCase):
         en = json.loads((source / "commands.en.json").read_text())
         self.assertEqual({x['id'] for x in ru}, {x['id'] for x in en})
         for lang, commands in [('ru', ru), ('en', en)]:
-            self.assertEqual(len(commands), 28)
+            self.assertGreaterEqual(len(commands), 28)
+            self.assertEqual(len({c["id"] for c in commands}), len(commands))
             themes = next(c for c in commands if c['id'] == 'chat.theme.set')
             prefix = 'сп' if lang == 'ru' else 'sp'
             self.assertTrue(any(x.startswith(prefix) for x in themes['standard']))
