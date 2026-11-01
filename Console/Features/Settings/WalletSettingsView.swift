@@ -25,7 +25,7 @@ struct WalletSettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     HStack {
-                        Text("Профиль")
+                        Text("Настройки")
                             .font(.system(size: 30, weight: .bold))
                             .foregroundStyle(WalletTheme.ink)
                         Spacer()
@@ -41,9 +41,9 @@ struct WalletSettingsView: View {
                                 animate: motionEnabled
                             )
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Spyder Wallet")
+                                Text("Кошелёк и безопасность")
                                     .font(.system(size: 19, weight: .semibold))
-                                Text("Защищено на этом iPhone")
+                                Text("Настройки применяются на этом устройстве")
                                     .font(.system(size: 13))
                                     .foregroundStyle(WalletTheme.secondary)
                             }

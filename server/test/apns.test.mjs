@@ -26,7 +26,7 @@ test('APNs signs ES256 JWT and never leaks the message text',async()=>{
   assert.equal(JSON.parse(Buffer.from(jwt[1],'base64url').toString()).iss,e.APNS_TEAM_ID);
   assert.equal(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},e.verifyKey,
     Buffer.from(jwt[2],'base64url'),new TextEncoder().encode(jwt[0]+'.'+jwt[1])),true);
-  assert.deepEqual(JSON.parse(options.body),{aps:{alert:{title:'Spyder Network',body:'Новое зашифрованное сообщение'},sound:'default'},spyder_event:'message'});
+  assert.deepEqual(JSON.parse(options.body),{aps:{alert:{title:'Spyder Network',body:'Новое зашифрованное сообщение'},sound:'spyder_receive.caf','thread-id':'spyder.chat'},spyder_event:'message'});
   assert.equal(options.body.includes('secret'),false);
 });
 
@@ -53,13 +53,59 @@ test('Push routes require authorization and never reveal stored APNs token',asyn
   assert.equal((await call('POST','/v2/push/register',{token})).status,401);
   assert.equal((await call('POST','/v1/register',{id,secret,invite_code:'A'.repeat(24),name:'A'})).status,201);
   const auth=id+'.'+secret;
-  assert.deepEqual((await call('GET','/v2/push/status',null,auth)).body,{provider_ready:true,enabled:false});
+  assert.deepEqual((await call('GET','/v2/push/status',null,auth)).body,{provider_ready:true,enabled:false,sound:null,last_apns_status:null,last_attempt_at:null});
   assert.equal((await call('POST','/v2/push/register',{token:'wrong'},auth)).status,400);
   assert.equal((await call('POST','/v2/push/register',{token},auth)).status,200);
   const info=(await call('GET','/v2/push/status',null,auth)).body;
-  assert.deepEqual(info,{provider_ready:true,enabled:true});
+  assert.deepEqual(info,{provider_ready:true,enabled:true,sound:'system',last_apns_status:null,last_attempt_at:null});
   assert.equal(JSON.stringify(info).includes(token),false);
   assert.equal((await call('POST','/v2/push/unregister',{},auth)).status,200);
   assert.equal(db.has('push:'+id),false);
+  await Promise.all(pending);
+});
+
+
+test('Sonic sound controls: original CAF, system default, mute, and invite cue', async()=>{
+  const e=await env(); const payloads=[];
+  const fetcher=async(url,options)=>{payloads.push(JSON.parse(options.body));return {status:200};};
+  assert.equal(await sendAPNs(e,token,'message',fetcher,'pulse'),200);
+  assert.equal(payloads[0].aps.sound,'spyder_receive.caf');
+  assert.equal(await sendAPNs(e,token,'invite',fetcher,'pulse'),200);
+  assert.equal(payloads[1].aps.sound,'spyder_connect.caf');
+  assert.equal(await sendAPNs(e,token,'test',fetcher,'system'),200);
+  assert.equal(payloads[2].aps.sound,'default');
+  assert.equal(await sendAPNs(e,token,'message',fetcher,'mute'),200);
+  assert.equal(Object.hasOwn(payloads[3].aps,'sound'),false);
+  for(const payload of payloads) {
+    assert.equal(JSON.stringify(payload).includes(token),false);
+    assert.equal(JSON.stringify(payload).includes('private_key'),false);
+  }
+});
+
+test('Changing sound and display name is authenticated, non-sensitive and persistent',async()=>{
+  const db=new Map(),pending=[];
+  const storage={get:async k=>db.get(k),put:async(k,v)=>db.set(k,v),delete:async k=>db.delete(k),
+    list:async({prefix})=>new Map([...db].filter(([k])=>k.startsWith(prefix)))};
+  const hub=new ChatHub({storage,waitUntil:task=>pending.push(task)},await env());
+  const req=async(method,path,body,auth)=>{
+    const headers={};if(auth)headers.authorization='Bearer '+auth;
+    const r=await hub.fetch(new Request('https://test.example'+path,{method,headers,
+      body:body===undefined?undefined:JSON.stringify(body)}));return {status:r.status,body:await r.json()};
+  };
+  const id='3'.repeat(32),secret='4'.repeat(64),auth=id+'.'+secret;
+  assert.equal((await req('POST','/v2/profile/name',{name:'New'})).status,401);
+  assert.equal((await req('POST','/v1/register',{id,secret,invite_code:'F'.repeat(24),name:'Old'})).status,201);
+  assert.equal((await req('POST','/v2/profile/name',{name:'   '},auth)).status,400);
+  assert.deepEqual((await req('POST','/v2/profile/name',{name:'New name'},auth)).body,{name:'New name'});
+  assert.equal((await req('GET','/v1/me',undefined,auth)).body.name,'New name');
+  assert.equal((await req('POST','/v2/push/preferences',{sound:'pulse'},auth)).status,409);
+  assert.equal((await req('POST','/v2/push/register',{token,sound:'pulse'},auth)).status,200);
+  assert.equal((await req('POST','/v2/push/preferences',{sound:'danger.caf'},auth)).status,400);
+  assert.equal((await req('POST','/v2/push/preferences',{sound:'mute'},auth)).status,200);
+  assert.equal((await req('GET','/v2/push/status',undefined,auth)).body.sound,'mute');
+  assert.equal((await req('POST','/v2/push/test',{},auth)).status,200);
+  assert.equal((await req('POST','/v2/push/test',{},auth)).status,200);
+  assert.equal((await req('POST','/v2/push/test',{},auth)).status,200);
+  assert.equal((await req('POST','/v2/push/test',{},auth)).status,429);
   await Promise.all(pending);
 });

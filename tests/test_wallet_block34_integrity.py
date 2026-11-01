@@ -14,7 +14,7 @@ class Block34Integrity(unittest.TestCase):
         self.assertIn('SpyderMessageCrypto.verifyAndPin', s)
 
     def test_server_refuses_plaintext(self):
-        s = source('server/src/index.mjs')
+        s = source('server/src/chat.mjs')
         self.assertIn('plaintext_protocol_retired', s)
         self.assertIn("if(path==='/v1/messages')", s)
         self.assertIn('!Object.hasOwn(value,\'text\')', s)

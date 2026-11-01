@@ -94,7 +94,7 @@ struct WalletRootView: View {
                 path = NavigationPath()
             })
         case .profile:
-            WalletSettingsView()
+            SpyderIdentityHubView()
         case .accounts:
             WalletAccountsView()
         }

@@ -137,7 +137,10 @@ struct ChatDetailView: View {
         sending = true
         Task {
             let succeeded = await chat.sendMessage(to: contact.id, text: content)
-            if succeeded { draft = "" }
+            if succeeded {
+                draft = ""
+                await MainActor.run { SpyderSonicPlayer.shared.playSent() }
+            }
             sending = false
         }
     }
