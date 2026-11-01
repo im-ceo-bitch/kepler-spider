@@ -3,6 +3,7 @@ import UIKit
 
 struct SpyderDevnetChatsHomeView: View {
     @EnvironmentObject private var chat: SpyderChatStore
+    @Environment(\.scenePhase) private var scenePhase
     let onOpen: (WalletContact) -> Void
     let onAdd: () -> Void
     @State private var search = ""
@@ -53,28 +54,50 @@ struct SpyderDevnetChatsHomeView: View {
                 else {
                     HStack(spacing: 8) {
                         Circle().fill(chat.connected ? Color.green : WalletTheme.secondary).frame(width: 7, height: 7)
-                        Text(chat.connected ? "Spyder Chat · @\(chat.myUsername.isEmpty ? "username" : chat.myUsername)" : "Нет подключения к серверу")
+                        Text(chat.connected ? "Сеть подключена" : (chat.refreshing ? "Подключаемся…" : "Нет соединения"))
                             .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                         Spacer()
-                        Button { Task { await chat.refresh() } } label: {
-                            Image(systemName: "arrow.clockwise").foregroundStyle(WalletTheme.ink)
-                        }.accessibilityLabel("Обновить чаты")
-                    }.spyderReveal(0.08)
+                        if chat.refreshing { ProgressView().controlSize(.mini) }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .spyderReveal(0.08)
 
-                    if !chat.connected {
+                    if !chat.connected && !chat.refreshing {
                         HStack(alignment: .top, spacing: 11) {
                             Image(systemName: "wifi.exclamationmark")
                                 .font(.system(size: 19))
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Нет связи со Spyder Chat").font(.system(size: 15, weight: .semibold))
-                                Text("Проверь интернет и повтори подключение. Сообщения на устройстве не затронуты.")
+                                Text(chat.serverStatus ?? "Проверь соединение. Переписки и ключи сохранены.")
                                     .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                                Button("Повторить") { Task { await chat.refresh() } }
+                                Text("Повторное подключение выполняется автоматически.")
+                                    .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                                Button("Повторить сейчас") { Task { await chat.refresh() } }
                                     .font(.system(size: 13, weight: .semibold))
                             }
                         }
                         .padding(15)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+                    }
+
+                    if chat.connected && !chat.pushEnabled {
+                        HStack(spacing: 12) {
+                            Image(systemName: "bell.badge")
+                                .font(.system(size: 20))
+                                .foregroundStyle(WalletTheme.secondary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Уведомления выключены")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("Разреши уведомления, чтобы видеть новые сообщения вне приложения.")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(WalletTheme.secondary)
+                            }
+                            Spacer(minLength: 4)
+                            Button("Включить") { Task { await chat.enablePush() } }
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .padding(14)
                         .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 18))
                     }
 
@@ -158,20 +181,22 @@ struct SpyderDevnetChatsHomeView: View {
             .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 25)
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
-        .task {
-            guard chat.hasIdentity else {
-                if chat.hasConfiguredServer { await chat.probeServer() }
-                return
-            }
+        .refreshable {
+            // Native iOS pull-to-refresh indicator appears at the top of the list.
+            await chat.refresh()
+        }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
             await chat.refresh()
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-                guard !Task.isCancelled else { break }
+                do { try await Task.sleep(for: .seconds(chat.connected ? 10 : 6)) }
+                catch { break }
+                guard !Task.isCancelled, scenePhase == .active else { break }
                 await chat.refresh()
             }
         }
         .sheet(isPresented: $adding) { inviteSheet }
-        .sheet(isPresented: $showingPrivacy) { privacySheet }
+        .sheet(isPresented: $showingPrivacy) { SpyderIdentityHubView() }
         .alert("Spyder Chat", isPresented: Binding(get: { chat.errorMessage != nil }, set: { if !$0 { chat.errorMessage = nil } })) {
             Button("Понятно", role: .cancel) { chat.errorMessage = nil }
         } message: { Text(chat.errorMessage ?? "") }
@@ -188,7 +213,7 @@ struct SpyderDevnetChatsHomeView: View {
                 Text(chat.hasIdentity && !chat.myUsername.isEmpty ? "@" + chat.myUsername : "Создай имя и @username")
                     .font(.system(size: 13)).foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
-                Text(chat.connected ? "Связь установлена" : "Сервис сообщений не подключён")
+                Text(chat.connected ? "Связь установлена" : (chat.refreshing ? "Подключаемся к сети…" : "Подключение восстанавливается"))
                     .font(.system(size: 11)).foregroundStyle(.white.opacity(0.58))
                     .lineLimit(2)
             }
@@ -205,59 +230,6 @@ struct SpyderDevnetChatsHomeView: View {
         .onTapGesture { showingPrivacy = true }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-    }
-
-    private var privacySheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label("Spyder Identity", systemImage: "person.crop.circle")
-                        .font(.system(size: 28, weight: .semibold))
-                    WalletCard {
-                        VStack(alignment: .leading, spacing: 11) {
-                            SpyderProfileAvatarView(motion: avatarMotion, accent: accent, diameter: 112, animate: motionEnabled)
-                            .frame(maxWidth: .infinity)
-                            Text(chat.myName.isEmpty ? "Твой Spyder ID" : chat.myName).font(.title3.weight(.semibold))
-                            Text(chat.myUsername.isEmpty ? "Без публичного username" : "@" + chat.myUsername)
-                                .foregroundStyle(WalletTheme.secondary)
-                            Label("Ключи чата не связаны с фразой восстановления кошелька", systemImage: "lock.shield")
-                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                        }
-                    }
-                    WalletCard {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Toggle(isOn: Binding(get: { chat.pushEnabled }, set: { enabled in
-                                Task { if enabled { await chat.enablePush() } else { await chat.disablePush() } }
-                            })) {
-                                Label("Уведомления о сообщениях", systemImage: "bell.badge")
-                            }
-                            Text("Когда приложение закрыто, iPhone покажет только уведомление о новом зашифрованном сообщении — без его текста.")
-                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                            if let status = chat.pushStatus {
-                                Text(status).font(.footnote).foregroundStyle(WalletTheme.secondary)
-                            }
-                        }
-                    }
-                    WalletCard {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Toggle(isOn: Binding(get: { chat.discoverable }, set: { value in
-                                Task { await chat.updateDiscovery(value) }
-                            })) {
-                                Label("Показывать профиль в поиске", systemImage: "magnifyingglass")
-                            }
-                            Text("Если выключить поиск, друзья смогут добавить тебя только по коду приглашения.")
-                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                        }
-                    }
-                    Text("Сейчас доступен один чат-профиль на устройство. Несколько независимых @username потребуют отдельной поддержки на сервере и в Keychain.")
-                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                    Text("E2EE v2: сквозное шифрование при проверке ключей. Это предварительный криптографический протокол для одного устройства; он не имеет аудита и не поддерживает восстановление чатов через seed-фразу. Серверу видны участники, время и длина сообщений.")
-                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                }.padding(20)
-            }
-            .background(WalletTheme.canvas.ignoresSafeArea())
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { showingPrivacy = false } } }
-        }
     }
 
     private func avatar(_ name: String) -> some View {

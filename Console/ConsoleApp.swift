@@ -18,7 +18,6 @@ struct ConsoleApp: App {
     @StateObject private var marketData = WalletMarketStore()
     @StateObject private var liveMarket = WalletLiveMarketStore()
     @StateObject private var walletHistory = WalletActivityStore()
-    @StateObject private var addressBook = WalletAddressBookStore()
     @StateObject private var spyderChat = SpyderChatStore()
     @StateObject private var legacyChat = LegacyConsoleChatStore()
     @StateObject private var spiderDevnet = SpiderDevnetStore()
@@ -42,7 +41,6 @@ struct ConsoleApp: App {
                 .environmentObject(marketData)
                 .environmentObject(liveMarket)
                 .environmentObject(walletHistory)
-                .environmentObject(addressBook)
                 .environmentObject(spyderChat)
                 .environmentObject(legacyChat)
                 .environmentObject(spiderDevnet)
@@ -68,6 +66,8 @@ struct ConsoleApp: App {
             .environment(\.locale, Locale(identifier: language))
             .tint(WalletTheme.ink)
             .task {
+                // Resolve the public endpoint and refresh identity when the app starts.
+                await spyderChat.refresh()
                 if spyderChat.pushEnabled && spyderChat.hasIdentity {
                     UIApplication.shared.registerForRemoteNotifications()
                 }
@@ -79,15 +79,12 @@ struct ConsoleApp: App {
                     spyderChat.reportPushFailure(failure)
                 }
             }
-            .onChange(of: walletAccess.activeWalletID) { _, id in
-                addressBook.selectWallet(id)
-            }
-            .onChange(of: walletAccess.unlocked) { _, unlocked in
-                if unlocked { addressBook.reload() }
-            }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active, spyderChat.pushEnabled, spyderChat.hasIdentity {
-                    UIApplication.shared.registerForRemoteNotifications()
+                if phase == .active {
+                    Task { await spyderChat.refresh() }
+                    if spyderChat.pushEnabled && spyderChat.hasIdentity {
+                        UIApplication.shared.registerForRemoteNotifications()
+                    }
                 }
                 if phase == .background {
                     liveMarket.stop()
