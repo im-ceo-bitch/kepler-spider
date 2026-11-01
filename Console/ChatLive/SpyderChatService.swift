@@ -14,13 +14,30 @@ private struct SpyderChatIdentity: Codable {
     var name: String
     var username: String?
     var server: String?  // Optional to decode older Keychain identities.
+    var kind: String? = nil   // nil for legacy main identity
+    var bio: String? = nil
+    var status: String? = nil
+    var avatar: SpyderPersonaAvatar? = nil
     var token: String { "\(id).\(secret)" }
+}
+
+struct SpyderPersonaAvatar: Codable, Hashable {
+    let version: Int
+    let style: String
+    let accent: String
+    let seed: String
+
+    var motion: SpyderAvatarMotion { SpyderAvatarMotion(rawValue: style) ?? .web }
+    var color: SpyderSignalAccent { SpyderSignalAccent(rawValue: accent) ?? .blue }
 }
 
 struct SpyderChatPerson: Identifiable, Codable, Hashable {
     let id: String
     let name: String
     let username: String?
+    var bio: String? = nil
+    var status: String? = nil
+    var avatar: SpyderPersonaAvatar? = nil
 }
 
 struct SpyderServerMessage: Codable, Identifiable, Hashable {
@@ -46,12 +63,14 @@ private struct SpyderChatErrorResponse: Decodable { let error: String }
 private enum SpyderChatKeychain {
     static let service = "com.spyder.wallet.spyder.chat.devnet.v1"
     static let account = "device-identity"
+    static let indexAccount = "persona-index"
+    static let activeKey = "spyder.chat.active.persona.v1"
 
-    static func load() -> Data? {
+    static func load(account requested: String = account) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: requested,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
@@ -60,16 +79,16 @@ private enum SpyderChatKeychain {
         return object as? Data
     }
 
-    static func save(_ data: Data) throws {
+    static func save(_ data: Data, account requested: String = account) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: requested
         ]
         let attrs: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: requested,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             kSecValueData as String: data
         ]
@@ -98,6 +117,12 @@ private enum SpyderChatNetworkError: LocalizedError {
 
 @MainActor
 final class SpyderChatStore: ObservableObject {
+    @Published private(set) var personaIDs: [String] = []
+    @Published private(set) var activePersonaID: String?
+    @Published private(set) var myBio = ""
+    @Published private(set) var myStatus = ""
+    @Published private(set) var myAvatar: SpyderPersonaAvatar?
+    @Published private(set) var personaKind = "public"
     @Published private(set) var hasIdentity = false
     @Published private(set) var myName = ""
     @Published private(set) var myUsername = ""
@@ -137,17 +162,63 @@ final class SpyderChatStore: ObservableObject {
 
     private var identity: SpyderChatIdentity?
     private static let serverKey = "spyder.chat.server.url.v1"
+    private func identityAccount(for id: String) -> String {
+        // Old primary profile remains at the original Keychain address.
+        id == primaryID ? SpyderChatKeychain.account : "persona:" + id
+    }
+    private var primaryID: String? { personaIDs.first }
+    private func loadProfile(_ record: SpyderChatIdentity) {
+        identity = record
+        activePersonaID = record.id
+        hasIdentity = true
+        myName = record.name
+        myUsername = record.username ?? ""
+        myBio = record.bio ?? ""
+        myStatus = record.status ?? ""
+        myAvatar = record.avatar
+        if let avatar = record.avatar {
+            UserDefaults.standard.set(avatar.style, forKey: SpyderMotionKeys.avatar)
+            UserDefaults.standard.set(avatar.accent, forKey: SpyderMotionKeys.accent)
+        }
+        personaKind = record.kind ?? "public"
+        inviteCode = record.inviteCode
+        encryptionReady = false
+        connected = false
+    }
+    private func saveIdentity(_ record: SpyderChatIdentity) throws {
+        try SpyderChatKeychain.save(JSONEncoder().encode(record), account: identityAccount(for: record.id))
+    }
+    private func persistPersonaIndex() throws {
+        try SpyderChatKeychain.save(JSONEncoder().encode(personaIDs), account: SpyderChatKeychain.indexAccount)
+    }
+    private func resetPersonaCaches() {
+        contacts = []; requests = []; searchResults = []
+        messageByPeer = [:]; peerFingerprints = [:]
+        lastRegisteredPushToken = nil
+        pushRegisteredOnServer = nil
+        errorMessage = nil
+    }
 
     init() {
         let bundled = Bundle.main.object(forInfoDictionaryKey: "SpyderChatServerURL") as? String
         let saved = UserDefaults.standard.string(forKey: Self.serverKey)
         if let data = SpyderChatKeychain.load(),
-           let record = try? JSONDecoder().decode(SpyderChatIdentity.self, from: data) {
-            identity = record
-            hasIdentity = true
-            myName = record.name
-            myUsername = record.username ?? ""
-            inviteCode = record.inviteCode
+           let original = try? JSONDecoder().decode(SpyderChatIdentity.self, from: data) {
+            if let saved = SpyderChatKeychain.load(account: SpyderChatKeychain.indexAccount),
+               let list = try? JSONDecoder().decode([String].self, from: saved), list.first == original.id {
+                personaIDs = Array(list.prefix(8))
+            } else {
+                personaIDs = [original.id]
+                try? persistPersonaIndex()
+            }
+            // Legacy E2EE keys always belong to the original identity.
+            try? SpyderMessageCrypto.bindLegacyPersona(original.id)
+            let desired = UserDefaults.standard.string(forKey: SpyderChatKeychain.activeKey) ?? original.id
+            let loaded = desired == original.id ? original : personaIDs.dropFirst().compactMap { id -> SpyderChatIdentity? in
+                guard id == desired, let stored = SpyderChatKeychain.load(account: "persona:" + id) else { return nil }
+                return try? JSONDecoder().decode(SpyderChatIdentity.self, from: stored)
+            }.first
+            loadProfile(loaded ?? original)
         }
         // The old TestFlight build could omit the build-time URL; use the deployed
         // public endpoint without asking users to enter infrastructure addresses.
@@ -254,15 +325,19 @@ final class SpyderChatStore: ObservableObject {
                 return
             }
             // Local device-specific chat keys are unrelated to the wallet recovery phrase.
-            let publicKeys = try SpyderMessageCrypto.localKeys()
             let candidate = SpyderChatIdentity(id: try randomHex(16), secret: try randomHex(32), inviteCode: try randomHex(12).uppercased(), name: cleaned, username: handle, server: serverAddress)
             struct Register: Encodable { let id: String; let secret: String; let invite_code: String; let name: String; let username: String; let keys: SpyderPeerKeys; let discoverable: Bool }
             struct Ack: Decodable { let id: String; let name: String; let username: String?; let invite_code: String }
+            try SpyderMessageCrypto.bindLegacyPersona(candidate.id)
+            let publicKeys = try SpyderMessageCrypto.localKeys(personaID: candidate.id)
             let body = try JSONEncoder().encode(Register(id: candidate.id, secret: candidate.secret, invite_code: candidate.inviteCode, name: candidate.name, username: handle, keys: publicKeys, discoverable: discoverable))
             let response: Ack = try await perform("/v1/register", method: "POST", payload: body, anonymous: true)
             guard response.id == candidate.id, response.invite_code == candidate.inviteCode else { throw SpyderChatNetworkError.invalidResponse }
             try SpyderChatKeychain.save(JSONEncoder().encode(candidate))
-            identity = candidate
+            personaIDs = [candidate.id]
+            try persistPersonaIndex()
+            try SpyderMessageCrypto.bindLegacyPersona(candidate.id)
+            loadProfile(candidate)
             hasIdentity = true
             myName = candidate.name
             myUsername = handle
@@ -273,9 +348,90 @@ final class SpyderChatStore: ObservableObject {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    /// Registers a truly separate server account and E2EE keypair, not an alias.
+    /// Secondary accounts are invite-only and do not register APNs tokens.
+    func createPrivatePersona(name: String) async -> Bool {
+        guard hasIdentity, !working, personaIDs.count < 8 else { return false }
+        let cleaned = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(36))
+        guard !cleaned.isEmpty else { errorMessage = "Укажи имя приватной личности"; return false }
+        working = true
+        defer { working = false }
+        do {
+            try configureServer()
+            try await verifyExpectedServer()
+            let id = try randomHex(16)
+            let keys = try SpyderMessageCrypto.localKeys(personaID: id)
+            let candidate = SpyderChatIdentity(id: id, secret: try randomHex(32),
+                inviteCode: try randomHex(12).uppercased(), name: cleaned,
+                username: nil, server: serverAddress, kind: "private")
+            struct Registration: Encodable {
+                let id: String; let secret: String; let invite_code: String
+                let name: String; let keys: SpyderPeerKeys; let discoverable: Bool
+            }
+            struct Ack: Decodable { let id: String; let invite_code: String }
+            let body = try JSONEncoder().encode(Registration(id: id, secret: candidate.secret,
+                invite_code: candidate.inviteCode, name: cleaned, keys: keys, discoverable: false))
+            let ack: Ack = try await perform("/v1/register", method: "POST", payload: body, anonymous: true)
+            guard ack.id == id, ack.invite_code == candidate.inviteCode else { throw SpyderChatNetworkError.invalidResponse }
+            // Save credentials first. If index fails, do not claim the persona is usable.
+            try SpyderChatKeychain.save(JSONEncoder().encode(candidate), account: "persona:" + id)
+            personaIDs.append(id)
+            do { try persistPersonaIndex() }
+            catch { personaIDs.removeLast(); throw error }
+            await activatePersona(id)
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
+    }
+
+    func activatePersona(_ id: String) async {
+        guard personaIDs.contains(id), id != identity?.id else { return }
+        guard let data = SpyderChatKeychain.load(account: identityAccount(for: id)),
+              let next = try? JSONDecoder().decode(SpyderChatIdentity.self, from: data) else {
+            errorMessage = "Ключи этой личности недоступны на устройстве"
+            return
+        }
+        resetPersonaCaches()
+        loadProfile(next)
+        UserDefaults.standard.set(id, forKey: SpyderChatKeychain.activeKey)
+        // Never share the same APNs device token with a private persona.
+        if next.kind == "private" { pushStatus = "Приватная личность: push отключён для снижения связи между профилями" }
+        await refresh()
+    }
+
+    func personaSummary(_ id: String) -> (name: String, username: String, kind: String)? {
+        guard let data = SpyderChatKeychain.load(account: identityAccount(for: id)),
+              let item = try? JSONDecoder().decode(SpyderChatIdentity.self, from: data) else { return nil }
+        return (item.name, item.username ?? "", item.kind ?? "public")
+    }
+
+    /// Profile fields are visible to accepted contacts. Server-side profile data
+    /// is not cryptographically signed; key trust is still verified separately.
+    func updateProfile(bio: String, status: String, motion: SpyderAvatarMotion, accent: SpyderSignalAccent) async -> Bool {
+        guard let current = identity else { return false }
+        guard bio.count <= 160, status.count <= 64 else {
+            errorMessage = "Биография — до 160, статус — до 64 символов"
+            return false
+        }
+        do {
+            let seed: String
+            if let existing = current.avatar?.seed { seed = existing }
+            else { seed = try randomHex(16) }
+            let avatar = SpyderPersonaAvatar(version: 1, style: motion.rawValue, accent: accent.rawValue, seed: seed)
+            struct Payload: Encodable { let bio: String; let status: String; let avatar: SpyderPersonaAvatar }
+            let response: SpyderChatPerson = try await perform("/v3/profile", method: "POST",
+                payload: JSONEncoder().encode(Payload(bio: bio, status: status, avatar: avatar)))
+            guard response.id == current.id, var saved = identity, saved.id == current.id else { return false }
+            saved.bio = bio; saved.status = status; saved.avatar = avatar
+            try saveIdentity(saved)
+            identity = saved
+            myBio = bio; myStatus = status; myAvatar = avatar
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
+    }
+
     /// APNs token is never cached on disk. The app delegate gives us a fresh token.
     func registerPushToken(_ data: Data) async {
-        guard pushEnabled, hasIdentity, hasConfiguredServer else { return }
+        guard pushEnabled, hasIdentity, hasConfiguredServer, personaKind != "private" else { return }
         if lastPushToken != data { lastRegisteredPushToken = nil }
         lastPushToken = data
         guard lastRegisteredPushToken != data else { return }
@@ -349,6 +505,7 @@ final class SpyderChatStore: ObservableObject {
     }
 
     func updateDisplayName(_ value: String) async -> Bool {
+        let expectedID = identity?.id
         let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty && cleaned.count <= 36 else {
             errorMessage = "Имя должно содержать от 1 до 36 символов."
@@ -359,9 +516,9 @@ final class SpyderChatStore: ObservableObject {
         do {
             let response: Result = try await perform("/v2/profile/name", method: "POST",
                  payload: JSONEncoder().encode(Payload(name: cleaned)))
-            guard var saved = identity else { throw SpyderChatNetworkError.missingAccount }
+            guard var saved = identity, saved.id == expectedID else { return false }
             saved.name = response.name
-            try SpyderChatKeychain.save(JSONEncoder().encode(saved))
+            try saveIdentity(saved)
             identity = saved
             myName = saved.name
             return true
@@ -373,8 +530,8 @@ final class SpyderChatStore: ObservableObject {
     }
 
     func enablePush() async {
-        guard hasIdentity, hasConfiguredServer else {
-            pushStatus = "Сначала создай Spyder ID и подключись к сети"
+        guard hasIdentity, hasConfiguredServer, personaKind != "private" else {
+            pushStatus = "Push доступен только публичной личности: приватные не отправляют APNs-токен"
             return
         }
         do {
@@ -394,6 +551,10 @@ final class SpyderChatStore: ObservableObject {
     }
 
     func disablePush() async {
+        guard personaKind != "private" else {
+            pushStatus = "У приватной личности нет APNs-подписки"
+            return
+        }
         lastRegisteredPushToken = nil
         lastPushToken = nil
         pushEnabled = false
@@ -418,19 +579,24 @@ final class SpyderChatStore: ObservableObject {
 
     /// Activate immutable encryption keys for older chat profiles after server upgrade.
     private func activateEncryption() async throws {
+        guard let currentID = identity?.id else { throw SpyderChatNetworkError.missingAccount }
         try await verifyExpectedServer()
-        let keys = try SpyderMessageCrypto.localKeys()
+        guard currentID == identity?.id else { throw SpyderChatNetworkError.missingAccount }
+        let keys = try SpyderMessageCrypto.localKeys(personaID: currentID)
         let ack: SpyderChatKeysAck = try await perform("/v2/keys/activate", method: "POST", payload: JSONEncoder().encode(keys))
         guard ack.status == "active" || ack.status == "already_active" else {
             throw SpyderChatNetworkError.invalidResponse
         }
+        guard currentID == identity?.id else { throw SpyderChatNetworkError.missingAccount }
         encryptionReady = true
     }
 
     private func fetchPeerKeys(_ peer: String) async throws -> SpyderPeerKeys {
+        let expectedID = identity?.id
         guard peer.count == 32, peer.allSatisfy({ $0.isHexDigit }) else { throw SpyderChatNetworkError.invalidResponse }
         let response: SpyderChatPeerKeyResponse = try await perform("/v2/keys?peer=\(peer)")
-        try SpyderMessageCrypto.verifyAndPin(response.keys, server: serverAddress, peer: peer)
+        guard expectedID == identity?.id else { throw SpyderChatNetworkError.missingAccount }
+        try SpyderMessageCrypto.verifyAndPin(response.keys, server: serverAddress, peer: peer, personaID: expectedID)
         peerFingerprints[peer] = SpyderMessageCrypto.fingerprint(response.keys)
         return response.keys
     }
@@ -450,6 +616,7 @@ final class SpyderChatStore: ObservableObject {
 
     func refresh() async {
         guard !refreshing else { return }
+        let expectedIdentity = identity?.id
         guard hasIdentity else { await probeServer(); return }
         refreshing = true
         defer { refreshing = false }
@@ -458,20 +625,23 @@ final class SpyderChatStore: ObservableObject {
             // Recheck the server when a request fails; avoid reactivating keys on every poll.
             if !encryptionReady { try await activateEncryption() }
             let result: SpyderChatList = try await perform("/v1/contacts")
+            guard expectedIdentity == identity?.id else { return }
             contacts = result.contacts.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             requests = result.requests
             inviteCode = result.invite_code
             struct Privacy: Decodable { let discoverable: Bool }
             let privacy: Privacy = try await perform("/v2/profile/privacy")
+            guard expectedIdentity == identity?.id else { return }
             discoverable = privacy.discoverable
             await retryPushUnregister()
             connected = true
             serverStatus = nil
             // An APNs registration request made while offline needs another attempt.
-            if pushEnabled, let token = lastPushToken, lastRegisteredPushToken != token {
+            if pushEnabled, personaKind != "private", let token = lastPushToken, lastRegisteredPushToken != token {
                 await registerPushToken(token)
             }
         } catch {
+            guard expectedIdentity == identity?.id else { return }
             connected = false
             encryptionReady = false
             serverStatus = "Не удалось подключиться: " + error.localizedDescription
@@ -479,10 +649,13 @@ final class SpyderChatStore: ObservableObject {
     }
 
     func updateDiscovery(_ enabled: Bool) async {
+        let expectedID = identity?.id
+        guard personaKind != "private" || !enabled else { return }
         do {
             struct Privacy: Codable { let discoverable: Bool }
             let response: Privacy = try await perform("/v2/profile/privacy", method: "POST",
                 payload: JSONEncoder().encode(Privacy(discoverable: enabled)))
+            guard expectedID == identity?.id else { return }
             discoverable = response.discoverable
         } catch { errorMessage = error.localizedDescription }
     }
@@ -493,14 +666,16 @@ final class SpyderChatStore: ObservableObject {
     }
 
     func claimUsername(_ value: String) async -> Bool {
+        let expectedID = identity?.id
+        guard personaKind != "private" else { errorMessage = "Приватные личности не имеют публичного username"; return false }
         do {
             struct Payload: Encodable { let username: String }
             struct Ack: Decodable { let username: String }
             let handle = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().replacingOccurrences(of: "@", with: "")
             let ack: Ack = try await perform("/v1/profile/username", method: "POST", payload: JSONEncoder().encode(Payload(username: handle)))
-            guard var current = identity else { throw SpyderChatNetworkError.missingAccount }
+            guard var current = identity, current.id == expectedID else { return false }
             current.username = ack.username
-            try SpyderChatKeychain.save(JSONEncoder().encode(current))
+            try saveIdentity(current)
             identity = current
             myUsername = ack.username
             return true
@@ -554,23 +729,27 @@ final class SpyderChatStore: ObservableObject {
         guard hasIdentity, let own = identity else { return }
         do {
             try await activateEncryption()
+            guard own.id == identity?.id else { return }
             let keys = try await fetchPeerKeys(peer)
+            guard own.id == identity?.id else { return }
             let result: SpyderChatHistory = try await perform("/v2/messages?peer=\(peer)")
             var displayed: [SpyderServerMessage] = []
             for item in result.messages {
                 guard (item.sender_id == peer && item.recipient_id == own.id) ||
                       (item.sender_id == own.id && item.recipient_id == peer) else { continue }
                 let plaintext: String
-                do { plaintext = try SpyderMessageCrypto.open(item, myID: own.id, peerKeys: keys) }
+                do { plaintext = try SpyderMessageCrypto.open(item, myID: own.id, peerKeys: keys, personaID: own.id) }
                 catch { plaintext = "🔒 Невозможно подтвердить или расшифровать сообщение" }
                 displayed.append(SpyderServerMessage(id: item.id, client_id: item.client_id,
                     sender_id: item.sender_id, recipient_id: item.recipient_id,
                     text: plaintext, created_at: item.created_at))
             }
+            guard own.id == identity?.id else { return }
             messageByPeer[peer] = displayed
             connected = true
             encryptionReady = true
         } catch {
+            guard own.id == identity?.id else { return }
             connected = false
             errorMessage = error.localizedDescription
         }
@@ -581,13 +760,16 @@ final class SpyderChatStore: ObservableObject {
         guard !clean.isEmpty, let own = identity else { return false }
         do {
             try await activateEncryption()
+            guard own.id == identity?.id else { return false }
             let keys = try await fetchPeerKeys(peer)
+            guard own.id == identity?.id else { return false }
             let clientID = UUID().uuidString.lowercased()
             let cipher = try SpyderMessageCrypto.seal(clean, sender: own.id, recipient: peer,
-                                                       peerKeys: keys, clientID: clientID)
+                                                       peerKeys: keys, clientID: clientID, personaID: own.id)
             struct Ack: Decodable { let status: String }
             let result: Ack = try await perform("/v2/messages", method: "POST", payload: JSONEncoder().encode(cipher))
             guard result.status == "sent" || result.status == "already_sent" else { throw SpyderChatNetworkError.invalidResponse }
+            guard identity?.id == own.id else { return false }
             await loadMessages(peer: peer)
             return true
         } catch { errorMessage = error.localizedDescription; return false }

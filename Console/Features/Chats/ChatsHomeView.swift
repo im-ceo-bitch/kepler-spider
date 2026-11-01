@@ -22,7 +22,8 @@ struct SpyderDevnetChatsHomeView: View {
     @AppStorage(SpyderMotionKeys.enabled) private var motionEnabled = true
 
     private var accent: SpyderSignalAccent { SpyderSignalAccent(rawValue: accentValue) ?? .red }
-    private var avatarMotion: SpyderAvatarMotion { SpyderAvatarMotion(rawValue: avatarValue) ?? .pulse }
+    private var avatarMotion: SpyderAvatarMotion { chat.myAvatar?.motion ?? (SpyderAvatarMotion(rawValue: avatarValue) ?? .pulse) }
+    private var identityAccent: SpyderSignalAccent { chat.myAvatar?.color ?? accent }
 
 
     private var filtered: [SpyderChatPerson] {
@@ -36,8 +37,8 @@ struct SpyderDevnetChatsHomeView: View {
                     Text("Сеть").font(.system(size: 34, weight: .bold)).foregroundStyle(WalletTheme.ink)
                     Spacer()
                     Button { onProfile() } label: {
-                        SpyderProfileAvatarView(motion: avatarMotion, accent: accent,
-                                                diameter: 46, animate: motionEnabled)
+                        SpyderProfileAvatarView(motion: avatarMotion, accent: identityAccent,
+                                                diameter: 46, animate: motionEnabled, seed: chat.myAvatar?.seed ?? "")
                     }
                     .accessibilityLabel("Мой профиль Spyder")
                     if chat.hasIdentity {
@@ -102,7 +103,7 @@ struct SpyderDevnetChatsHomeView: View {
                         .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 18))
                     }
 
-                    if chat.myUsername.isEmpty {
+                    if chat.myUsername.isEmpty && chat.personaKind != "private" {
                         WalletCard {
                             VStack(alignment: .leading, spacing: 9) {
                                 Text("Создай свой @username").font(.system(size: 15, weight: .semibold))
@@ -128,7 +129,10 @@ struct SpyderDevnetChatsHomeView: View {
                         Text("Запросы на общение").font(.system(size: 18, weight: .semibold)).foregroundStyle(WalletTheme.ink)
                         ForEach(chat.requests) { peer in
                             HStack {
-                                avatar(peer.name)
+                                SpyderProfileAvatarView(motion: peer.avatar?.motion ?? .quiet,
+                                                         accent: peer.avatar?.color ?? .blue,
+                                                         diameter: 50, animate: motionEnabled,
+                                                         seed: peer.avatar?.seed ?? "")
                                 Text(peer.name).font(.system(size: 15, weight: .medium))
                                 Spacer()
                                 Button("Принять") { Task { await chat.accept(peer) } }
@@ -157,9 +161,12 @@ struct SpyderDevnetChatsHomeView: View {
                     } else {
                         VStack(spacing: 0) {
                             ForEach(filtered) { person in
-                                Button { onOpen(WalletContact(id: person.id, name: person.name, handle: person.username.map { "@" + $0 } ?? "Spyder Chat", letter: String(person.name.prefix(1)).uppercased(), preview: "Открыть переписку", time: "")) } label: {
+                                Button { onOpen(WalletContact(id: person.id, name: person.name, handle: person.username.map { "@" + $0 } ?? "", letter: String(person.name.prefix(1)).uppercased(), preview: "Открыть переписку", time: "")) } label: {
                                     HStack(spacing: 14) {
-                                        avatar(person.name)
+                                        SpyderProfileAvatarView(motion: person.avatar?.motion ?? .quiet,
+                                            accent: person.avatar?.color ?? .blue,
+                                            diameter: 50, animate: motionEnabled,
+                                            seed: person.avatar?.seed ?? "")
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(person.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(WalletTheme.ink)
                                             Text(person.username.map { "@" + $0 } ?? "Открыть переписку")
@@ -204,13 +211,13 @@ struct SpyderDevnetChatsHomeView: View {
 
     private var identityCard: some View {
         HStack(spacing: 15) {
-            SpyderProfileAvatarView(motion: avatarMotion, accent: accent,
-                                    diameter: 88, animate: motionEnabled)
+            SpyderProfileAvatarView(motion: avatarMotion, accent: identityAccent,
+                                    diameter: 88, animate: motionEnabled, seed: chat.myAvatar?.seed ?? "")
             VStack(alignment: .leading, spacing: 6) {
                 Text(chat.hasIdentity ? (chat.myName.isEmpty ? "Мой Spyder ID" : chat.myName) : "Твой Spyder ID")
                     .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
                     .lineLimit(2)
-                Text(chat.hasIdentity && !chat.myUsername.isEmpty ? "@" + chat.myUsername : "Создай имя и @username")
+                Text(chat.hasIdentity && !chat.myUsername.isEmpty ? "@" + chat.myUsername : (chat.personaKind == "private" ? "Приватная личность" : "Создай имя и @username"))
                     .font(.system(size: 13)).foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
                 Text(chat.connected ? "Связь установлена" : (chat.refreshing ? "Подключаемся к сети…" : "Подключение восстанавливается"))
@@ -232,11 +239,6 @@ struct SpyderDevnetChatsHomeView: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    private func avatar(_ name: String) -> some View {
-        Text(String(name.prefix(1)).uppercased())
-            .font(.system(size: 21, weight: .semibold)).foregroundStyle(WalletTheme.ink)
-            .frame(width: 50, height: 50).background(WalletTheme.divider, in: Circle())
-    }
 
     private var setup: some View {
         VStack(alignment: .leading, spacing: 17) {
@@ -314,7 +316,10 @@ struct SpyderDevnetChatsHomeView: View {
                 if chat.searching { ProgressView() }
                 ForEach(chat.searchResults) { person in
                     HStack(spacing: 12) {
-                        avatar(person.name)
+                        SpyderProfileAvatarView(motion: person.avatar?.motion ?? .quiet,
+                                            accent: person.avatar?.color ?? .blue,
+                                            diameter: 50, animate: motionEnabled,
+                                            seed: person.avatar?.seed ?? "")
                         VStack(alignment: .leading, spacing: 3) {
                             Text(person.name).font(.system(size: 15, weight: .semibold))
                             Text("@" + (person.username ?? ""))

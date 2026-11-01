@@ -1,8 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// A peer profile shows only authenticated Chat v2 data, not fabricated presence,
-/// photos, biography or media history (those have no backend support yet).
+/// Peer metadata comes from Chat v3; fingerprints remain independent E2EE trust data.
+/// Neither fabricated presence nor unimplemented media galleries are displayed.
 struct SpyderContactProfilePage: View {
     @EnvironmentObject private var chat: SpyderChatStore
     @AppStorage(SpyderMotionKeys.accent) private var accentValue = SpyderSignalAccent.blue.rawValue
@@ -12,6 +12,7 @@ struct SpyderContactProfilePage: View {
     @State private var confirmBlock = false
     @State private var loadingKey = false
 
+    private var peer: SpyderChatPerson? { chat.contacts.first(where: { $0.id == contact.id }) }
     private var accent: Color {
         (SpyderSignalAccent(rawValue: accentValue) ?? .blue).color
     }
@@ -20,12 +21,9 @@ struct SpyderContactProfilePage: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(spacing: 12) {
-                    Text(contact.letter)
-                        .font(.system(size: 47, weight: .semibold, design: .rounded))
-                        .foregroundStyle(accent)
-                        .frame(width: 116, height: 116)
-                        .background(accent.opacity(0.11), in: Circle())
-                        .overlay(Circle().stroke(accent.opacity(0.38), lineWidth: 1.5))
+                    SpyderProfileAvatarView(motion: peer?.avatar?.motion ?? .quiet,
+                        accent: peer?.avatar?.color ?? .blue, diameter: 116,
+                        seed: peer?.avatar?.seed ?? "")
                     Text(contact.name)
                         .font(.system(size: 30, weight: .bold))
                         .multilineTextAlignment(.center)
@@ -53,6 +51,18 @@ struct SpyderContactProfilePage: View {
                 .padding(19)
                 .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 25))
 
+                if let bio = peer?.bio, !bio.isEmpty {
+                    VStack(alignment: .leading, spacing: 9) {
+                        Label("О себе", systemImage: "text.alignleft").font(.headline)
+                        Text(bio).font(.subheadline)
+                    }
+                    .padding(19)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 25))
+                }
+                if let status = peer?.status, !status.isEmpty {
+                    Text(status).font(.subheadline).foregroundStyle(WalletTheme.secondary)
+                }
                 VStack(alignment: .leading, spacing: 15) {
                     Label("Безопасность переписки", systemImage: "lock.shield")
                         .font(.headline)
@@ -97,7 +107,7 @@ struct SpyderContactProfilePage: View {
                         .padding(18)
                         .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 22))
                 }
-                Text("Медиа и публичная биография появятся только после реализации защищённых вложений и полей профиля на сервере.")
+                Text("Медиа появятся после реализации зашифрованных вложений. Данные профиля предоставляются сервером и не заменяют проверку ключей.")
                     .font(.footnote).foregroundStyle(WalletTheme.secondary)
             }
             .padding(20)

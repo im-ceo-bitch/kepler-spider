@@ -3,6 +3,7 @@ import UIKit
 
 /// Personalization lives independently of wallet/chain operations and is safe to present as a sheet.
 struct SpyderMotionSettingsView: View {
+    @EnvironmentObject private var chat: SpyderChatStore
     @Environment(\.dismiss) private var dismiss
     @AppStorage(SpyderMotionKeys.accent) private var accentValue = SpyderSignalAccent.red.rawValue
     @AppStorage(SpyderMotionKeys.avatar) private var avatarValue = SpyderAvatarMotion.pulse.rawValue
@@ -38,6 +39,7 @@ struct SpyderMotionSettingsView: View {
                             ForEach(SpyderSignalAccent.allCases) { option in
                                 Button {
                                     accentValue = option.rawValue
+                                    syncAvatar()
                                     UISelectionFeedbackGenerator().selectionChanged()
                                 } label: {
                                     HStack(spacing: 10) {
@@ -84,6 +86,7 @@ struct SpyderMotionSettingsView: View {
                             ForEach(SpyderAvatarMotion.allCases) { option in
                                 Button {
                                     avatarValue = option.rawValue
+                                    syncAvatar()
                                     UISelectionFeedbackGenerator().selectionChanged()
                                 } label: {
                                     VStack(spacing: 8) {
@@ -176,6 +179,18 @@ struct SpyderMotionSettingsView: View {
         }
     }
 
+    private func syncAvatar() {
+        guard chat.hasIdentity, chat.connected else { return }
+        let expectedID = chat.activePersonaID
+        let style = currentAvatar
+        let accent = currentAccent
+        Task {
+            guard expectedID == chat.activePersonaID else { return }
+            _ = await chat.updateProfile(bio: chat.myBio, status: chat.myStatus,
+                                         motion: style, accent: accent)
+        }
+    }
+
     private func sectionTitle(_ title: String) -> some View {
         Text(title).font(.system(size: 19, weight: .bold))
     }
@@ -235,5 +250,5 @@ private struct SpyderLaunchPreview: View {
 }
 
 #Preview {
-    SpyderMotionSettingsView()
+    SpyderMotionSettingsView().environmentObject(SpyderChatStore())
 }

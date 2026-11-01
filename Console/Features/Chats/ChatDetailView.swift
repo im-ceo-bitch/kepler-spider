@@ -31,7 +31,6 @@ struct ChatDetailView: View {
     let onOpenActivity: () -> Void
     var onOpenContact: () -> Void = {}
 
-    @AppStorage("spyder.wallet.language") private var uiLanguage = "ru"
     @State private var terminalActive = false
     @State private var terminalEntries: [SpyderTerminalEntry] = []
     @State private var draft = ""
@@ -43,83 +42,41 @@ struct ChatDetailView: View {
     @State private var reactions: [String: String] = [:]
 
     private var messages: [SpyderServerMessage] { chat.messageByPeer[contact.id] ?? [] }
+    private var peerAvatar: SpyderPersonaAvatar? { chat.contacts.first(where: { $0.id == contact.id })?.avatar }
     private var accent: Color { (SpyderSignalAccent(rawValue: accentRaw) ?? .red).color }
     private var shouldAnimate: Bool { appearance.animateMessages && motionEnabled && !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled }
     private var canSend: Bool { chat.encryptionReady && !sending && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Picker("Режим переписки", selection: $terminalActive) {
-                Text(uiLanguage == "en" ? "Chat" : "Чат").tag(false)
-                Text(uiLanguage == "en" ? "Terminal" : "Терминал").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(WalletTheme.surface)
-            .accessibilityIdentifier("spyder.chat.terminalSwitcher")
             if terminalActive {
-                SpyderChatTerminalView(contact: contact, entries: $terminalEntries,
+                SpyderChatTerminalView(contact: contact,
+                    entries: $terminalEntries,
                     onWallpaper: { wallpaper in
                         appearance.wallpaper = wallpaper
                         SpyderChatAppearanceStore.save(appearance, peer: contact.id)
                     },
                     onBackgroundPicker: { showingAppearance = true },
                     onAction: onAction,
-                    onOpenActivity: onOpenActivity)
+                    onOpenActivity: onOpenActivity,
+                    onReturnToChat: {
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        withAnimation(shouldAnimate ? .easeOut(duration: 0.18) : nil) {
+                            terminalActive = false
+                        }
+                    }
+                )
             } else {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 12) {
-                        Label(chat.encryptionReady ? "Сообщения защищены E2EE · проверьте ключи контакта" : "Проверяем защищённое соединение…",
-                              systemImage: "lock.shield")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(WalletTheme.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 16).padding(.vertical, 11)
-                            .background(WalletTheme.surface.opacity(0.82), in: Capsule())
-                            .padding(.top, 12)
-                        if showingSecurity { securityCard }
-                        if !reactions.isEmpty {
-                            Text("Реакции пока видны только тебе на этом устройстве")
-                                .font(.system(size: 11))
-                                .foregroundStyle(WalletTheme.secondary)
-                                .padding(.vertical, 5)
-                        }
-                        if messages.isEmpty {
-                            emptyState
-                        }
-                        ForEach(messages) { message in
-                            messageRow(message)
-                                .id(message.id)
-                                .transition(shouldAnimate ? .asymmetric(
-                                    insertion: .move(edge: .bottom).combined(with: .opacity),
-                                    removal: .opacity) : .identity)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
-                }
-                .scrollDismissesKeyboard(.interactively)
-                .onChange(of: messages.last?.id) { _, newID in
-                    guard let newID else { return }
-                    withAnimation(shouldAnimate ? .easeOut(duration: 0.28) : nil) {
-                        proxy.scrollTo(newID, anchor: .bottom)
-                    }
-                }
-            }
-            .background {
-                SpyderChatWallpaperView(wallpaper: appearance.wallpaper,
-                                       accent: accent, glowEnabled: appearance.ambientGlow)
-                    .ignoresSafeArea(edges: .horizontal)
-            }
-            composer
+                chatSurface
             }
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
-        .navigationBarBackButtonHidden(true)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                chatNavigationTitle
+            }
+        }
         .sheet(isPresented: $showingAppearance, onDismiss: reloadAppearance) {
             NavigationStack { SpyderChatAppearanceSettingsView(peerID: contact.id) }
         }
@@ -150,58 +107,83 @@ struct ChatDetailView: View {
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 11) {
-            SpyderNavigationButton(symbol: "chevron.left", label: "Назад", action: onBack)
-            Button(action: onOpenContact) {
-                HStack(spacing: 11) {
-                    ZStack {
-                        Circle().fill(accent.opacity(0.12))
-                        Circle().stroke(accent.opacity(0.55), lineWidth: 1)
-                        Text(contact.letter).font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(WalletTheme.ink)
-                    }.frame(width: 42, height: 42)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(contact.name).font(.system(size: 17, weight: .semibold))
-                            .lineLimit(1)
-                        Text(contact.handle.isEmpty ? "Spyder Network" : contact.handle)
-                            .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                            .lineLimit(1)
+    // Dividing content from the page toolbar avoids a giant SwiftUI body
+    // and keeps the message scroll view entirely inside the available area.
+    private var chatSurface: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 9) {
+                        Button(action: onOpenContact) {
+                            Label(chat.encryptionReady ? "E2EE · проверить ключи" : "Проверяем защищённое соединение…",
+                                  systemImage: "lock.shield")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(WalletTheme.secondary)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
+                                .background(WalletTheme.surface.opacity(0.86), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Открыть профиль и проверить ключи контакта")
+                        .padding(.top, 5)
+                        if showingSecurity { securityCard }
+                        if !reactions.isEmpty {
+                            Text("Реакции пока видны только тебе на этом устройстве")
+                                .font(.system(size: 11))
+                                .foregroundStyle(WalletTheme.secondary)
+                                .padding(.vertical, 5)
+                        }
+                        if messages.isEmpty {
+                            emptyState
+                        }
+                        ForEach(messages) { message in
+                            messageRow(message)
+                                .id(message.id)
+                                .transition(shouldAnimate ? .asymmetric(
+                                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                                    removal: .opacity) : .identity)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: messages.last?.id) { _, newID in
+                    guard let newID else { return }
+                    withAnimation(shouldAnimate ? .easeOut(duration: 0.28) : nil) {
+                        proxy.scrollTo(newID, anchor: .bottom)
                     }
                 }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Профиль контакта " + contact.name)
-            Spacer(minLength: 4)
-            Menu {
-                Button(action: onOpenContact) {
-                    Label("Профиль собеседника", systemImage: "person.crop.circle")
-                }
-                Button { showingAppearance = true } label: {
-                    Label("Оформление чата", systemImage: "paintpalette")
-                }
-                Button { showingSecurity.toggle() } label: {
-                    Label("Проверить ключи", systemImage: "lock.shield")
-                }
-                Button { Task { await chat.loadMessages(peer: contact.id) } } label: {
-                    Label("Обновить сообщения", systemImage: "arrow.clockwise")
-                }
-                Button(role: .destructive) { confirmBlock = true } label: {
-                    Label("Заблокировать контакт", systemImage: "hand.raised")
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(WalletTheme.ink)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Circle())
+            .background {
+                SpyderChatWallpaperView(wallpaper: appearance.wallpaper,
+                                       accent: accent, glowEnabled: appearance.ambientGlow)
+                    .ignoresSafeArea(edges: .horizontal)
             }
-            .accessibilityLabel("Меню переписки")
+            composer
         }
-        .padding(.horizontal, 13).padding(.vertical, 10)
-        .foregroundStyle(WalletTheme.ink)
-        .background(WalletTheme.surface)
-        .overlay(alignment: .bottom) { WalletTheme.divider.frame(height: 0.5) }
+    }
+
+    // Keep the system Back button. NavigationStack then owns the native
+    // interactive edge-swipe gesture, including cancelled transitions.
+    // A custom header plus a hidden back button would disable that behavior.
+    private var chatNavigationTitle: some View {
+        Button(action: onOpenContact) {
+            HStack(spacing: 9) {
+                SpyderProfileAvatarView(motion: peerAvatar?.motion ?? .quiet,
+                    accent: peerAvatar?.color ?? .blue, diameter: 36,
+                    seed: peerAvatar?.seed ?? "")
+                Text(contact.name)
+                    .font(.system(size: 16, weight: .semibold))
+                    .lineLimit(1)
+                    .foregroundStyle(WalletTheme.ink)
+            }
+            .frame(maxWidth: 240)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Профиль контакта " + contact.name)
     }
 
     private var securityCard: some View {
@@ -291,6 +273,14 @@ struct ChatDetailView: View {
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
             Menu {
+                Button {
+                    UISelectionFeedbackGenerator().selectionChanged()
+                    withAnimation(shouldAnimate ? .easeOut(duration: 0.18) : nil) {
+                        terminalActive = true
+                    }
+                } label: {
+                    Label("Открыть терминал", systemImage: "terminal")
+                }
                 Button(action: onOpenContact) {
                     Label("Профиль собеседника", systemImage: "person.crop.circle")
                 }

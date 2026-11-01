@@ -75,24 +75,46 @@ private enum ChatKeychain {
 struct SpyderMessageCrypto {
     private struct Secret: Codable { let agreement: String; let signing: String }
     private static let personalAccount = "device-keys"
+    private static let originalOwner = "legacy-persona-owner"
+
+    // Once-only mapping for the old device keys. It is stored in Keychain so
+    // switching personas cannot silently rebind previously trusted keys.
+    static func bindLegacyPersona(_ id: String) throws {
+        guard id.count == 32 else { throw SpyderCryptographyError.invalidKeys }
+        if let existing = ChatKeychain.read(originalOwner) {
+            guard String(data: existing, encoding: .utf8) == id else { return }
+            return
+        }
+        try ChatKeychain.write(Data(id.utf8), account: originalOwner)
+    }
+
+    private static func keyAccount(for personaID: String?) throws -> String {
+        guard let id = personaID else { return personalAccount }
+        guard id.count == 32, id.allSatisfy({ $0.isHexDigit }) else { throw SpyderCryptographyError.invalidKeys }
+        if let owner = ChatKeychain.read(originalOwner), String(data: owner, encoding: .utf8) == id {
+            return personalAccount
+        }
+        return "persona-keys:" + id
+    }
 
     // Keys are generated once. Never silently replace existing keys after a server-side registration.
-    static func localKeys() throws -> SpyderPeerKeys {
-        let secret = try loadOrCreate()
+    static func localKeys(personaID: String? = nil) throws -> SpyderPeerKeys {
+        let secret = try loadOrCreate(personaID: personaID)
         let agree = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: Data(base64Encoded: secret.agreement) ?? Data())
         let sign = try Curve25519.Signing.PrivateKey(rawRepresentation: Data(base64Encoded: secret.signing) ?? Data())
         return SpyderPeerKeys(version: 2, key_agreement: agree.publicKey.rawRepresentation.base64EncodedString(),
                               signature: sign.publicKey.rawRepresentation.base64EncodedString())
     }
 
-    private static func loadOrCreate() throws -> Secret {
-        if let data = ChatKeychain.read(personalAccount) {
+    private static func loadOrCreate(personaID: String? = nil) throws -> Secret {
+        let account = try keyAccount(for: personaID)
+        if let data = ChatKeychain.read(account) {
             guard let secret = try? JSONDecoder().decode(Secret.self, from: data) else { throw SpyderCryptographyError.invalidKeys }
             return secret
         }
         let new = Secret(agreement: Curve25519.KeyAgreement.PrivateKey().rawRepresentation.base64EncodedString(),
                          signing: Curve25519.Signing.PrivateKey().rawRepresentation.base64EncodedString())
-        try ChatKeychain.write(JSONEncoder().encode(new), account: personalAccount)
+        try ChatKeychain.write(JSONEncoder().encode(new), account: account)
         return new
     }
 
@@ -113,9 +135,12 @@ struct SpyderMessageCrypto {
 
     // Trust on first use (TOFU): pin first observed key pair to local, device-only Keychain.
     // If the server returns different keys later, fail CLOSED, including on incoming messages.
-    static func verifyAndPin(_ keys: SpyderPeerKeys, server: String, peer: String) throws {
+    static func verifyAndPin(_ keys: SpyderPeerKeys, server: String, peer: String, personaID: String? = nil) throws {
         try validate(keys)
-        let namespace = SHA256.hash(data: Data((server + ":" + peer).utf8))
+        let owner = ChatKeychain.read(originalOwner).flatMap { String(data: $0, encoding: .utf8) }
+        let isLegacy = personaID == nil || personaID == owner
+        let trustScope = isLegacy ? server + ":" + peer : server + ":" + (personaID ?? "") + ":" + peer
+        let namespace = SHA256.hash(data: Data(trustScope.utf8))
             .map { String(format: "%02x", $0) }.joined()
         let item = "trusted:" + namespace
         let encoded = try JSONEncoder().encode(keys)
@@ -142,9 +167,9 @@ struct SpyderMessageCrypto {
         Data("spyder-chat-v2:\(client):\(sender):\(peer):\(eph):\(recipientBox):\(senderBox)".utf8)
     }
 
-    static func seal(_ text: String, sender: String, recipient: String, peerKeys: SpyderPeerKeys, clientID: String) throws -> SpyderOutgoingCipher {
+    static func seal(_ text: String, sender: String, recipient: String, peerKeys: SpyderPeerKeys, clientID: String, personaID: String? = nil) throws -> SpyderOutgoingCipher {
         try validate(peerKeys)
-        let secret = try loadOrCreate()
+        let secret = try loadOrCreate(personaID: personaID)
         let ownAgree = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: Data(base64Encoded: secret.agreement) ?? Data())
         let sign = try Curve25519.Signing.PrivateKey(rawRepresentation: Data(base64Encoded: secret.signing) ?? Data())
         let peerAgree = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: Data(base64Encoded: peerKeys.key_agreement) ?? Data())
@@ -161,16 +186,16 @@ struct SpyderMessageCrypto {
                                     signature: signature)
     }
 
-    static func open(_ message: SpyderEncryptedMessage, myID: String, peerKeys: SpyderPeerKeys) throws -> String {
+    static func open(_ message: SpyderEncryptedMessage, myID: String, peerKeys: SpyderPeerKeys, personaID: String? = nil) throws -> String {
         try validate(peerKeys)
         guard message.sender_id == myID || message.recipient_id == myID,
               let sig = Data(base64Encoded: message.signature), sig.count == 64,
               let ephData = Data(base64Encoded: message.ephemeral_key), ephData.count == 32 else { throw SpyderCryptographyError.invalidEnvelope }
-        let signingKeys = message.sender_id == myID ? try localKeys() : peerKeys
+        let signingKeys = message.sender_id == myID ? try localKeys(personaID: personaID) : peerKeys
         let pub = try Curve25519.Signing.PublicKey(rawRepresentation: Data(base64Encoded: signingKeys.signature) ?? Data())
         guard pub.isValidSignature(sig, for: signedBytes(message.client_id, message.sender_id,
               message.recipient_id, message.ephemeral_key, message.recipient_box, message.sender_box)) else { throw SpyderCryptographyError.invalidSignature }
-        let secret = try loadOrCreate()
+        let secret = try loadOrCreate(personaID: personaID)
         let agree = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: Data(base64Encoded: secret.agreement) ?? Data())
         let eph = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: ephData)
         let outgoing = message.sender_id == myID

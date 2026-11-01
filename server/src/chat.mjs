@@ -11,6 +11,15 @@ const validSecret = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(
 const validInvite = value => typeof value === 'string' && /^[A-F0-9]{24}$/.test(value);
 const validClient = value => typeof value === 'string' && /^[a-f0-9-]{36}$/.test(value);
 const sanitizedName = value => String(value ?? '').trim().slice(0, 36);
+const cleanBio = value => typeof value === 'string' && value.length <= 160 && !/[\u0000-\u0009\u000b-\u001f\u007f]/.test(value);
+const cleanStatus = value => typeof value === 'string' && value.length <= 64 && !/[\u0000-\u001f\u007f]/.test(value);
+const avatarStyles = new Set(['pulse','orbit','web','halo','constellation','radar','waves','nexus','eclipse','breathe','spark','quiet']);
+const avatarColors = new Set(['red','blue','violet','cyan','magenta','lime','amber','emerald','orange','ice','pink','ultraviolet']);
+const validAvatar = value => value && typeof value === 'object' && !Array.isArray(value) &&
+  value.version === 1 && avatarStyles.has(value.style) && avatarColors.has(value.accent) &&
+  typeof value.seed === 'string' && /^[a-f0-9]{32}$/.test(value.seed);
+const publicPerson = u => ({id:u.id,name:u.name,username:u.username || null,
+  bio:u.bio || '',status:u.status || '',avatar:u.avatar || null});
 // Usernames are public, case-insensitive, unique identifiers. They are not credentials.
 const normalizedUsername = value => typeof value === 'string' ? value.trim().replace(/^@/, '').toLowerCase() : '';
 const validUsername = value => /^[a-z][a-z0-9_]{2,19}$/.test(value) && !['admin', 'support', 'spyder', 'system', 'security'].includes(value);
@@ -83,12 +92,14 @@ export class ChatHub {
       const b=await this.body(request);
       if(!b||!validId(b.id)||!validSecret(b.secret)||!validInvite(b.invite_code)||!sanitizedName(b.name))return bad('invalid_registration');
       const username = normalizedUsername(b.username);
-      if(b.username != null && !validUsername(username))return bad('invalid_username');
+      if(b.username != null && b.username !== '' && !validUsername(username))return bad('invalid_username');
       if(b.keys != null && !keyPair(b.keys))return bad('invalid_public_keys');
       if(await this.ctx.storage.get('user:'+b.id))return bad('identity_exists',409);
       if(await this.ctx.storage.get('code:'+b.invite_code))return bad('code_taken',409);
       if(username && await this.ctx.storage.get(usernameKey(username)))return bad('username_taken',409);
-      const u={id:b.id,name:sanitizedName(b.name),username:username || null,invite_code:b.invite_code,secretHash:await sha256(b.secret),keys:b.keys || null,discoverable:b.discoverable===true};
+      const u={id:b.id,name:sanitizedName(b.name),username:username || null,invite_code:b.invite_code,
+        secretHash:await sha256(b.secret),keys:b.keys || null,discoverable:Boolean(username && b.discoverable===true),
+        bio:'',status:'',avatar:null};
       await this.ctx.storage.put('user:'+u.id,u);
       await this.ctx.storage.put('code:'+u.invite_code,u.id);
       if(username) await this.ctx.storage.put(usernameKey(username),u.id);
@@ -96,7 +107,22 @@ export class ChatHub {
     }
     const me=await this.read(request);
     if(!me)return bad('unauthorized',401);
-    if(method==='GET'&&path==='/v1/me')return json({id:me.id,name:me.name,username:me.username || null,invite_code:me.invite_code,has_keys:!!me.keys});
+    if(method==='GET'&&path==='/v1/me')return json({...publicPerson(me),invite_code:me.invite_code,has_keys:!!me.keys});
+    if(method==='GET'&&path==='/v3/profile/me')return json(publicPerson(me));
+    if(method==='POST'&&path==='/v3/profile'){
+      const b=await this.body(request);
+      if(!b || !cleanBio(b.bio) || !cleanStatus(b.status) || !validAvatar(b.avatar))return bad('invalid_profile');
+      me.bio=b.bio; me.status=b.status; me.avatar=b.avatar;
+      await this.ctx.storage.put('user:'+me.id,me);
+      return json(publicPerson(me));
+    }
+    if(method==='GET'&&path==='/v3/profile/contact'){
+      const peerId=url.searchParams.get('peer');
+      if(!validId(peerId) || !(await this.ctx.storage.get(linkKey(me.id,peerId))))return bad('not_contacts',403);
+      const peer=await this.ctx.storage.get('user:'+peerId);
+      if(!peer)return bad('not_found',404);
+      return json(publicPerson(peer));
+    }
     if(method==='GET'&&path==='/v2/push/status') {
       const p=await this.ctx.storage.get('push:'+me.id);
       const last=await this.ctx.storage.get('pushlast:'+me.id);
@@ -200,16 +226,16 @@ export class ChatHub {
       for(const [key,id] of matches){
         if(id===me.id)continue;
         const peer=await this.ctx.storage.get('user:'+id);
-        if(peer && peer.username && peer.discoverable===true && users.length<12)users.push({id:peer.id,name:peer.name,username:peer.username});
+        if(peer && peer.username && peer.discoverable===true && users.length<12)users.push(publicPerson(peer));
       }
       return json({users});
     }
     if(method==='GET'&&path==='/v1/contacts') {
       const contacts=[],requests=[];
       const entries=await this.ctx.storage.list({prefix:'invite:'+me.id+':'});
-      for(const [key,invite] of entries) { if(invite.status==='pending') {const peer=await this.ctx.storage.get('user:'+invite.from); if(peer)requests.push({id:peer.id,name:peer.name,username:peer.username || null});} }
+      for(const [key,invite] of entries) { if(invite.status==='pending') {const peer=await this.ctx.storage.get('user:'+invite.from); if(peer)requests.push(publicPerson(peer));} }
       const links=await this.ctx.storage.list({prefix:'contact:'+me.id+':'});
-      for(const [key,val] of links) {const peer=await this.ctx.storage.get('user:'+val.peer); if(peer)contacts.push({id:peer.id,name:peer.name,username:peer.username || null});}
+      for(const [key,val] of links) {const peer=await this.ctx.storage.get('user:'+val.peer); if(peer)contacts.push(publicPerson(peer));}
       return json({contacts,requests,invite_code:me.invite_code});
     }
     if(method==='POST'&&path==='/v1/invites') {

@@ -8,7 +8,7 @@ struct SpyderIdentityHubView: View {
     @AppStorage(SpyderMotionKeys.avatar) private var avatarValue = SpyderAvatarMotion.pulse.rawValue
     @AppStorage(SpyderMotionKeys.accent) private var accentValue = SpyderSignalAccent.red.rawValue
     @AppStorage(SpyderMotionKeys.enabled) private var motionEnabled = true
-    @State private var showIdentityLimit = false
+
 
     private var accent: Color {
         (SpyderSignalAccent(rawValue: accentValue) ?? .red).color
@@ -32,24 +32,28 @@ struct SpyderIdentityHubView: View {
         .background(WalletTheme.canvas.ignoresSafeArea())
         .navigationTitle("Spyder ID")
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Дополнительные профили", isPresented: $showIdentityLimit) {
-            Button("Понятно", role: .cancel) {}
-        } message: {
-            Text("Сейчас доступен один криптографический Spyder ID на устройство. Новые независимые идентичности потребуют отдельного безопасного хранения ключей и серверного маршрутизатора.")
+        .task {
+            if chat.hasIdentity {
+                await chat.refresh()
+                if chat.connected && chat.myAvatar == nil {
+                    _ = await chat.updateProfile(bio: chat.myBio, status: chat.myStatus,
+                        motion: SpyderAvatarMotion(rawValue: avatarValue) ?? .pulse,
+                        accent: SpyderSignalAccent(rawValue: accentValue) ?? .red)
+                }
+            }
         }
-        .task { if chat.hasIdentity { await chat.refresh() } }
     }
 
     private var identityHeader: some View {
         VStack(spacing: 12) {
             SpyderProfileAvatarView(
-                motion: SpyderAvatarMotion(rawValue: avatarValue) ?? .pulse,
-                accent: SpyderSignalAccent(rawValue: accentValue) ?? .red,
-                diameter: 114, animate: motionEnabled)
+                motion: chat.myAvatar?.motion ?? (SpyderAvatarMotion(rawValue: avatarValue) ?? .pulse),
+                accent: chat.myAvatar?.color ?? (SpyderSignalAccent(rawValue: accentValue) ?? .red),
+                diameter: 114, animate: motionEnabled, seed: chat.myAvatar?.seed ?? "")
             Text(chat.hasIdentity ? (chat.myName.isEmpty ? "Spyder ID" : chat.myName) : "Твой Spyder ID")
                 .font(.system(size: 29, weight: .bold))
                 .multilineTextAlignment(.center)
-            Text(chat.myUsername.isEmpty ? "Username не создан" : "@" + chat.myUsername)
+            Text(chat.myUsername.isEmpty ? (chat.personaKind == "private" ? "Только по приглашению" : "Username не создан") : "@" + chat.myUsername)
                 .font(.system(size: 16))
                 .foregroundStyle(WalletTheme.secondary)
                 .textSelection(.enabled)
@@ -96,10 +100,9 @@ struct SpyderIdentityHubView: View {
                 identityRow("QR и код приглашения", detail: "Поделиться Spyder ID", symbol: "qrcode")
             }
             Divider()
-            Button { showIdentityLimit = true } label: {
-                identityRow("Мои идентичности", detail: "Один реальный профиль", symbol: "person.2.crop.square.stack")
+            NavigationLink { SpyderPersonasView() } label: {
+                identityRow("Мои личности", detail: "Публичные и приватные Spyder ID", symbol: "person.2.crop.square.stack")
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 26))
@@ -138,8 +141,8 @@ struct SpyderIdentityHubView: View {
                     get: { chat.discoverable },
                     set: { enabled in Task { await chat.updateDiscovery(enabled) } }
                 ))
-                .disabled(!chat.hasIdentity)
-                Text("Настройка определяет видимость в поиске по @username. Уже добавленные контакты сохраняются.")
+                .disabled(!chat.hasIdentity || chat.personaKind == "private")
+                Text(chat.personaKind == "private" ? "Приватную личность нельзя включить в поиск. Её контакты добавляются только через QR или приглашение." : "Настройка определяет видимость в поиске по @username. Уже добавленные контакты сохраняются.")
                     .font(.footnote).foregroundStyle(WalletTheme.secondary)
             }
         }
@@ -170,6 +173,10 @@ private struct SpyderProfileEditView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var displayName = ""
     @State private var username = ""
+    @State private var bio = ""
+    @State private var status = ""
+    @AppStorage(SpyderMotionKeys.avatar) private var avatarValue = SpyderAvatarMotion.pulse.rawValue
+    @AppStorage(SpyderMotionKeys.accent) private var accentValue = SpyderSignalAccent.red.rawValue
     @State private var saving = false
     @State private var result: String?
 
@@ -189,7 +196,25 @@ private struct SpyderProfileEditView: View {
                     }
                     .disabled(saving || !chat.hasIdentity || displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                Section("Username") {
+                Section("О себе") {
+                    TextField("Биография (до 160 символов)", text: $bio, axis: .vertical)
+                        .lineLimit(2...5)
+                    TextField("Статус (до 64 символов)", text: $status)
+                    Button("Сохранить профиль и аватар") {
+                        Task {
+                            saving = true
+                            let ok = await chat.updateProfile(bio: bio, status: status,
+                                motion: SpyderAvatarMotion(rawValue: avatarValue) ?? .pulse,
+                                accent: SpyderSignalAccent(rawValue: accentValue) ?? .red)
+                            saving = false
+                            result = ok ? "Профиль сохранён" : "Не удалось обновить профиль"
+                        }
+                    }
+                    .disabled(saving || !chat.hasIdentity || bio.count > 160 || status.count > 64)
+                    Text("Параметры анимированного аватара передаются контактам; видео или фотография не загружаются.")
+                        .font(.footnote)
+                }
+                if chat.personaKind != "private" { Section("Username") {
                     TextField("username", text: $username)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button("Сохранить @username") {
@@ -203,7 +228,7 @@ private struct SpyderProfileEditView: View {
                     .disabled(saving || !chat.hasIdentity || username.count < 3)
                     Text("Публичное имя уникально во всей сети. Допустимы 3–20 символов: латинские буквы, цифры и _. Отдельный кошелёк не создаётся.")
                         .font(.footnote)
-                }
+                } }
                 if let result { Text(result).font(.footnote) }
             }
             .navigationTitle("Личные данные")
@@ -211,6 +236,8 @@ private struct SpyderProfileEditView: View {
             .onAppear {
                 displayName = chat.myName
                 username = chat.myUsername
+                bio = chat.myBio
+                status = chat.myStatus
             }
     }
 }

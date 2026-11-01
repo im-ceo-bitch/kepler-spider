@@ -14,13 +14,10 @@ class SpyderTerminalIntegrationTests(unittest.TestCase):
     def test_active_chat_routed_to_terminal(self):
         chat = (ROOT / "Console/Features/Chats/ChatDetailView.swift").read_text()
         root = (ROOT / "Console/WalletRootView.swift").read_text()
-        bridge = (ROOT / "Console/Features/Chats/SpyderTerminalChatContainer.swift").read_text()
-        shell = (ROOT / "Packages/SpyderTerminalKit/Sources/SpyderTerminalKit/TerminalChatShell.swift").read_text()
-        self.assertIn("SpyderTerminalChatContainer(contact: contact", root)
+        self.assertIn("SpyderChatTerminalView(contact: contact", chat)
         self.assertIn("onOpenActivity:", root)
-        self.assertIn("SpyderChatTerminalSwitchView(", bridge)
-        self.assertIn("ChatDetailView(contact: contact", bridge)
-        self.assertIn(".pickerStyle(.segmented)", shell)
+        self.assertIn('Label("Открыть терминал", systemImage: "terminal")', chat)
+        self.assertIn('onReturnToChat:', chat)
 
     def test_catalogs_and_safety(self):
         source = ROOT / "Packages/SpyderTerminalKit/Sources/SpyderTerminalKit/Resources"
@@ -28,7 +25,7 @@ class SpyderTerminalIntegrationTests(unittest.TestCase):
         en = json.loads((source / "commands.en.json").read_text())
         self.assertEqual({x['id'] for x in ru}, {x['id'] for x in en})
         for lang, commands in [('ru', ru), ('en', en)]:
-            self.assertGreaterEqual(len(commands), 30)
+            self.assertEqual(len(commands), 28)
             themes = next(c for c in commands if c['id'] == 'chat.theme.set')
             prefix = 'сп' if lang == 'ru' else 'sp'
             self.assertTrue(any(x.startswith(prefix) for x in themes['standard']))

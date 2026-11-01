@@ -7,6 +7,7 @@ struct SpyderProfileAvatarView: View {
     var accent: SpyderSignalAccent = .red
     var diameter: CGFloat = 116
     var animate = true
+    var seed: String = ""
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -44,10 +45,14 @@ struct SpyderProfileAvatarView: View {
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
         let ink = accent.color
         let pulse = CGFloat((sin(time * 1.8) + 1) / 2)
+        // A persona-specific offset prevents visually identical node layouts when
+        // several identities share a style. Never use this seed as a security key.
+        let start = UInt32(seed.prefix(6), radix: 16) ?? 0
+        let offset = Double(start % 360) * .pi / 180
 
         func radial(_ radius: CGFloat, _ radians: Double) -> CGPoint {
-            CGPoint(x: center.x + radius * CGFloat(cos(radians)),
-                    y: center.y + radius * CGFloat(sin(radians)))
+            CGPoint(x: center.x + radius * CGFloat(cos(radians + offset)),
+                    y: center.y + radius * CGFloat(sin(radians + offset)))
         }
         func circle(_ radius: CGFloat, opacity: Double = 0.55, thickness: CGFloat = 1) {
             let box = CGRect(x: center.x - radius, y: center.y - radius,

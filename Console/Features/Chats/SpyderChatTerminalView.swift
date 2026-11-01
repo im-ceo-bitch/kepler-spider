@@ -44,6 +44,7 @@ struct SpyderChatTerminalView: View {
     let onBackgroundPicker: () -> Void
     let onAction: (WalletModal) -> Void
     let onOpenActivity: () -> Void
+    let onReturnToChat: () -> Void
 
     @State private var settings = TerminalSettingsStore().load()
     @State private var showingSettings = false
@@ -82,6 +83,13 @@ struct SpyderChatTerminalView: View {
                 Spacer()
                 Circle().fill(chat.connected ? Color.green : Color.orange)
                     .frame(width: 7, height: 7)
+                Button(action: onReturnToChat) {
+                    Image(systemName: "bubble.left")
+                        .font(.system(size: 17))
+                        .frame(width: 42, height: 42)
+                }
+                .accessibilityLabel("Вернуться в чат")
+                .accessibilityIdentifier("spyder.terminal.returnToChat")
                 Button { showingSettings = true } label: {
                     Image(systemName: "gearshape")
                         .font(.system(size: 19))
