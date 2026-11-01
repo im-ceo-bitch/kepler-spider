@@ -23,7 +23,8 @@ class LiveReleaseChecks(unittest.TestCase):
 
     def test_devnet_only_shown_when_explicitly_configured(self):
         home = source('Console/Features/Wallet/WalletHomeView.swift')
-        self.assertIn('if spider.hasConfiguration {\n                    spiderSection', home)
+        self.assertRegex(home, r'if\s+spider\.hasConfiguration\s*\{\s*DisclosureGroup\(isExpanded:\s*\$showDevnet\)')
+        self.assertIn('spiderSection', home)
         self.assertNotIn('WalletDemoLabel()', home)
 
     def test_mainnet_transfer_stays_non_broadcasting(self):
@@ -40,6 +41,13 @@ class LiveReleaseChecks(unittest.TestCase):
         self.assertIn('tether,usd-coin',market)
         self.assertIn('var isPartialEstimate: Bool',market)
         self.assertIn('stablecoinPrices[ticker]',market)
+
+    def test_market_store_is_injected_at_app_root(self):
+        app = source('Console/ConsoleApp.swift')
+        home = source('Console/Features/Wallet/WalletHomeView.swift')
+        self.assertIn('@StateObject private var market = WalletMarketStore()', app)
+        self.assertIn('.environmentObject(market)', app)
+        self.assertIn('@EnvironmentObject private var market: WalletMarketStore', home)
 
     def test_chat_backend_enforces_authentication(self):
         router=source('server/src/index.mjs')
