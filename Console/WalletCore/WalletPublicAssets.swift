@@ -185,6 +185,21 @@ final class WalletPublicAssetsStore: ObservableObject {
         loading = false
     }
 
+    // Apply a verified, time-stamped public market snapshot; wallet addresses are not involved.
+    // CoinGecko is also queried by the legacy balance screen as a fallback until migration.
+    func applyMarketQuotes(_ quotes: [String: WalletMarketQuote]) {
+        for chain in SpyderChain.allCases {
+            if let quote = quotes[chain.ticker], !quote.isStale(), let usd = quote.decimalUSD {
+                prices[chain] = usd
+            }
+        }
+        for ticker in ["USDT", "USDC"] {
+            if let quote = quotes[ticker], !quote.isStale(), let usd = quote.decimalUSD {
+                stablecoinPrices[ticker] = usd
+            }
+        }
+    }
+
     // Use only the amounts actually retrieved. Failures never become fake zeroes.
     // Label the displayed estimate as partial when any network or price is missing.
     var totalUSD: Decimal? {

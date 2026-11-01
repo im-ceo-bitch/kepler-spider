@@ -173,9 +173,9 @@ struct WalletReceiveView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var chains: WalletChainStore
     @EnvironmentObject private var spider: SpiderDevnetStore
-    @State private var selected: SpyderChain? = nil
+    @State private var selected: SpyderChain? = .ethereum
 
-    init(preselected: SpyderChain? = nil) {
+    init(preselected: SpyderChain? = .ethereum) {
         _selected = State(initialValue: preselected)
     }
     @State private var acknowledge = false
@@ -191,7 +191,7 @@ struct WalletReceiveView: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Receive")
+                        Text("Получить")
                             .font(.system(size: 30, weight: .bold))
                             .foregroundStyle(WalletTheme.ink)
                         Text("Выбери сеть для адреса")
@@ -203,23 +203,6 @@ struct WalletReceiveView: View {
                 }
                 .spyderReveal(0.02)
                 VStack(spacing: 9) {
-                    Button { selected = nil; acknowledge = false; copied = false } label: {
-                        HStack(spacing: 13) {
-                            Image(systemName: "network").font(.system(size: 21)).frame(width: 34)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Spider Chain").font(.system(size: 15, weight: .semibold))
-                                Text("SPD · только тестовая Devnet").font(.system(size: 11))
-                                    .foregroundStyle(WalletTheme.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: selected == nil ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 20))
-                        }
-                        .foregroundStyle(WalletTheme.ink)
-                        .padding(13)
-                        .background(selected == nil ? WalletTheme.canvas : WalletTheme.surface,
-                                    in: RoundedRectangle(cornerRadius: 17))
-                    }.buttonStyle(.plain)
                     ForEach(SpyderChain.allCases) { chain in
                         Button { selected = chain; acknowledge = false; copied = false } label: {
                             HStack(spacing: 13) {
@@ -242,6 +225,23 @@ struct WalletReceiveView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    Button { selected = nil; acknowledge = false; copied = false } label: {
+                        HStack(spacing: 13) {
+                            Image(systemName: "network").font(.system(size: 21)).frame(width: 34)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Spider Chain").font(.system(size: 15, weight: .semibold))
+                                Text("SPD · только тестовая Devnet").font(.system(size: 11))
+                                    .foregroundStyle(WalletTheme.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: selected == nil ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 20))
+                        }
+                        .foregroundStyle(WalletTheme.ink)
+                        .padding(13)
+                        .background(selected == nil ? WalletTheme.canvas : WalletTheme.surface,
+                                    in: RoundedRectangle(cornerRadius: 17))
+                    }.buttonStyle(.plain)
                 }
                 WalletCard {
                     VStack(spacing: 17) {

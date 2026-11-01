@@ -32,7 +32,13 @@ class LiveReleaseChecks(unittest.TestCase):
         home = source('Console/Features/Wallet/WalletHomeView.swift')
         body = home.split('var body: some View {', 1)[1].split('private var spiderSection:', 1)[0]
         if 'spiderSection' in body:
-            self.assertRegex(body, r'if\s+spider\.hasConfiguration\s*\{\s*spiderSection\b')
+            # A configured test chain may be shown directly or inside a closed-by-default disclosure.
+            self.assertRegex(body, r'if\s+spider\.hasConfiguration\s*\{')
+            self.assertTrue(
+                re.search(r'if\s+spider\.hasConfiguration\s*\{\s*spiderSection\b', body)
+                or re.search(r'if\s+spider\.hasConfiguration\s*\{\s*DisclosureGroup\([^)]*\)\s*\{\s*spiderSection\b', body),
+                'Devnet is accessible only when explicitly configured'
+            )
         self.assertNotIn('WalletDemoLabel()', body)
 
     def test_mainnet_send_preview_cannot_broadcast(self):

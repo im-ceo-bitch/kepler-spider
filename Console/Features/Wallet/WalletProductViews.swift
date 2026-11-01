@@ -94,6 +94,42 @@ struct WalletAccountsView: View {
     }
 }
 
+/// Official CoinGecko coin images for an explicit allowlist of asset IDs.
+/// No dynamic token-symbol lookup; unknown/offline assets retain a local glyph.
+struct WalletAssetMark: View {
+    let symbol: String
+    let ticker: String
+    @EnvironmentObject private var market: WalletMarketStore
+
+    private var fallback: some View {
+        Group {
+            if ticker == "BTC" { Text("₿").font(.system(size: 29, weight: .medium)) }
+            else if ticker == "USDT" { Text("₮").font(.system(size: 27, weight: .medium)) }
+            else if ticker == "USDC" { Text("$").font(.system(size: 25, weight: .medium)) }
+            else { Image(systemName: symbol).font(.system(size: 22, weight: .medium)) }
+        }
+        .foregroundStyle(WalletTheme.ink)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    var body: some View {
+        Group {
+            if let url = market.quote(ticker)?.imageURL {
+                AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.18))) { phase in
+                    switch phase {
+                    case .success(let image): image.resizable().scaledToFit().padding(7)
+                    case .empty, .failure: fallback
+                    @unknown default: fallback
+                    }
+                }
+            } else { fallback }
+        }
+        .frame(width: 47, height: 47)
+        .background(WalletTheme.canvas, in: Circle())
+        .accessibilityLabel(ticker)
+    }
+}
+
 struct WalletAssetDetailView: View {
     @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
     let chain: SpyderChain
@@ -108,143 +144,338 @@ struct WalletAssetDetailView: View {
     private var address: String { chains.address(for: chain) ?? "" }
     private var balance: Decimal? { assets.balances[chain] }
     private var explorer: URL? {
-        let origin: String
+        let prefix: String
         switch chain {
-        case .ethereum: origin = "https://etherscan.io/address/"
-        case .solana: origin = "https://solscan.io/account/"
-        case .bitcoin: origin = "https://blockstream.info/address/"
+        case .ethereum: prefix = "https://etherscan.io/address/"
+        case .solana: prefix = "https://solscan.io/account/"
+        case .bitcoin: prefix = "https://blockstream.info/address/"
         }
         guard !address.isEmpty else { return nil }
-        return URL(string: origin + address)
+        return URL(string: prefix + address)
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    Image(systemName: chain.symbol)
-                        .font(.system(size: 29))
-                        .frame(width: 62, height: 62)
-                        .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 20))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(chain.name).font(.system(size: 27, weight: .bold))
-                        Text(chain.detail).font(.subheadline).foregroundStyle(WalletTheme.secondary)
+        VStack(spacing: 0) {
+            HStack {
+                SpyderNavigationButton(symbol: "chevron.left", label: "Назад", action: { dismiss() })
+                Spacer()
+                Text(chain.name)
+                    .font(.system(size: 16, weight: .semibold))
+                Spacer()
+                Button {
+                    guard !address.isEmpty else { return }
+                    Task {
+                        await assets.refresh(addresses: chains.addresses)
+                        await history.refresh(addresses: [SpyderAddress(chain: chain, value: address)])
                     }
-                    Spacer()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 44, height: 44)
                 }
-                .padding(.top, 10)
-                WalletCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text(chain == .bitcoin ? "Баланс сети · с ожидающими транзакциями" : "Баланс сети")
-                            .foregroundStyle(WalletTheme.secondary)
-                        Text(privacyHidden ? "••••" : (balance.map { WalletPublicAssetsStore.formatted($0) + " " + chain.ticker } ?? "— " + chain.ticker))
-                            .font(.system(size: 30, weight: .semibold, design: .rounded))
-                            .monospacedDigit()
-                            .contentTransition(.numericText())
-                        if chain == .bitcoin, let confirmed = assets.bitcoinConfirmed {
-                            Text(privacyHidden ? "Подтверждено: ••••" : "Подтверждено: " + WalletPublicAssetsStore.formatted(confirmed) + " BTC")
-                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                            if let pending = assets.bitcoinPendingDelta, pending != .zero {
-                                Text(privacyHidden ? "Изменение в mempool: ••••" : "Изменение в mempool: " + WalletPublicAssetsStore.formatted(pending) + " BTC")
-                                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                            }
-                        }
-                        if let balance, let price = assets.prices[chain] {
-                            Text(privacyHidden ? "••••" : "≈ $" + WalletPublicAssetsStore.formatted(balance * price, fractionDigits: 2))
-                                .foregroundStyle(WalletTheme.secondary)
-                        }
-                        if assets.failures[chain] != nil {
-                            Label("Баланс не удалось обновить", systemImage: "wifi.exclamationmark")
-                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                        }
-                    }
-                }
-                HStack(spacing: 12) {
-                    detailAction("Отправить", systemName: "arrow.up.right") { onSend(chain) }
-                    detailAction("Получить", systemName: "arrow.down.left") { onReceive() }
-                }
-                WalletCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("Адрес получения", systemImage: "qrcode")
-                            .font(.system(size: 16, weight: .semibold))
-                        Text(address.isEmpty ? "Адрес ещё не создан" : address)
-                            .font(.system(size: 13, design: .monospaced))
-                            .textSelection(.enabled)
-                            .privacySensitive()
-                        Button {
-                            UIPasteboard.general.setItems([["public.utf8-plain-text": address]],
-                                options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(120)])
-                            UINotificationFeedbackGenerator().notificationOccurred(.success)
-                        } label: { Label("Копировать адрес", systemImage: "doc.on.doc") }
-                            .disabled(address.isEmpty)
-                    }
-                }
-                WalletCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("Активность", systemImage: "clock.arrow.circlepath")
-                            .font(.system(size: 17, weight: .semibold))
-                        if let error = history.errors[chain] {
-                            Label("Ошибка обновления: " + error, systemImage: "wifi.exclamationmark")
-                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                        }
-                        if let updated = history.updatedAt[chain] {
-                            Text("Последняя проверка: " + updated.formatted(date: .abbreviated, time: .shortened))
-                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                        }
-                        if history.loading.contains(chain) { ProgressView("Получаем операции…") }
-                        else if (history.activity[chain] ?? []).isEmpty {
-                            Text(history.errors[chain] == nil ? "Нет операций в загруженной истории." : "История недоступна. Проверьте сеть.")
-                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                        }
-                        ForEach(Array((history.activity[chain] ?? []).prefix(12))) { item in
-                            Link(destination: item.explorerURL) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: item.state == .failed ? "xmark.circle" : item.state == .pending ? "clock" : "checkmark.circle")
-                                        .symbolRenderingMode(.hierarchical)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(item.direction + " · " + item.symbol).font(.subheadline.weight(.medium))
-                                        Text(item.state == .confirmed ? "Подтверждено" : item.state == .pending ? "Ожидает подтверждения" : "Ошибка")
-                                            .font(.caption).foregroundStyle(WalletTheme.secondary)
-                                    }
-                                    Spacer()
-                                    Text(privacyHidden ? "••••" : (item.amount.map { WalletPublicAssetsStore.formatted($0, fractionDigits: 7) } ?? "—"))
-                                        .font(.caption.monospacedDigit())
-                                    Image(systemName: "arrow.up.right.square").font(.caption)
-                                }
-                            }
-                            Divider()
-                        }
-                        if let explorer {
-                            Link(destination: explorer) {
-                                Label("Открыть в обозревателе", systemImage: "arrow.up.right.square")
-                                    .font(.system(size: 14, weight: .semibold))
-                            }
-                        }
-                    }
-                }
-                Text(LocalizedStringKey(chain.warning))
-                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                .buttonStyle(.plain)
+                .disabled(assets.loading || address.isEmpty)
+                .accessibilityLabel("Обновить")
             }
             .foregroundStyle(WalletTheme.ink)
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+            .background(WalletTheme.canvas)
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(spacing: 13) {
+                        WalletAssetMark(symbol: chain.symbol, ticker: chain.ticker)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(chain.name)
+                                .font(.system(size: 23, weight: .bold))
+                            Text(chain.ticker + " · Mainnet")
+                                .font(.system(size: 13))
+                                .foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    .padding(.top, 12)
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 13) {
+                            Text("Баланс")
+                                .font(.system(size: 13))
+                                .foregroundStyle(WalletTheme.secondary)
+                            Text(privacyHidden ? "••••" : (balance.map {
+                                WalletPublicAssetsStore.formatted($0) + " " + chain.ticker
+                            } ?? "— " + chain.ticker))
+                                .font(.system(size: 32, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                                .contentTransition(.numericText())
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                            Text(privacyHidden ? "••••" : usdBalance)
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(WalletTheme.secondary)
+                            if chain == .bitcoin, let confirmed = assets.bitcoinConfirmed {
+                                Divider()
+                                HStack {
+                                    Text("Подтверждено")
+                                    Spacer()
+                                    Text(privacyHidden ? "••••" : WalletPublicAssetsStore.formatted(confirmed) + " BTC")
+                                        .monospacedDigit()
+                                }
+                                .font(.system(size: 12))
+                                .foregroundStyle(WalletTheme.secondary)
+                                if let pending = assets.bitcoinPendingDelta, pending != .zero {
+                                    HStack {
+                                        Text("Изменение в mempool")
+                                        Spacer()
+                                        Text(privacyHidden ? "••••" : WalletPublicAssetsStore.formatted(pending) + " BTC")
+                                            .monospacedDigit()
+                                    }
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(WalletTheme.secondary)
+                                }
+                            }
+                            if let failure = assets.failures[chain] {
+                                Label("Баланс не удалось обновить: " + failure, systemImage: "wifi.exclamationmark")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(WalletTheme.secondary)
+                            }
+                        }
+                    }
+                    WalletMarketPanel(ticker: chain.ticker)
+                    HStack(spacing: 12) {
+                        action("Отправить", symbol: "arrow.up.right", primary: true) { onSend(chain) }
+                        action("Получить", symbol: "arrow.down.left", primary: false) { onReceive() }
+                    }
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 13) {
+                            HStack {
+                                Text("Адрес кошелька")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Spacer()
+                                Image(systemName: "qrcode")
+                                    .foregroundStyle(WalletTheme.secondary)
+                            }
+                            Text(address.isEmpty ? "Адрес недоступен" : address)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(WalletTheme.secondary)
+                                .textSelection(.enabled)
+                                .privacySensitive()
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button {
+                                UIPasteboard.general.setItems([["public.utf8-plain-text": address]], options: [
+                                    .localOnly: true,
+                                    .expirationDate: Date().addingTimeInterval(120)
+                                ])
+                                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                            } label: {
+                                Label("Копировать адрес", systemImage: "doc.on.doc")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            .disabled(address.isEmpty)
+                        }
+                    }
+                    activityCard
+                    Label(LocalizedStringKey(chain.warning), systemImage: "info.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(WalletTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 32)
+                .frame(maxWidth: 700)
+                .frame(maxWidth: .infinity)
+            }
         }
+        .foregroundStyle(WalletTheme.ink)
+        .navigationBarBackButtonHidden(true)
+        .background(WalletTheme.canvas.ignoresSafeArea())
         .task(id: address) {
             guard !address.isEmpty else { return }
             await history.refresh(addresses: [SpyderAddress(chain: chain, value: address)])
         }
-        .navigationTitle(chain.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .background(WalletTheme.canvas.ignoresSafeArea())
     }
 
-    private func detailAction(_ title: String, systemName: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemName)
+    private var usdBalance: String {
+        guard let balance, let price = assets.prices[chain] else { return "Курс USD недоступен" }
+        return "≈ $" + WalletPublicAssetsStore.formatted(balance * price, fractionDigits: 2)
+    }
+
+    private func action(_ title: String, symbol: String, primary: Bool, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            Label(LocalizedStringKey(title), systemImage: symbol)
                 .font(.system(size: 15, weight: .semibold))
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
-                .background(WalletTheme.surface, in: Capsule())
+                .foregroundStyle(primary ? WalletTheme.contrast : WalletTheme.ink)
+                .background(primary ? WalletTheme.accent : WalletTheme.surface, in: Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    private var activityCard: some View {
+        WalletCard {
+            VStack(alignment: .leading, spacing: 13) {
+                HStack {
+                    Text("История операций")
+                        .font(.system(size: 16, weight: .semibold))
+                    Spacer()
+                    if history.loading.contains(chain) { ProgressView() }
+                }
+                let items = Array((history.activity[chain] ?? []).prefix(5))
+                if items.isEmpty && !history.loading.contains(chain) {
+                    Text(history.errors[chain] == nil ? "Нет загруженных операций" : "Не удалось загрузить историю")
+                        .font(.system(size: 13))
+                        .foregroundStyle(WalletTheme.secondary)
+                }
+                ForEach(items) { item in
+                    Link(destination: item.explorerURL) {
+                        HStack(spacing: 11) {
+                            Image(systemName: item.state == .confirmed ? "checkmark.circle" : "clock")
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(item.direction + " · " + item.symbol)
+                                    .font(.system(size: 14, weight: .medium))
+                                Text(item.timestamp?.formatted(date: .abbreviated, time: .shortened) ?? "Дата неизвестна")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(WalletTheme.secondary)
+                            }
+                            Spacer()
+                            Text(privacyHidden ? "••••" : (item.amount.map {
+                                WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + item.symbol
+                            } ?? "—"))
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(WalletTheme.ink)
+                    }
+                    if item.id != items.last?.id { Divider() }
+                }
+                if let explorer {
+                    Divider()
+                    Link(destination: explorer) {
+                        Label("Открыть в обозревателе", systemImage: "arrow.up.right.square")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A token is identified by both chain and contract; only verified ERC-20 entries
+/// can open this screen. It never implies that token signing is available.
+struct WalletTokenDetailView: View {
+    @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var chains: WalletChainStore
+    @EnvironmentObject private var assets: WalletPublicAssetsStore
+    @EnvironmentObject private var spider: SpiderDevnetStore
+    @State private var showingReceive = false
+    @EnvironmentObject private var history: WalletActivityStore
+    let token: WalletVerifiedToken
+
+    private var address: String { chains.address(for: .ethereum) ?? "" }
+    private var balance: Decimal? { assets.stablecoins[token.ticker] }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 12) {
+                        WalletAssetMark(symbol: "dollarsign", ticker: token.ticker)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(token.name).font(.system(size: 24, weight: .bold))
+                            Text(token.ticker + " · Ethereum ERC-20")
+                                .font(.system(size: 13))
+                                .foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Баланс").font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
+                            Text(privacyHidden ? "••••" : (balance.map {
+                                WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + token.ticker
+                            } ?? "— " + token.ticker))
+                                .font(.system(size: 30, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.65)
+                            if let amount = balance, let price = assets.stablecoinPrices[token.ticker] {
+                                Text(privacyHidden ? "••••" : "≈ $" + WalletPublicAssetsStore.formatted(amount * price, fractionDigits: 2))
+                                    .foregroundStyle(WalletTheme.secondary)
+                            }
+                        }
+                    }
+                    WalletMarketPanel(ticker: token.ticker)
+                    Button { showingReceive = true } label: {
+                        Label("Получить", systemImage: "arrow.down.left")
+                            .spyderPrimaryButton()
+                    }
+                    .buttonStyle(.plain)
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Сеть получения").font(.system(size: 16, weight: .semibold))
+                            Text("Ethereum Mainnet · ERC-20")
+                                .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
+                            Divider()
+                            Text("Контракт токена").font(.system(size: 14, weight: .semibold))
+                            Text(token.contract)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(WalletTheme.secondary)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text("Адрес получения").font(.system(size: 14, weight: .semibold))
+                            Text(address.isEmpty ? "Адрес недоступен" : address)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(WalletTheme.secondary)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .privacySensitive()
+                        }
+                    }
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("История операций")
+                                .font(.system(size: 16, weight: .semibold))
+                            let entries = Array((history.activity[.ethereum] ?? [])
+                                .filter { $0.symbol == token.ticker }.prefix(5))
+                            if entries.isEmpty {
+                                Text("Нет загруженных операций. История токена может быть неполной.")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(WalletTheme.secondary)
+                            }
+                            ForEach(entries) { item in
+                                Link(destination: item.explorerURL) {
+                                    HStack {
+                                        Image(systemName: "arrow.left.arrow.right")
+                                        Text(item.direction)
+                                            .font(.system(size: 13, weight: .medium))
+                                        Spacer()
+                                        Text(privacyHidden ? "••••" : (item.amount.map {
+                                            WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + token.ticker
+                                        } ?? "—"))
+                                            .font(.system(size: 12, weight: .medium))
+                                            .monospacedDigit()
+                                    }
+                                    .foregroundStyle(WalletTheme.ink)
+                                }
+                            }
+                        }
+                    }
+                    Label("Принимай только " + token.ticker + " в сети Ethereum ERC-20. Для будущей отправки понадобится ETH на комиссию.", systemImage: "exclamationmark.shield")
+                        .font(.system(size: 12))
+                        .foregroundStyle(WalletTheme.secondary)
+                }
+                .foregroundStyle(WalletTheme.ink)
+                .padding(20)
+                .frame(maxWidth: 700)
+                .frame(maxWidth: .infinity)
+            }
+            .background(WalletTheme.canvas.ignoresSafeArea())
+            .navigationTitle(token.ticker)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
+        }
+        .sheet(isPresented: $showingReceive) {
+            WalletReceiveView(preselected: .ethereum)
+                .environmentObject(chains)
+                .environmentObject(spider)
+        }
     }
 }

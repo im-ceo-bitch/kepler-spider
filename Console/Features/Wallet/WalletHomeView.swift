@@ -1,163 +1,515 @@
 import SwiftUI
 import UIKit
 
+/// Wallet-only presentation. All financial values come from verified store responses;
+/// absent balances and prices are never replaced with plausible sample numbers.
 struct WalletHomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var chains: WalletChainStore
     @EnvironmentObject private var access: WalletAccess
     @EnvironmentObject private var publicAssets: WalletPublicAssetsStore
+    @EnvironmentObject private var market: WalletMarketStore
     @EnvironmentObject private var history: WalletActivityStore
     @EnvironmentObject private var spider: SpiderDevnetStore
     @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
+    @State private var selectedToken: WalletVerifiedToken?
+    @State private var showDevnet = false
     let onAction: (WalletModal) -> Void
     let onActivity: () -> Void
     let onAsset: (SpyderChain) -> Void
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("SPYDER")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .tracking(2)
-                            .foregroundStyle(WalletTheme.secondary)
-                        Button {
-                            onAction(.accounts)
+        VStack(spacing: 0) {
+            walletHeader
+                .padding(.horizontal, 20)
+                .padding(.top, 6)
+                .padding(.bottom, 12)
+                .background(WalletTheme.canvas)
+                .zIndex(1)
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 25) {
+                    portfolioCard
+                        .spyderReveal(0.03)
+                    quickActions
+                        .spyderReveal(0.08)
+                    marketStrip
+                    assetsSection
+                        .spyderReveal(0.12)
+                    recentSection
+                        .spyderReveal(0.16)
+                    if spider.hasConfiguration {
+                        DisclosureGroup(isExpanded: $showDevnet) {
+                            spiderSection
+                                .padding(.top, 16)
                         } label: {
-                            HStack(spacing: 8) {
-                                Text(access.activeAccountName)
-                                    .font(.system(size: 26, weight: .bold))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.75)
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 13, weight: .bold))
-                            }
-                            .foregroundStyle(WalletTheme.ink)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Выбрать кошелёк")
-                        Text("Bitcoin · Ethereum · Solana")
-                            .font(.system(size: 12))
-                            .foregroundStyle(WalletTheme.secondary)
-                    }
-                    Spacer()
-                    Button {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                            privacyHidden.toggle()
-                        }
-                        UISelectionFeedbackGenerator().selectionChanged()
-                    } label: {
-                        Image(systemName: privacyHidden ? "eye.slash" : "eye")
-                            .font(.system(size: 19))
-                            .frame(width: 45, height: 45)
-                            .background(WalletTheme.surface, in: Circle())
-                    }
-                    .accessibilityLabel(privacyHidden ? "Показать баланс" : "Скрыть баланс")
-                    Button { onAction(.profile) } label: {
-                        Image(systemName: "person.crop.circle")
-                            .font(.system(size: 24, weight: .light))
-                            .foregroundStyle(WalletTheme.ink)
-                            .frame(width: 47, height: 47)
-                            .background(WalletTheme.surface, in: Circle())
-                    }
-                    .accessibilityLabel("Профиль")
-                }
-                .spyderReveal(0.02)
-
-                balanceCard
-                    .spyderReveal(0.07)
-
-                HStack(alignment: .top, spacing: 11) {
-                    actionTile("Отправить", symbol: "arrow.up.right", dark: false) { onAction(.send) }
-                    actionTile("Получить", symbol: "arrow.down.left", dark: false) { onAction(.receive) }
-                    actionTile("Обновить", symbol: "arrow.clockwise", dark: true) {
-                        Task { await refreshWallet() }
-                    }
-                }
-                .spyderReveal(0.13)
-
-                assetSection
-                    .spyderReveal(0.17)
-
-                if spider.hasConfiguration {
-                    spiderSection
-                        .spyderReveal(0.18)
-                }
-
-                VStack(alignment: .leading, spacing: 17) {
-                    HStack {
-                        Text("Последние операции")
-                            .font(.system(size: 23, weight: .bold))
-                            .foregroundStyle(WalletTheme.ink)
-                        Spacer()
-                        Button("Все") { onActivity() }
-                            .font(.system(size: 15))
-                            .foregroundStyle(WalletTheme.secondary)
-                    }
-                    WalletCard {
-                        if history.recent.isEmpty && spider.activities.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Операций пока нет")
-                                    .font(.system(size: 15, weight: .semibold))
-                                Text("История Mainnet загружается отдельно. При ошибке обновления данные не заменяются вымышленными операциями.")
-                                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                            }.foregroundStyle(WalletTheme.ink)
-                        } else {
-                            VStack(spacing: 13) {
-                                ForEach(Array(history.recent.prefix(3))) { item in
-                                    Link(destination: item.explorerURL) {
-                                        transactionRow(item.direction + " · " + item.symbol,
-                                                       caption: item.state == .confirmed ? "Подтверждено" : item.state == .pending ? "Ожидает подтверждения" : "Ошибка",
-                                                       amount: privacyHidden ? "••••" : (item.amount.map { WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + item.symbol } ?? "—"),
-                                                       icon: "arrow.up.right.square")
-                                    }
-                                }
-                                ForEach(Array(spider.activities.prefix(history.recent.isEmpty ? 3 : 0))) { entry in
-                                    let outgoing = entry.transaction.payload.sender == spider.address
-                                    transactionRow(outgoing ? "Отправлено · SPD" : "Получено · SPD",
-                                                   caption: "Блок \(entry.height) · \(entry.id.prefix(12))…",
-                                                   amount: privacyHidden ? "••••" : ((outgoing ? "−" : "+") + SpiderDevnetStore.displayAmount(entry.transaction.payload.amount)),
-                                                   icon: outgoing ? "arrow.up.right" : "arrow.down.left")
+                            HStack(spacing: 10) {
+                                Image(systemName: "network")
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Spider Chain")
+                                        .font(.system(size: 15, weight: .semibold))
+                                    Text("Тестовая сеть · SPD")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(WalletTheme.secondary)
                                 }
                             }
+                            .foregroundStyle(WalletTheme.ink)
                         }
+                        .padding(17)
+                        .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 22))
                     }
+                    Text("Spyder Wallet · самостоятельное хранение")
+                        .font(.system(size: 11))
+                        .foregroundStyle(WalletTheme.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 18)
                 }
-                .spyderReveal(0.19)
-                Text("Spyder Wallet · твои ключи остаются на устройстве")
-                    .font(.system(size: 11))
-                    .foregroundStyle(WalletTheme.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                .padding(.horizontal, 20)
+                .padding(.top, 5)
+                .padding(.bottom, 18)
+                .frame(maxWidth: 700)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 13)
-            .padding(.bottom, 32)
+            .refreshable { await refreshWallet() }
         }
+        // Keep scrolling content below the actual iOS status-bar safe area.
+        // The header is a sibling of ScrollView, not its first scrolling row.
         .background(WalletTheme.canvas.ignoresSafeArea())
-        .refreshable { await refreshWallet() }
+        .sheet(item: $selectedToken) { token in
+            WalletTokenDetailView(token: token)
+                .environmentObject(chains)
+                .environmentObject(publicAssets)
+                .environmentObject(history)
+                .environmentObject(spider)
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(30)
+        }
+        .task(id: scenePhase) {
+            // Only refresh market prices while this screen is visible and the app is active.
+            guard scenePhase == .active else { return }
+            await market.refreshQuotes()
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 90_000_000_000) }
+                catch { break }
+                guard !Task.isCancelled, scenePhase == .active else { break }
+                await market.refreshQuotes()
+            }
+        }
         .task(id: access.activeWalletID) {
             chains.selectAccount(access.activeWalletID)
         }
-        .onChange(of: access.activeWalletID) { _, _ in history.clear() }
+        .onChange(of: access.activeWalletID) { _, _ in
+            history.clear()
+            selectedToken = nil
+        }
         .task(id: chains.addresses) {
             if chains.addresses.isEmpty && !chains.isLoading {
-                // Address derivation requires iOS authentication once. Afterwards
-                // ONLY public addresses are cached, so returning users see assets.
                 chains.activate()
             } else if !chains.addresses.isEmpty {
-                async let balances: Void = publicAssets.refresh(addresses: chains.addresses)
-                async let operations: Void = history.refresh(addresses: chains.addresses)
-                _ = await (balances, operations)
+                await refreshWallet()
+            }
+        }
+        .alert("Не удалось создать адреса", isPresented: Binding(
+            get: { chains.errorMessage != nil },
+            set: { if !$0 { chains.errorMessage = nil } }
+        )) {
+            Button("Понятно", role: .cancel) { chains.errorMessage = nil }
+        } message: { Text(chains.errorMessage ?? "") }
+    }
+
+    private func refreshWallet() async {
+        guard !chains.addresses.isEmpty else { return }
+        async let balances: Void = publicAssets.refresh(addresses: chains.addresses)
+        async let activity: Void = history.refresh(addresses: chains.addresses)
+        _ = await (balances, activity)
+    }
+
+    private var walletHeader: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Button { onAction(.accounts) } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("SPYDER / WALLET")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .tracking(1.8)
+                        .foregroundStyle(WalletTheme.secondary)
+                    HStack(spacing: 6) {
+                        Text(access.activeAccountName)
+                            .font(.system(size: 21, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.74)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .foregroundStyle(WalletTheme.ink)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Выбрать кошелёк")
+            headerButton(privacyHidden ? "eye.slash" : "eye", label: privacyHidden ? "Показать баланс" : "Скрыть баланс") {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { privacyHidden.toggle() }
+                UISelectionFeedbackGenerator().selectionChanged()
+            }
+            headerButton("person.crop.circle", label: "Профиль") { onAction(.profile) }
+        }
+    }
+
+    private func headerButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 19, weight: .medium))
+                .foregroundStyle(WalletTheme.ink)
+                .frame(width: 44, height: 44)
+                .background(WalletTheme.surface, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private var portfolioCard: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            HStack(alignment: .center) {
+                Label("Общий баланс", systemImage: "wallet.bifold")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.78))
+                Spacer()
+                Button {
+                    Task {
+                        await market.refreshQuotes(force: true)
+                        await refreshWallet()
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 15, weight: .medium))
+                        .symbolEffect(.pulse, value: publicAssets.loading)
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(.white.opacity(0.12), in: Circle())
+                }
+                .disabled(publicAssets.loading)
+                .accessibilityLabel("Обновить балансы")
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    Text(privacyHidden ? "••••••" : (publicAssets.totalUSD.map {
+                        "$" + WalletPublicAssetsStore.formatted($0, fractionDigits: 2)
+                    } ?? "—"))
+                        .font(.system(size: 38, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .minimumScaleFactor(0.65)
+                        .lineLimit(1)
+                    if !privacyHidden {
+                        Text("USD")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.58))
+                    }
+                }
+                .foregroundStyle(.white)
+                Text(publicAssets.totalUSD == nil ? "Ожидаем данные из сетей" :
+                     publicAssets.isPartialEstimate ? "Неполная оценка портфеля" : "Оценка по текущим котировкам")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.62))
+            }
+            Rectangle().fill(.white.opacity(0.16)).frame(height: 1)
+            HStack(spacing: 8) {
+                Image(systemName: publicAssets.isPartialEstimate ? "exclamationmark.circle" : "checkmark.circle")
+                    .font(.system(size: 13))
+                Text(publicAssets.updatedAt.map {
+                    "Проверено " + $0.formatted(date: .omitted, time: .shortened)
+                } ?? "Баланс ещё не обновлён")
+                    .font(.system(size: 12))
+                Spacer(minLength: 3)
+                Text("MAINNET")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .tracking(1)
+            }
+            .foregroundStyle(.white.opacity(0.72))
+        }
+        .padding(23)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(red: 0.065, green: 0.07, blue: 0.078), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var marketStrip: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Рынок")
+                    .font(.system(size: 16, weight: .semibold))
+                Spacer()
+                Text("CoinGecko · USD")
+                    .font(.system(size: 11))
+                    .foregroundStyle(WalletTheme.secondary)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 9) {
+                    ForEach([SpyderChain.bitcoin, .ethereum, .solana]) { chain in
+                        Button { onAsset(chain) } label: {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(chain.ticker)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(WalletTheme.secondary)
+                                Text(market.quote(chain.ticker).flatMap { $0.isStale() ? nil : WalletMarketFormatting.price($0.usdPrice) } ?? "—")
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                    .monospacedDigit()
+                                    .foregroundStyle(WalletTheme.ink)
+                                WalletMarketChangeView(ticker: chain.ticker)
+                            }
+                            .frame(minWidth: 110, alignment: .leading)
+                            .padding(14)
+                            .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 19))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            if let error = market.quoteError {
+                Label(error, systemImage: "wifi.exclamationmark")
+                    .font(.system(size: 11))
+                    .foregroundStyle(WalletTheme.secondary)
             }
         }
     }
 
-    private func refreshWallet() async {
-        async let balances: Void = publicAssets.refresh(addresses: chains.addresses)
-        async let activity: Void = history.refresh(addresses: chains.addresses)
-        _ = await (balances, activity)
+    private var quickActions: some View {
+        HStack(alignment: .top, spacing: 12) {
+            actionButton("Отправить", symbol: "arrow.up.right") { onAction(.send) }
+            actionButton("Получить", symbol: "arrow.down.left") { onAction(.receive) }
+            actionButton("История", symbol: "clock.arrow.circlepath") { onActivity() }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func actionButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 9) {
+                Image(systemName: symbol)
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(WalletTheme.ink)
+                    .frame(width: 58, height: 58)
+                    .background(WalletTheme.surface, in: Circle())
+                Text(LocalizedStringKey(title))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(WalletTheme.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+
+    private var assetsSection: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                Text("Активы")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(WalletTheme.ink)
+                Spacer()
+                Text("5 активов · 3 сети")
+                    .font(.system(size: 12))
+                    .foregroundStyle(WalletTheme.secondary)
+            }
+            if chains.addresses.isEmpty {
+                WalletCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Label("Открыть адреса кошелька", systemImage: "key.horizontal")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Подтверди Face ID или код устройства, чтобы показать адреса и загрузить балансы.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(WalletTheme.secondary)
+                        Button { chains.activate() } label: {
+                            HStack {
+                                if chains.isLoading { ProgressView().tint(WalletTheme.contrast) }
+                                Text(chains.isLoading ? "Открываем…" : "Открыть адреса")
+                            }.spyderPrimaryButton()
+                        }
+                        .disabled(chains.isLoading)
+                    }
+                }
+            } else {
+                VStack(spacing: 0) {
+                    ForEach([SpyderChain.bitcoin, .ethereum, .solana]) { chain in
+                        Button { onAsset(chain) } label: { nativeRow(chain) }
+                            .buttonStyle(.plain)
+                        assetDivider
+                    }
+                    ForEach(WalletTokenCatalog.ethereumERC20) { token in
+                        Button { selectedToken = token } label: { tokenRow(token) }
+                            .buttonStyle(.plain)
+                        if token.id != WalletTokenCatalog.ethereumERC20.last?.id { assetDivider }
+                    }
+                }
+                .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 25, style: .continuous))
+                if publicAssets.updatedAt != nil && (publicAssets.isPartialEstimate || !publicAssets.failures.isEmpty || !publicAssets.stablecoinFailures.isEmpty) {
+                    Label("Часть балансов или курсов пока недоступна. Пустое значение не означает ноль.", systemImage: "info.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(WalletTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var assetDivider: some View {
+        Rectangle().fill(WalletTheme.divider)
+            .frame(height: 1)
+            .padding(.leading, 76)
+            .padding(.trailing, 17)
+    }
+
+    private func nativeRow(_ chain: SpyderChain) -> some View {
+        HStack(spacing: 12) {
+            WalletAssetMark(symbol: chain.symbol, ticker: chain.ticker)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(chain.name)
+                    .font(.system(size: 15, weight: .semibold))
+                HStack(spacing: 5) {
+                    Text(chain.ticker)
+                        .font(.system(size: 12))
+                        .foregroundStyle(WalletTheme.secondary)
+                    WalletMarketChangeView(ticker: chain.ticker)
+                }
+            }
+            Spacer(minLength: 4)
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(privacyHidden ? "••••" : nativeUSD(chain))
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text(privacyHidden ? "••••" : (publicAssets.balances[chain].map {
+                    WalletPublicAssetsStore.formatted($0, fractionDigits: 7) + " " + chain.ticker
+                } ?? "— " + chain.ticker))
+                    .font(.system(size: 12))
+                    .foregroundStyle(WalletTheme.secondary)
+                    .monospacedDigit()
+            }
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(WalletTheme.secondary)
+        }
+        .foregroundStyle(WalletTheme.ink)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .contentShape(Rectangle())
+    }
+
+    private func tokenRow(_ token: WalletVerifiedToken) -> some View {
+        HStack(spacing: 12) {
+            WalletAssetMark(symbol: "dollarsign", ticker: token.ticker)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(token.name).font(.system(size: 15, weight: .semibold))
+                HStack(spacing: 5) {
+                    Text("ERC-20")
+                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                    WalletMarketChangeView(ticker: token.ticker)
+                }
+            }
+            Spacer(minLength: 4)
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(privacyHidden ? "••••" : tokenUSD(token.ticker))
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text(privacyHidden ? "••••" : (publicAssets.stablecoins[token.ticker].map {
+                    WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + token.ticker
+                } ?? "— " + token.ticker))
+                    .font(.system(size: 12))
+                    .foregroundStyle(WalletTheme.secondary)
+                    .monospacedDigit()
+            }
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(WalletTheme.secondary)
+        }
+        .foregroundStyle(WalletTheme.ink)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .contentShape(Rectangle())
+    }
+
+    private func chainNetwork(_ chain: SpyderChain) -> String {
+        switch chain {
+        case .ethereum: "Ethereum"
+        case .solana: "Solana"
+        case .bitcoin: "Bitcoin"
+        }
+    }
+
+    private func nativeUSD(_ chain: SpyderChain) -> String {
+        guard let balance = publicAssets.balances[chain], let price = publicAssets.prices[chain] else { return "—" }
+        return "$" + WalletPublicAssetsStore.formatted(balance * price, fractionDigits: 2)
+    }
+
+    private func tokenUSD(_ ticker: String) -> String {
+        guard let balance = publicAssets.stablecoins[ticker], let price = publicAssets.stablecoinPrices[ticker] else { return "—" }
+        return "$" + WalletPublicAssetsStore.formatted(balance * price, fractionDigits: 2)
+    }
+
+    private var recentSection: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                Text("Операции")
+                    .font(.system(size: 22, weight: .bold))
+                Spacer()
+                Button("Все") { onActivity() }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(WalletTheme.secondary)
+            }
+            .foregroundStyle(WalletTheme.ink)
+            WalletCard {
+                if history.recent.isEmpty {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 19))
+                            .foregroundStyle(WalletTheme.secondary)
+                            .frame(width: 43, height: 43)
+                            .background(WalletTheme.canvas, in: Circle())
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(history.loading.isEmpty ? "Нет загруженных операций" : "Обновляем историю…")
+                                .font(.system(size: 15, weight: .semibold))
+                            Text(history.loading.isEmpty ? "Открой историю для проверки сетей и статуса загрузки." : "Получаем последние подтверждения из сетей.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(WalletTheme.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(history.recent.prefix(3))) { item in
+                            Link(destination: item.explorerURL) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: item.state == .confirmed ? "checkmark" : "clock")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .frame(width: 42, height: 42)
+                                        .background(WalletTheme.canvas, in: Circle())
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(item.direction + " · " + item.symbol)
+                                            .font(.system(size: 14, weight: .semibold))
+                                        Text(item.timestamp?.formatted(date: .abbreviated, time: .shortened) ?? "Дата неизвестна")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(WalletTheme.secondary)
+                                    }
+                                    Spacer(minLength: 3)
+                                    Text(privacyHidden ? "••••" : (item.amount.map {
+                                        WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + item.symbol
+                                    } ?? "—"))
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .monospacedDigit()
+                                }
+                                .foregroundStyle(WalletTheme.ink)
+                                .padding(.vertical, 8)
+                            }
+                            if item.id != history.recent.prefix(3).last?.id { Divider() }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private var spiderSection: some View {
@@ -243,243 +595,6 @@ struct WalletHomeView: View {
         } message: { Text(spider.error ?? "") }
     }
 
-    private var assetSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            HStack {
-                Text("Crypto assets")
-                    .font(.system(size: 23, weight: .bold))
-                    .foregroundStyle(WalletTheme.ink)
-                Spacer()
-                Text("3 сети")
-                    .font(.system(size: 12))
-                    .foregroundStyle(WalletTheme.secondary)
-            }
-            if chains.addresses.isEmpty {
-                WalletCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("Создать адреса кошелька", systemImage: "key.horizontal")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(WalletTheme.ink)
-                        Text("Адреса создаются только на этом устройстве. Подтверди Face ID, чтобы открыть кошелёк для получения активов.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(WalletTheme.secondary)
-                        Button { chains.activate() } label: {
-                            HStack(spacing: 8) {
-                                if chains.isLoading { ProgressView().tint(WalletTheme.contrast) }
-                                else { Image(systemName: "shield.lefthalf.filled") }
-                                Text(chains.isLoading ? "Открываем адреса…" : "Открыть адреса")
-                            }
-                            .spyderPrimaryButton()
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(chains.isLoading)
-                    }
-                }
-            } else {
-                VStack(spacing: 1) {
-                    ForEach(SpyderChain.allCases) { chain in
-                        Button { onAsset(chain) } label: {
-                        HStack(spacing: 13) {
-                            Image(systemName: chain.symbol)
-                                .font(.system(size: 22, weight: .regular))
-                                .frame(width: 44, height: 44)
-                                .background(WalletTheme.canvas, in: Circle())
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(chain.name).font(.system(size: 15, weight: .semibold))
-                                Text(chains.address(for: chain).map { String($0.prefix(9)) + "…" + String($0.suffix(6)) } ?? "Не подключён")
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(WalletTheme.secondary)
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing, spacing: 4) {
-                                if let balance = publicAssets.balances[chain] {
-                                    Text(privacyHidden ? "••••••" : WalletPublicAssetsStore.formatted(balance) + " " + chain.ticker)
-                                        .font(.system(size: 15, weight: .medium)).monospacedDigit()
-                                    if let price = publicAssets.prices[chain] {
-                                        Text(privacyHidden ? "••••" : "≈ $" + WalletPublicAssetsStore.formatted(balance * price, fractionDigits: 2))
-                                            .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                                    }
-                                } else {
-                                    Text("— " + chain.ticker)
-                                        .font(.system(size: 15, weight: .medium))
-                                        .foregroundStyle(WalletTheme.secondary)
-                                }
-                            }
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(WalletTheme.secondary)
-                        }
-                        .padding(.vertical, 13)
-                        }
-                        .buttonStyle(.plain)
-                        if chain != SpyderChain.allCases.last { Divider().overlay(WalletTheme.divider) }
-                    }
-                }
-                .foregroundStyle(WalletTheme.ink)
-                .padding(.horizontal, 17)
-                .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 24))
-                if chains.address(for: .ethereum) != nil {
-                    VStack(spacing: 12) {
-                        ForEach(WalletTokenCatalog.ethereumERC20.map(\.ticker), id: \.self) { ticker in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(ticker).font(.system(size: 15, weight: .semibold))
-                                    Text("Ethereum · ERC-20").font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
-                                }
-                                Spacer()
-                                Text(privacyHidden ? "••••••" : (publicAssets.stablecoins[ticker].map {
-                                    WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + ticker
-                                } ?? "— " + ticker))
-                                .font(.system(size: 14)).monospacedDigit()
-                            }
-                        }
-                    }
-                    .foregroundStyle(WalletTheme.ink)
-                    .padding(16)
-                    .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 20))
-                    ForEach(WalletTokenCatalog.ethereumERC20.map(\.ticker), id: \.self) { ticker in
-                        if let detail = publicAssets.stablecoinFailures[ticker] {
-                            Text(ticker + ": " + detail)
-                                .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
-                        }
-                    }
-                    Text("USDT и USDC · только Ethereum ERC-20. Для будущих отправок нужен ETH на комиссию. Текущая версия поддерживает получение и проверку балансов.")
-                        .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
-                }
-                HStack {
-                    Text(publicAssets.loading ? "Получаем балансы из блокчейнов…" :
-                         (publicAssets.updatedAt == nil ? "Проверь балансы в публичных сетях" : "Баланс из публичных сетей · только чтение"))
-                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                    Spacer()
-                    Button {
-                        Task { await publicAssets.refresh(addresses: chains.addresses) }
-                    } label: { Image(systemName: "arrow.clockwise") }
-                    .disabled(publicAssets.loading)
-                }
-                ForEach(SpyderChain.allCases) { chain in
-                    if let detail = publicAssets.failures[chain] {
-                        Text(chain.ticker + ": " + detail)
-                            .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
-                    }
-                }
-                if let detail = publicAssets.priceError {
-                    Text(detail).font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
-                }
-            }
-        }
-        .alert("Не удалось создать адреса", isPresented: Binding(
-            get: { chains.errorMessage != nil },
-            set: { if !$0 { chains.errorMessage = nil } }
-        )) {
-            Button("Понятно", role: .cancel) { chains.errorMessage = nil }
-        } message: { Text(chains.errorMessage ?? "") }
-    }
-
-    private func explorerURL(for chain: SpyderChain, address: String) -> URL? {
-        let prefix: String
-        switch chain {
-        case .ethereum: prefix = "https://etherscan.io/address/"
-        case .solana: prefix = "https://solscan.io/account/"
-        case .bitcoin: prefix = "https://blockstream.info/address/"
-        }
-        return URL(string: prefix + address)
-    }
-
-    private var balanceCard: some View {
-        VStack(alignment: .leading, spacing: 30) {
-            HStack {
-                Label(access.activeAccountName, systemImage: "wallet.pass")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.white.opacity(0.85))
-                Spacer()
-                Text("MAINNET · VIEW")
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(0.6)
-                    .foregroundStyle(Color.white.opacity(0.52))
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Стоимость портфеля")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.white.opacity(0.58))
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(privacyHidden ? "••••••" : (publicAssets.totalUSD.map { WalletPublicAssetsStore.formatted($0, fractionDigits: 2) } ?? "—"))
-                        .font(.system(size: 36, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.white)
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
-                    if !privacyHidden {
-                        Text("USD")
-                            .font(.system(size: 21, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.76))
-                    }
-                }
-                Text(publicAssets.totalUSD == nil ? "Обновляем балансы и курсы" :
-                     (publicAssets.isPartialEstimate ? "Предварительная оценка · часть сетей недоступна" : "BTC · ETH · SOL · USDT · USDC"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.white.opacity(0.55))
-            }
-            HStack {
-                Text("Твои адреса · BTC / ETH / SOL")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.white.opacity(0.65))
-                Spacer()
-                Image(systemName: "checkmark.shield")
-                    .foregroundStyle(Color.white.opacity(0.84))
-            }
-        }
-        .padding(22)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(red: 0.07, green: 0.075, blue: 0.085), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 18, y: 7)
-        .accessibilityElement(children: .combine)
-    }
-
-    private func actionTile(_ title: String, symbol: String, dark: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(dark ? Color.white : WalletTheme.ink)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 70)
-                    .background(dark ? Color(red: 0.11, green: 0.11, blue: 0.12) : WalletTheme.surface,
-                                in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                Text(LocalizedStringKey(title))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(WalletTheme.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.9)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func transactionRow(_ title: String, caption: String, amount: String, icon: String) -> some View {
-        HStack(spacing: 13) {
-            Image(systemName: icon)
-                .font(.system(size: 19, weight: .medium))
-                .foregroundStyle(WalletTheme.ink)
-                .frame(width: 47, height: 47)
-                .background(WalletTheme.surface, in: Circle())
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(WalletTheme.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Text(caption)
-                    .font(.system(size: 12))
-                    .foregroundStyle(WalletTheme.secondary)
-            }
-            Spacer(minLength: 2)
-            Text(amount)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(WalletTheme.ink)
-                .monospacedDigit()
-        }
-    }
 }
 
 struct WalletActivityView: View {

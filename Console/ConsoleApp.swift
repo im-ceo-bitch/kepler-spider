@@ -14,6 +14,7 @@ struct ConsoleApp: App {
     @StateObject private var walletAccess = WalletAccess()
     @StateObject private var walletChains = WalletChainStore()
     @StateObject private var publicAssets = WalletPublicAssetsStore()
+    @StateObject private var marketData = WalletMarketStore()
     @StateObject private var walletHistory = WalletActivityStore()
     @StateObject private var spyderChat = SpyderChatStore()
     @StateObject private var legacyChat = LegacyConsoleChatStore()
@@ -35,6 +36,7 @@ struct ConsoleApp: App {
                 .environmentObject(walletAccess)
                 .environmentObject(walletChains)
                 .environmentObject(publicAssets)
+                .environmentObject(marketData)
                 .environmentObject(walletHistory)
                 .environmentObject(spyderChat)
                 .environmentObject(legacyChat)
@@ -49,6 +51,9 @@ struct ConsoleApp: App {
                         .transition(.opacity)
                         .zIndex(1)
                 }
+            }
+            .onReceive(marketData.$quotes) { quotes in
+                publicAssets.applyMarketQuotes(quotes)
             }
             .preferredColorScheme(preferredScheme)
             .environment(\.locale, Locale(identifier: language))

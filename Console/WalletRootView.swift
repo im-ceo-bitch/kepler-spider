@@ -73,7 +73,7 @@ struct WalletRootView: View {
         case .devnetTransfer:
             WalletTransferView(isRequest: false, contact: selectedContact)
         case .receive:
-            WalletReceiveView(preselected: sendChain)
+            WalletReceiveView(preselected: sendChain ?? .ethereum)
                 .presentationDetents([.medium, .large])
         case .touch:
             WalletTouchView(onConnect: { contact in
