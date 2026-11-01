@@ -93,6 +93,26 @@ enum SpyderLocalChatReactions {
     }
 }
 
+// Keep the coordinate arithmetic outside the SwiftUI Canvas renderer.
+// A complex generic map expression here exceeded the Xcode Swift type-checker budget.
+private enum SpyderConstellationLayout {
+    static func nodes(in size: CGSize) -> [CGPoint] {
+        var result: [CGPoint] = []
+        result.reserveCapacity(52)
+
+        for index in 0..<52 {
+            let gridX: Int = (index * 167 + 37) % 997
+            let gridY: Int = (index * 311 + 59) % 991
+            let normalizedX: CGFloat = CGFloat(gridX) / 997.0
+            let normalizedY: CGFloat = CGFloat(gridY) / 991.0
+            let pointX: CGFloat = normalizedX * size.width
+            let pointY: CGFloat = normalizedY * size.height
+            result.append(CGPoint(x: pointX, y: pointY))
+        }
+        return result
+    }
+}
+
 struct SpyderChatWallpaperView: View {
     var wallpaper: SpyderChatWallpaper
     var accent: Color
@@ -158,10 +178,7 @@ struct SpyderChatWallpaperView: View {
                         context.stroke(line, with: .color(accent.opacity(thin * 0.55)), lineWidth: 0.5)
                     }
                 case .constellation:
-                    let nodes: [CGPoint] = (0..<52).map { index in
-                        CGPoint(x: CGFloat((index * 167 + 37) % 997) / 997 * size.width,
-                                y: CGFloat((index * 311 + 59) % 991) / 991 * size.height)
-                    }
+                    let nodes = SpyderConstellationLayout.nodes(in: size)
                     for index in 1..<nodes.count where index % 3 != 0 {
                         var edge = Path()
                         edge.move(to: nodes[index - 1])
