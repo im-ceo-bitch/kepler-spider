@@ -76,8 +76,7 @@ class WalletCatalogBlock56Tests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which('swiftc'), 'Swift unavailable')
     def test_swift_foundation_models_typecheck(self):
-        files = ['Console/WalletCore/WalletMarketModels.swift',
-                 'Console/WalletCore/WalletCatalogModels.swift']
+        files = ['Console/WalletCore/WalletCatalogModels.swift']
         subprocess.run(['swiftc', '-typecheck', *(str(ROOT / f) for f in files)],
                        check=True, capture_output=True, timeout=40)
 

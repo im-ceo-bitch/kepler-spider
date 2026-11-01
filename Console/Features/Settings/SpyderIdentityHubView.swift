@@ -12,6 +12,7 @@ struct SpyderIdentityHubView: View {
     @State private var showingNotifications = false
     @State private var showingWalletSettings = false
     @State private var showingMotion = false
+    @State private var showingChatAppearance = false
     @State private var showingProfileEdit = false
     @State private var showingQR = false
     @State private var showingDeveloperInfo = false
@@ -101,6 +102,10 @@ struct SpyderIdentityHubView: View {
                                 showingMotion = true
                             }
                             Divider()
+                            row("Оформление чатов", detail: "Фоны, пузырьки и движение", symbol: "bubble.left.and.bubble.right") {
+                                showingChatAppearance = true
+                            }
+                            Divider()
                             row("Настройки кошелька", detail: "Безопасность, язык, резервная копия", symbol: "gearshape") {
                                 showingWalletSettings = true
                             }
@@ -127,6 +132,7 @@ struct SpyderIdentityHubView: View {
             .sheet(isPresented: $showingNotifications) { SpyderNotificationSettingsView() }
             .sheet(isPresented: $showingWalletSettings) { WalletSettingsView() }
             .sheet(isPresented: $showingMotion) { SpyderMotionSettingsView() }
+            .sheet(isPresented: $showingChatAppearance) { SpyderChatAppearanceSettingsView(peerID: nil) }
             .sheet(isPresented: $showingProfileEdit) { SpyderProfileEditView() }
             .sheet(isPresented: $showingQR) { SpyderIdentityQRView() }
             .alert("Дополнительные профили", isPresented: $showingDeveloperInfo) {

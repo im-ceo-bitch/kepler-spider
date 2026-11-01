@@ -25,6 +25,10 @@ struct WalletHomeView: View {
     @EnvironmentObject private var history: WalletActivityStore
     @EnvironmentObject private var spider: SpiderDevnetStore
     @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
+    // Motion Kit preferences are independent from market and wallet state.
+    @AppStorage(SpyderMotionKeys.accent) private var profileAccentValue = SpyderSignalAccent.red.rawValue
+    @AppStorage(SpyderMotionKeys.avatar) private var profileAvatarValue = SpyderAvatarMotion.pulse.rawValue
+    @AppStorage(SpyderMotionKeys.enabled) private var profileMotionEnabled = true
     @StateObject private var catalog = WalletCatalogStore()
     @AppStorage("spyder.wallet.home.section") private var selectedSection = WalletHomeSection.assets.rawValue
     @State private var selectedToken: WalletVerifiedToken?
@@ -157,6 +161,14 @@ struct WalletHomeView: View {
         _ = await (balances, activity)
     }
 
+    private var profileAccent: SpyderSignalAccent {
+        SpyderSignalAccent(rawValue: profileAccentValue) ?? .red
+    }
+
+    private var profileAvatar: SpyderAvatarMotion {
+        SpyderAvatarMotion(rawValue: profileAvatarValue) ?? .pulse
+    }
+
     private var walletHeader: some View {
         HStack(alignment: .center, spacing: 10) {
             Button { onAction(.accounts) } label: {
@@ -184,7 +196,15 @@ struct WalletHomeView: View {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { privacyHidden.toggle() }
                 UISelectionFeedbackGenerator().selectionChanged()
             }
-            headerButton("person.crop.circle", label: "Профиль") { onAction(.profile) }
+            Button { onAction(.profile) } label: {
+                SpyderProfileAvatarView(motion: profileAvatar, accent: profileAccent,
+                                        diameter: 44, animate: profileMotionEnabled)
+                    .frame(width: 44, height: 44)
+                    .background(WalletTheme.surface, in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Профиль")
         }
     }
 
