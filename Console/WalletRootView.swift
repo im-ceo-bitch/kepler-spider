@@ -6,7 +6,6 @@ struct WalletRootView: View {
     @State private var selectedTab: WalletTab = .wallet
     @State private var path = NavigationPath()
     @State private var presented: WalletModal?
-    @State private var controlCenterOpen = false
     @State private var sendChain: SpyderChain?
     @State private var selectedContact: WalletContact = WalletContact(id: "", name: "Не выбран", handle: "", letter: "", preview: "", time: "")
 
@@ -22,8 +21,6 @@ struct WalletRootView: View {
                         path.append(WalletRoute.activity)
                     } onAsset: { chain in
                         path.append(WalletRoute.asset(chain))
-                    } onControlCenter: {
-                        openControlCenter()
                     }
                 case .chats:
                     ChatsHomeView(onOpen: { contact in
@@ -36,12 +33,9 @@ struct WalletRootView: View {
             .navigationDestination(for: WalletRoute.self) { route in
                 switch route {
                 case .chat(let contact):
-                    ChatDetailView(contact: contact, onBack: { path.removeLast() }, onAction: { action in
-                        sendChain = nil
+                    SpyderTerminalChatContainer(contact: contact, onBack: { path.removeLast() }, onAction: { action in
                         selectedContact = contact
                         presented = action
-                    }, onOpenActivity: {
-                        path.append(WalletRoute.activity)
                     })
                 case .activity:
                     WalletActivityView(onBack: { if !path.isEmpty { path.removeLast() } })
@@ -71,67 +65,6 @@ struct WalletRootView: View {
                 .presentationCornerRadius(30)
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
-        .overlay {
-            if controlCenterOpen {
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        Color.black.opacity(0.45)
-                            .ignoresSafeArea()
-                            .onTapGesture { closeControlCenter() }
-                        WalletControlCenterView(
-                            onAccounts: { openFromControlCenter(.accounts) },
-                            onSecurity: { openFromControlCenter(.security) },
-                            onAddressBook: { openFromControlCenter(.addressBook) },
-                            onActivity: {
-                                closeControlCenter()
-                                selectedTab = .wallet
-                                path.append(WalletRoute.activity)
-                            },
-                            onSettings: { openFromControlCenter(.profile) },
-                            onNetwork: {
-                                closeControlCenter()
-                                path = NavigationPath()
-                                selectedTab = .chats
-                            },
-                            onClose: { closeControlCenter() }
-                        )
-                        .frame(width: min(geometry.size.width * 0.89, 425))
-                        .frame(maxHeight: .infinity)
-                        .background(WalletTheme.canvas)
-                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                        .gesture(
-                            DragGesture(minimumDistance: 30).onEnded { value in
-                                guard value.translation.width < -80,
-                                      abs(value.translation.height) < 80 else { return }
-                                closeControlCenter()
-                            }
-                        )
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                    }
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .ignoresSafeArea()
-                }
-                .zIndex(10)
-            }
-        }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.26), value: controlCenterOpen)
-        .onChange(of: selectedTab) { _, newValue in
-            if newValue != .wallet { controlCenterOpen = false }
-        }
-    }
-
-    private func openControlCenter() {
-        UISelectionFeedbackGenerator().selectionChanged()
-        controlCenterOpen = true
-    }
-
-    private func closeControlCenter() {
-        controlCenterOpen = false
-    }
-
-    private func openFromControlCenter(_ modal: WalletModal) {
-        closeControlCenter()
-        presented = modal
     }
 
     private func openChatAfterNotificationIfNeeded() {
@@ -161,13 +94,9 @@ struct WalletRootView: View {
                 path = NavigationPath()
             })
         case .profile:
-            WalletSettingsView()
+            SpyderIdentityHubView()
         case .accounts:
             WalletAccountsView()
-        case .security:
-            WalletSecurityCenterView()
-        case .addressBook:
-            WalletAddressBookView()
         }
     }
 

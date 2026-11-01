@@ -9,15 +9,12 @@
     "summary": "Change theme of current chat",
     "standard": [
       "sp change chat theme to {theme}",
-      "sp chat theme {theme}",
-      "sp change theme to {theme}",
-      "sp theme {theme}"
+      "sp chat theme {theme}"
     ],
     "beginner": [
       "change chat theme to {theme}",
       "set chat theme to {theme}",
-      "make chat theme {theme}",
-      "change theme to {theme}"
+      "make chat theme {theme}"
     ]
   },
   {

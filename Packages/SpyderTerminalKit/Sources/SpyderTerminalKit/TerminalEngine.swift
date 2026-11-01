@@ -26,7 +26,7 @@ public struct TerminalEngine: Sendable {
         var matches: [(match: TerminalMatch, specificity: Int, languageOrder: Int)] = []
         for (languageOrder, entry) in locales.enumerated() {
             for command in entry.commands {
-                let patterns = settings.level == .beginner && settings.naturalLanguageEnabled
+                let patterns = settings.level == .beginner
                     ? command.standard + command.beginner : command.standard
                 for pattern in patterns {
                     if let args = Self.capture(text, template: pattern) {
@@ -91,7 +91,7 @@ public struct TerminalEngine: Sendable {
         var ranked: [(TerminalSuggestion, Int, Int)] = []
         for (languageOrder, entry) in locales.enumerated() {
             for command in entry.commands {
-                let patterns = settings.level == .beginner && settings.naturalLanguageEnabled
+                let patterns = settings.level == .beginner
                     ? command.standard + command.beginner : command.standard
                 for pattern in patterns {
                     let normalized = Self.normalize(pattern)

@@ -28,24 +28,6 @@ final class SpyderTerminalKitTests: XCTestCase {
         XCTAssertEqual(matched("сп тема чата гром", level: .standard).parameters["theme"], "thunder")
     }
 
-    func testNaturalLanguageCanBeDisabled() {
-        let settings = TerminalSettings(level: .beginner, naturalLanguageEnabled: false)
-        switch engine.interpret("поставь киберпанк в чате", settings: settings) {
-        case .matched: XCTFail("Beginner phrases must be disabled")
-        default: break
-        }
-        switch engine.interpret("сп измени фон", settings: settings) {
-        case .matched(let match): XCTAssertEqual(match.commandID, "chat.background.change")
-        default: XCTFail("Structured commands remain available")
-        }
-    }
-
-    func testShortThemeCommands() {
-        XCTAssertEqual(matched("сп измени тему на Chrome", level: .standard).parameters["theme"], "chrome")
-        XCTAssertEqual(matched("sp change theme to Thunder", level: .standard).parameters["theme"], "thunder")
-        XCTAssertEqual(matched("изменить тему на киберпанк", level: .beginner).parameters["theme"], "cyberpunk")
-    }
-
     func testBeginnerParaphrase() {
         XCTAssertEqual(matched("поставь киберпанк в чате", level: .beginner).commandID, "chat.theme.set")
         XCTAssertEqual(matched("show my contacts", level: .beginner).commandID, "contacts.list")

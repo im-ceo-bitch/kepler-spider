@@ -28,12 +28,8 @@ struct ChatDetailView: View {
     let contact: WalletContact
     let onBack: () -> Void
     let onAction: (WalletModal) -> Void
-    let onOpenActivity: () -> Void
 
     @State private var draft = ""
-    @State private var terminalActive = false
-    @AppStorage("spyder.wallet.language") private var uiLanguage = "ru"
-    @State private var terminalEntries: [SpyderTerminalEntry] = []
     @State private var sending = false
     @State private var confirmBlock = false
     @State private var showingAppearance = false
@@ -49,26 +45,7 @@ struct ChatDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Picker("Режим переписки", selection: $terminalActive) {
-                Text(uiLanguage == "en" ? "Chat" : "Чат").tag(false)
-                Text(uiLanguage == "en" ? "Terminal" : "Терминал").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(WalletTheme.surface)
-            .accessibilityIdentifier("spyder.chat.terminalSwitcher")
-            if terminalActive {
-                SpyderChatTerminalView(contact: contact, entries: $terminalEntries,
-                    onWallpaper: { wallpaper in
-                        appearance.wallpaper = wallpaper
-                        SpyderChatAppearanceStore.save(appearance, peer: contact.id)
-                    },
-                    onBackgroundPicker: { showingAppearance = true },
-                    onAction: onAction,
-                    onOpenActivity: onOpenActivity)
-            } else {
-                ScrollViewReader { proxy in
+            ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         Label(chat.encryptionReady ? "Сообщения защищены E2EE · проверьте ключи контакта" : "Проверяем защищённое соединение…",
@@ -114,13 +91,16 @@ struct ChatDetailView: View {
                                        accent: accent, glowEnabled: appearance.ambientGlow)
                     .ignoresSafeArea(edges: .horizontal)
             }
-                composer
-            }
+            composer
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showingAppearance, onDismiss: reloadAppearance) {
             SpyderChatAppearanceSettingsView(peerID: contact.id)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .spyderTerminalChatAppearanceChanged)) { notification in
+            guard notification.userInfo?["peerID"] as? String == contact.id else { return }
+            reloadAppearance()
         }
         .confirmationDialog("Заблокировать контакт?", isPresented: $confirmBlock) {
             Button("Заблокировать", role: .destructive) {
@@ -165,9 +145,6 @@ struct ChatDetailView: View {
             Menu {
                 Button { showingAppearance = true } label: {
                     Label("Оформление чата", systemImage: "paintpalette")
-                }
-                Button { terminalActive = true } label: {
-                    Label("Открыть терминал", systemImage: "terminal")
                 }
                 Button { showingSecurity.toggle() } label: {
                     Label("Проверить ключи", systemImage: "lock.shield")
@@ -338,7 +315,7 @@ struct ChatDetailView: View {
             if succeeded {
                 // A successful backend ack, not a fake local delivery tick.
                 draft = ""
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                SpyderSonicPlayer.shared.playSent()
             }
             sending = false
         }

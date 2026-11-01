@@ -5,21 +5,22 @@ import SwiftUI
 public struct SpyderTerminalInputView: View {
     @Binding private var settings: TerminalSettings
     private let engine: TerminalEngine?
-    private let onInterpretation: (String, TerminalInterpretation) -> Void
+    private let onCommand: (String, TerminalInterpretation) -> Void
     @State private var input = ""
 
     public init(settings: Binding<TerminalSettings>,
-                onInterpretation: @escaping (String, TerminalInterpretation) -> Void) {
+                onInterpretation: @escaping (TerminalInterpretation) -> Void) {
         _settings = settings
         self.engine = try? TerminalEngine()
-        self.onInterpretation = onInterpretation
+        self.onCommand = { _, result in onInterpretation(result) }
     }
 
+    /// Use this initializer when the chat shell also needs the raw user command for its transcript.
     public init(settings: Binding<TerminalSettings>,
-                onInterpretation: @escaping (TerminalInterpretation) -> Void) {
-        self.init(settings: settings) { _, interpretation in
-            onInterpretation(interpretation)
-        }
+                onCommand: @escaping (String, TerminalInterpretation) -> Void) {
+        _settings = settings
+        self.engine = try? TerminalEngine()
+        self.onCommand = onCommand
     }
 
     private var accent: Color {
@@ -104,7 +105,7 @@ public struct SpyderTerminalInputView: View {
         let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, let engine else { return }
         // Deliberately DOES NOT execute actions or spend funds.
-        onInterpretation(value, engine.interpret(value, settings: settings))
+        onCommand(value, engine.interpret(value, settings: settings))
         input = ""
     }
 }
@@ -147,7 +148,7 @@ public struct SpyderTerminalSettingsView: View {
                         Text("3").tag(3)
                     }
                     Stepper(value: $settings.autocompleteLimit, in: 1...12) {
-                        Text("\(title("Количество: ", "Suggestions: "))\(settings.autocompleteLimit)")
+                        Text(title("Количество: ", "Suggestions: ") + "\(settings.autocompleteLimit)")
                     }
                 }
                 if settings.level == .beginner {
@@ -166,7 +167,7 @@ public struct SpyderTerminalSettingsView: View {
                     Text("Electric Blue").tag(TerminalAccent.electricBlue)
                 }
                 Stepper(value: $settings.fontSize, in: 11...22) {
-                    Text("\(title("Размер шрифта: ", "Font size: "))\(settings.fontSize)")
+                    Text(title("Размер шрифта: ", "Font size: ") + "\(settings.fontSize)")
                 }
             }
             Section(title("Поведение", "Behavior")) {
