@@ -12,12 +12,15 @@ struct WalletSendFlowView: View {
     @EnvironmentObject private var assets: WalletPublicAssetsStore
     @EnvironmentObject private var addressBook: WalletAddressBookStore
     @State private var selected: SpyderChain = .ethereum
+    @State private var evmAsset: WalletEVMAsset = .eth
+    @State private var evmQuote: WalletEVMQuote?
+    @State private var quoteLoading = false
+    @State private var quoteError: String?
+    @State private var quoteGeneration = UUID()
     @State private var recipient = ""
     @State private var amount = ""
     @State private var reviewing = false
     @State private var showUnavailable = false
-    @State private var observedError: String?
-    @State private var checkmark = false
     @State private var showAddressBook = false
     @State private var showSaveRecipient = false
     let preselected: SpyderChain?
@@ -31,13 +34,61 @@ struct WalletSendFlowView: View {
               let value = Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX")),
               value > 0 else { return nil }
         let decimals = raw.split(separator: ".", omittingEmptySubsequences: false).dropFirst().first?.count ?? 0
-        let allowed = selected == .ethereum ? 18 : selected == .solana ? 9 : 8
+        let allowed = selected == .ethereum ? evmAsset.decimals : selected == .solana ? 9 : 8
         return decimals <= allowed ? value : nil
     }
     private var recipientValid: Bool { WalletAddressValidator.check(normalizedRecipient, for: selected) == .valid }
     private var validToReview: Bool {
-        recipientValid && normalizedRecipient != chains.address(for: selected) && parsedAmount != nil &&
-        (assets.balances[selected].map { (parsedAmount ?? 0) <= $0 } ?? false)
+        guard recipientValid, normalizedRecipient.caseInsensitiveCompare(chains.address(for: selected) ?? "") != .orderedSame,
+              let entered = parsedAmount else { return false }
+        if selected == .ethereum, evmAsset != .eth {
+            return assets.stablecoins[evmAsset.rawValue].map { entered <= $0 } ?? false
+        }
+        return assets.balances[selected].map { entered <= $0 } ?? false
+    }
+
+    private func clearQuote() {
+        quoteGeneration = UUID()
+        evmQuote = nil
+        quoteLoading = false
+        quoteError = nil
+        reviewing = false
+    }
+
+    private func prepareReview() {
+        guard validToReview else { return }
+        guard selected == .ethereum else {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { reviewing = true }
+            return
+        }
+        guard let sender = chains.address(for: .ethereum) else {
+            quoteError = "Не удалось получить адрес Ethereum. Разблокируйте кошелёк."
+            return
+        }
+        let currentGeneration = UUID()
+        quoteGeneration = currentGeneration
+        quoteLoading = true
+        quoteError = nil
+        let to = normalizedRecipient
+        let entered = amount.replacingOccurrences(of: ",", with: ".")
+        let asset = evmAsset
+        Task {
+            do {
+                let prepared = try await WalletEVMPreflightClient().quote(
+                    sender: sender, recipient: to, amount: entered, asset: asset)
+                guard quoteGeneration == currentGeneration,
+                      chains.address(for: .ethereum)?.caseInsensitiveCompare(sender) == .orderedSame else { return }
+                evmQuote = prepared
+                reviewing = true
+                UISelectionFeedbackGenerator().selectionChanged()
+            } catch {
+                guard quoteGeneration == currentGeneration else { return }
+                quoteError = error.localizedDescription
+                evmQuote = nil
+                reviewing = false
+            }
+            if quoteGeneration == currentGeneration { quoteLoading = false }
+        }
     }
 
     var body: some View {
@@ -58,7 +109,20 @@ struct WalletSendFlowView: View {
                                 }
                             }
                             .pickerStyle(.menu)
-                            .onChange(of: selected) { _, _ in reviewing = false; recipient = ""; amount = "" }
+                            .onChange(of: selected) { _, _ in
+                                clearQuote(); evmAsset = .eth; amount = ""
+                            }
+                            if selected == .ethereum {
+                                Picker("Монета Ethereum", selection: $evmAsset) {
+                                    ForEach(WalletEVMAsset.allCases) { asset in
+                                        Text(asset.rawValue).tag(asset)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .onChange(of: evmAsset) { _, _ in clearQuote(); amount = "" }
+                                Text(evmAsset == .eth ? "Нативная монета Ethereum Mainnet" : "ERC-20 · сеть Ethereum Mainnet")
+                                    .font(.caption).foregroundStyle(WalletTheme.secondary)
+                            }
                             Divider()
                             Text("Адрес получателя").font(.system(size: 14, weight: .semibold))
                             TextField("Вставить адрес", text: $recipient)
@@ -66,7 +130,7 @@ struct WalletSendFlowView: View {
                                 .autocorrectionDisabled()
                                 .textContentType(.none)
                                 .font(.system(size: 14, design: .monospaced))
-                                .onChange(of: recipient) { _, _ in reviewing = false }
+                                .onChange(of: recipient) { _, _ in clearQuote() }
                             HStack(spacing: 16) {
                                 Button {
                                     if let text = UIPasteboard.general.string { recipient = text }
@@ -84,13 +148,15 @@ struct WalletSendFlowView: View {
                                 }
                             }
                             Divider()
-                            Text("Сумма \(selected.ticker)").font(.system(size: 14, weight: .semibold))
+                            Text("Сумма \(selected == .ethereum ? evmAsset.rawValue : selected.ticker)").font(.system(size: 14, weight: .semibold))
                             TextField("0.00", text: $amount)
                                 .keyboardType(.decimalPad)
                                 .font(.system(size: 28, weight: .medium, design: .rounded))
-                                .onChange(of: amount) { _, _ in reviewing = false }
-                            Text("Баланс: " + (assets.balances[selected].map {
-                                WalletPublicAssetsStore.formatted($0) + " " + selected.ticker
+                                .onChange(of: amount) { _, _ in clearQuote() }
+                            Text("Баланс: " + ((selected == .ethereum && evmAsset != .eth
+                                ? assets.stablecoins[evmAsset.rawValue] : assets.balances[selected]).map {
+                                WalletPublicAssetsStore.formatted($0) + " " +
+                                (selected == .ethereum ? evmAsset.rawValue : selected.ticker)
                             } ?? "нет данных"))
                                 .font(.footnote).foregroundStyle(WalletTheme.secondary)
                         }
@@ -101,20 +167,40 @@ struct WalletSendFlowView: View {
                                 Label("Проверь реквизиты", systemImage: "checkmark.shield")
                                     .font(.system(size: 17, weight: .semibold))
                                 Text("Сеть: \(selected.name)")
-                                Text("Сумма: \(amount) \(selected.ticker)")
+                                Text("Сумма: \(amount) \(selected == .ethereum ? evmAsset.rawValue : selected.ticker)")
                                     .font(.system(size: 20, weight: .medium))
                                 Text(normalizedRecipient)
                                     .font(.system(size: 12, design: .monospaced))
                                     .textSelection(.enabled)
                                 Divider()
-                                Label("Сетевая комиссия не рассчитана", systemImage: "exclamationmark.shield")
-                                    .font(.footnote).foregroundStyle(.orange)
-                                Text("Для реальной отправки нужны проверенные комиссии, подпись на устройстве и надёжная отправка в сеть. Эти компоненты пока не готовы.")
+                                if let quote = evmQuote, selected == .ethereum {
+                                    Label("Проверено по Ethereum Mainnet", systemImage: "checkmark.shield")
+                                        .font(.subheadline).foregroundStyle(.green)
+                                    Text("Макс. комиссия: \(quote.maxFeeETH) ETH")
+                                    Text("Gas limit: \(quote.gasLimit) · Pending nonce: \(quote.nonce)")
+                                    Text("RPC: \(quote.provider) · данные на момент проверки")
+                                        .font(.caption).foregroundStyle(WalletTheme.secondary)
+                                    Text("Комиссия приблизительная: сеть может изменить её до включения транзакции в блок.")
+                                        .font(.caption).foregroundStyle(WalletTheme.secondary)
+                                } else {
+                                    Label("Сетевая комиссия не рассчитана", systemImage: "exclamationmark.shield")
+                                        .font(.footnote).foregroundStyle(.orange)
+                                }
+                                Text("Это предварительный расчёт, а не отправка. Подпись и публикация Mainnet-транзакций пока отключены.")
                                     .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                                if selected == .ethereum {
+                                    Text("Адрес проверен по формату, но EIP-55 checksum пока не проверяется. Перед отправкой сверяйте его с получателем.")
+                                        .font(.caption).foregroundStyle(.orange)
+                                }
                             }
                         }
                     }
-                    Label("Никогда не вставляй сюда сид-фразу или приватный ключ. Требуется только публичный адрес получателя.", systemImage: "lock.shield")
+                    if let quoteError {
+                        Label(quoteError, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                            .font(.footnote)
+                    }
+                    Label("Никогда не вставляйте сюда seed-фразу или приватный ключ. Нужен только публичный адрес получателя.", systemImage: "lock.shield")
                         .font(.footnote).foregroundStyle(WalletTheme.secondary)
                 }
                 .foregroundStyle(WalletTheme.ink)
@@ -122,17 +208,15 @@ struct WalletSendFlowView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 Button {
-                    if !reviewing {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { reviewing = true }
-                        UISelectionFeedbackGenerator().selectionChanged()
-                    } else { showUnavailable = true }
+                    if !reviewing { prepareReview() }
+                    else { showUnavailable = true }
                 } label: {
-                    Label(LocalizedStringKey(reviewing ? "Отправка пока недоступна" : "Проверить перевод"), systemImage: reviewing ? "lock.shield" : "arrow.right")
+                    Label(LocalizedStringKey(quoteLoading ? "Проверка сети…" : reviewing ? "Отправка пока недоступна" : "Проверить перевод"), systemImage: reviewing ? "lock.shield" : "arrow.right")
                         .spyderPrimaryButton()
                 }
                 .buttonStyle(.plain)
-                .disabled(!validToReview)
-                .opacity(validToReview ? 1 : 0.45)
+                .disabled(!validToReview || quoteLoading)
+                .opacity(validToReview && !quoteLoading ? 1 : 0.45)
                 .padding(.horizontal, 20).padding(.vertical, 10)
                 .background(WalletTheme.canvas)
             }
@@ -143,9 +227,10 @@ struct WalletSendFlowView: View {
         .sheet(isPresented: $showAddressBook) {
             WalletAddressBookView(onSelect: { entry in
                 selected = entry.chain
+                clearQuote()
+                evmAsset = .eth
                 recipient = entry.address
                 amount = ""
-                reviewing = false
             })
         }
         .sheet(isPresented: $showSaveRecipient) {
