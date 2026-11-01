@@ -172,3 +172,37 @@
 "Загрузка…" = "Loading…";
 "Дата неизвестна" = "Unknown date";
 "Нет операций" = "No transactions";
+
+/* Spyder Motion Kit */
+"Твоя сеть. Твой характер." = "Your network. Your signature.";
+"Цвет сигнала" = "Signal color";
+"Мой анимированный аватар" = "My animated avatar";
+"12 стилей · выбранный аватар будет использоваться в профиле." = "12 styles · your selection will be used in your profile.";
+"Анимация запуска" = "Launch animation";
+"Посмотреть заставку" = "Preview intro";
+"Поведение" = "Behavior";
+"Анимации Motion Kit" = "Motion Kit animations";
+"Заставка при каждом запуске" = "Play intro on every launch";
+"Если анимации отключены или в iPhone включено «Уменьшение движения», показываем статичный логотип. По умолчанию заставка проигрывается только один раз, при первом открытии." = "If animations are disabled or Reduce Motion is enabled, a static logo is shown. By default, the intro plays only on first launch.";
+"Персонализация" = "Personalization";
+"Закрыть предпросмотр" = "Close preview";
+"Предпросмотр · можно закрыть в любой момент" = "Preview · close at any time";
+"Анимации и персонализация" = "Animations & personalization";
+"Пропустить" = "Skip";
+"Пульс" = "Pulse";
+"Орбита" = "Orbit";
+"Паутина" = "Web";
+"Ореол" = "Halo";
+"Частицы" = "Particles";
+"Радар" = "Radar";
+"Волны" = "Waves";
+"Узлы" = "Nodes";
+"Затмение" = "Eclipse";
+"Дыхание" = "Breathe";
+"Искра" = "Spark";
+"Минимализм" = "Minimal";
+"Паук из частиц" = "Particle Spider";
+"Без заставки" = "No intro";
+"Анимированный человеческий глаз" = "Animated human eye";
+"Фирменный паук Spyder" = "Spyder spider emblem";
+"Заставка Spyder" = "Spyder intro";

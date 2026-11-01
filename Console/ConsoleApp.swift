@@ -5,6 +5,11 @@ struct ConsoleApp: App {
     @AppStorage("spyder.wallet.appearance") private var appearance = WalletAppearance.system.rawValue
     @AppStorage("spyder.wallet.language") private var language = "ru"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(SpyderMotionKeys.accent) private var signalAccent = SpyderSignalAccent.red.rawValue
+    @AppStorage(SpyderMotionKeys.launch) private var launchAnimation = SpyderLaunchMotion.particles.rawValue
+    @AppStorage(SpyderMotionKeys.enabled) private var motionEnabled = true
+    @AppStorage(SpyderMotionKeys.launchEveryTime) private var launchEveryTime = false
+    @AppStorage(SpyderMotionKeys.introSeen) private var introSeen = false
     @State private var showingBrand = true
     @StateObject private var walletAccess = WalletAccess()
     @StateObject private var walletChains = WalletChainStore()
@@ -36,7 +41,11 @@ struct ConsoleApp: App {
                 .environmentObject(spiderDevnet)
                 .opacity(showingBrand ? 0 : 1)
                 if showingBrand {
-                    SpyderBrandHandoff()
+                    SpyderBrandHandoff(
+                        motion: SpyderLaunchMotion(rawValue: launchAnimation) ?? .particles,
+                        accent: SpyderSignalAccent(rawValue: signalAccent) ?? .red,
+                        onSkip: { showingBrand = false }
+                    )
                         .transition(.opacity)
                         .zIndex(1)
                 }
@@ -60,12 +69,14 @@ struct ConsoleApp: App {
             }
             .task {
                 guard showingBrand else { return }
-                if !reduceMotion {
-                    try? await Task.sleep(nanoseconds: 550_000_000)
-                }
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.32)) {
-                    showingBrand = false
-                }
+                let animation = SpyderLaunchMotion(rawValue: launchAnimation) ?? .particles
+                let shouldPlay = motionEnabled && !reduceMotion && animation != .simple
+                    && (launchEveryTime || !introSeen)
+                guard shouldPlay else { showingBrand = false; return }
+                introSeen = true
+                try? await Task.sleep(nanoseconds: UInt64(animation.duration * 1_000_000_000))
+                guard !Task.isCancelled, showingBrand else { return }
+                withAnimation(.easeInOut(duration: 0.18)) { showingBrand = false }
             }
         }
     }

@@ -64,33 +64,54 @@ struct SpyderNavigationButton: View {
     }
 }
 
-/// Native launch screens are static; this short handoff is animated only inside the app.
+/// A static system launch screen hands off to this optional in-app animation.
+/// Financial pages remain accessible via a persistent skip control.
 struct SpyderBrandHandoff: View {
+    let motion: SpyderLaunchMotion
+    let accent: SpyderSignalAccent
+    let onSkip: () -> Void
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var entered = false
 
     var body: some View {
-        VStack(spacing: 12) {
-            Image("SpyderLaunchLogo")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 166, height: 166)
-                .scaleEffect(entered || reduceMotion ? 1 : 0.97)
-            Image("SpyderBrandText")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 244, height: 93)
-                .opacity(entered || reduceMotion ? 1 : 0)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color("SpyderLaunchCanvas").ignoresSafeArea())
-        .onAppear {
-            if reduceMotion { entered = true }
-            else {
-                withAnimation(.easeOut(duration: 0.35)) { entered = true }
+        ZStack {
+            Color("SpyderLaunchCanvas").ignoresSafeArea()
+            VStack(spacing: 12) {
+                Spacer()
+                Group {
+                    if reduceMotion || motion == .simple {
+                        Image("SpyderLaunchLogo")
+                            .resizable().renderingMode(.template).scaledToFit()
+                            .foregroundStyle(accent.color)
+                            .frame(width: 166, height: 166)
+                    } else if motion == .particles {
+                        SpyderParticleLogoView(accent: accent, duration: motion.duration)
+                            .frame(width: 230, height: 230)
+                    } else {
+                        NativeEyeAnimationView(duration: motion.duration, repeats: false,
+                                               accent: accent)
+                            .frame(maxWidth: 345)
+                            .clipShape(RoundedRectangle(cornerRadius: 24))
+                    }
+                }
+                Image("SpyderBrandText")
+                    .resizable().renderingMode(.template).scaledToFit()
+                    .foregroundStyle(WalletTheme.ink)
+                    .frame(width: 230, height: 74)
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+
+            VStack {
+                Spacer()
+                Button("Пропустить") { onSkip() }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(WalletTheme.secondary)
+                    .frame(minWidth: 100, minHeight: 44)
+                    .padding(.bottom, 22)
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Spyder Wallet")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Заставка Spyder")
     }
 }

@@ -4,6 +4,10 @@ struct WalletSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("spyder.wallet.appearance") private var appearance = WalletAppearance.system.rawValue
     @AppStorage("spyder.wallet.language") private var language = "ru"
+    @AppStorage(SpyderMotionKeys.accent) private var accentValue = SpyderSignalAccent.red.rawValue
+    @AppStorage(SpyderMotionKeys.avatar) private var avatarValue = SpyderAvatarMotion.pulse.rawValue
+    @AppStorage(SpyderMotionKeys.enabled) private var motionEnabled = true
+    @State private var showMotionStudio = false
     @State private var backupWords: [String] = []
     @State private var showBackup = false
     @State private var showAccounts = false
@@ -30,8 +34,12 @@ struct WalletSettingsView: View {
                     .spyderReveal(0.01)
                     WalletCard {
                         HStack(spacing: 14) {
-                            Image(systemName: "person.crop.circle")
-                                .font(.system(size: 38))
+                            SpyderProfileAvatarView(
+                                motion: SpyderAvatarMotion(rawValue: avatarValue) ?? .pulse,
+                                accent: SpyderSignalAccent(rawValue: accentValue) ?? .red,
+                                diameter: 64,
+                                animate: motionEnabled
+                            )
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Spyder Wallet")
                                     .font(.system(size: 19, weight: .semibold))
@@ -52,6 +60,21 @@ struct WalletSettingsView: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                        Button { showMotionStudio = true } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "sparkles")
+                                    .foregroundStyle((SpyderSignalAccent(rawValue: accentValue) ?? .red).color)
+                                Text("Анимации и персонализация")
+                                    .font(.system(size: 15, weight: .medium))
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(WalletTheme.secondary)
+                            }
+                            .padding(16)
+                            .background(WalletTheme.surface,
+                                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
                     }
                     .foregroundStyle(WalletTheme.ink)
                     .spyderReveal(0.13)
@@ -143,6 +166,11 @@ struct WalletSettingsView: View {
             }
             .background(WalletTheme.canvas.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+        }
+        .sheet(isPresented: $showMotionStudio) {
+            SpyderMotionSettingsView()
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(30)
         }
         .sheet(isPresented: $showAccounts) {
             WalletAccountsView()
