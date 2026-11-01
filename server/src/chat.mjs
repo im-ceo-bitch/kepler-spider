@@ -41,7 +41,9 @@ export class ChatHub {
   async notify(recipient, event) {
     const record = await this.ctx.storage.get('push:'+recipient);
     if (!record?.token || !record.enabled) return;
-    const status = await sendAPNs(this.env, record.token, event);
+    const status = await sendAPNs(this.env, record.token, event, fetch, record.sound || 'pulse');
+    // Diagnostic metadata contains only HTTP status and time, never APNs tokens or chat text.
+    await this.ctx.storage.put('pushlast:'+recipient, {status, at:new Date().toISOString()});
     if (status === 410) {
       // Invalidation must not delete a device token replaced while APNs was in flight.
       const latest = await this.ctx.storage.get('push:'+recipient);
@@ -97,19 +99,46 @@ export class ChatHub {
     if(method==='GET'&&path==='/v1/me')return json({id:me.id,name:me.name,username:me.username || null,invite_code:me.invite_code,has_keys:!!me.keys});
     if(method==='GET'&&path==='/v2/push/status') {
       const p=await this.ctx.storage.get('push:'+me.id);
-      return json({provider_ready:apnsConfigured(this.env),enabled:Boolean(p?.enabled)});
+      const last=await this.ctx.storage.get('pushlast:'+me.id);
+      return json({provider_ready:apnsConfigured(this.env),enabled:Boolean(p?.enabled),
+        sound:p?.enabled ? (p.sound || 'system') : null,
+        last_apns_status:last?.status ?? null, last_attempt_at:last?.at ?? null});
     }
     if(method==='POST'&&path==='/v2/push/register') {
       const b=await this.body(request);
       if(!apnsConfigured(this.env))return bad('push_not_configured',503);
       if(typeof b?.token!=='string'||!/^(?:[a-f0-9]{2}){16,128}$/i.test(b.token))return bad('invalid_push_token');
-      // Single-device chat identity. A token replacement invalidates the old one.
-      await this.ctx.storage.put('push:'+me.id,{token:b.token.toLowerCase(),enabled:true});
+      // One token per identity for this single-device protocol. No token in responses.
+      const sound = ['pulse','system','mute'].includes(b.sound) ? b.sound : 'system';
+      await this.ctx.storage.put('push:'+me.id,{token:b.token.toLowerCase(),enabled:true,sound});
       return json({status:'registered'});
+    }
+    if(method==='POST'&&path==='/v2/push/preferences') {
+      const b=await this.body(request);
+      if(!['pulse','system','mute'].includes(b?.sound))return bad('invalid_notification_sound');
+      const p=await this.ctx.storage.get('push:'+me.id);
+      if(!p?.enabled)return bad('push_not_registered',409);
+      await this.ctx.storage.put('push:'+me.id,{...p,sound:b.sound});
+      return json({status:'saved'});
+    }
+    if(method==='POST'&&path==='/v2/push/test') {
+      if(!(await this.permit(me.id,'push_test',3,3600000)))return bad('rate_limited',429);
+      const p=await this.ctx.storage.get('push:'+me.id);
+      if(!p?.token || !p?.enabled)return bad('push_not_registered',409);
+      if(!apnsConfigured(this.env))return bad('push_not_configured',503);
+      this.queuePush(me.id,'test');
+      return json({status:'queued'});
     }
     if(method==='POST'&&path==='/v2/push/unregister') {
       await this.ctx.storage.delete('push:'+me.id);
       return json({status:'unregistered'});
+    }
+    if(method==='POST'&&path==='/v2/profile/name') {
+      const b=await this.body(request);
+      if(typeof b?.name !== 'string' || !b.name.trim() || b.name.trim().length>36)return bad('invalid_display_name');
+      me.name=sanitizedName(b.name);
+      await this.ctx.storage.put('user:'+me.id,me);
+      return json({name:me.name});
     }
     if(method==='GET'&&path==='/v2/profile/privacy')return json({discoverable:me.discoverable === true});
     if(method==='POST'&&path==='/v2/profile/privacy'){

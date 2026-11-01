@@ -12,9 +12,9 @@ export const apnsConfigured = env => Boolean(
 );
 
 // Returns the APNs response status; 0 is a delivery transport or configuration failure.
-export async function sendAPNs(env, deviceToken, event, fetcher = fetch) {
+export async function sendAPNs(env, deviceToken, event, fetcher = fetch, tone = 'pulse') {
   if (!apnsConfigured(env) || !/^(?:[a-f0-9]{2}){16,128}$/i.test(deviceToken)) return 0;
-  if (event !== 'message' && event !== 'invite') return 0;
+  if (!['message','invite','test'].includes(event)) return 0;
   try {
     const keyPEM = env.APNS_PRIVATE_KEY.replace(/\\n/g, '\n');
     const raw = keyPEM.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, '');
@@ -32,9 +32,12 @@ export async function sendAPNs(env, deviceToken, event, fetcher = fetch) {
     const jwt = signed + '.' + base64url(signature);
     const host = env.APNS_ENVIRONMENT === 'development'
       ? 'api.development.push.apple.com' : 'api.push.apple.com';
+    const sound = tone === 'mute' ? undefined : tone === 'system' ? 'default'
+      : event === 'invite' ? 'spyder_connect.caf' : 'spyder_receive.caf';
     const payload = {aps:{alert:{title:'Spyder Network',body:event === 'invite'
-      ? 'Новое приглашение в сеть' : 'Новое зашифрованное сообщение'},sound:'default'},
-      spyder_event:event};
+      ? 'Новое приглашение в сеть' : event === 'test' ? 'Проверка уведомлений Spyder'
+      : 'Новое зашифрованное сообщение'},
+      ...(sound ? {sound} : {}), 'thread-id':'spyder.chat'},spyder_event:event};
     const response = await fetcher(`https://${host}/3/device/${deviceToken}`, {
       method:'POST', headers:{authorization:'bearer '+jwt,'apns-topic':env.APNS_BUNDLE_ID,
         'apns-push-type':'alert','apns-priority':'10','content-type':'application/json'},

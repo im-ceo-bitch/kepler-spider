@@ -6,6 +6,10 @@ struct WalletRootView: View {
     @State private var selectedTab: WalletTab = .wallet
     @State private var path = NavigationPath()
     @State private var presented: WalletModal?
+    @State private var showControlCenter = false
+    @State private var nextControlModal: WalletModal?
+    @State private var nextControlActivity = false
+    @State private var nextControlNetwork = false
     @State private var sendChain: SpyderChain?
     @State private var selectedContact: WalletContact = WalletContact(id: "", name: "Не выбран", handle: "", letter: "", preview: "", time: "")
 
@@ -21,6 +25,8 @@ struct WalletRootView: View {
                         path.append(WalletRoute.activity)
                     } onAsset: { chain in
                         path.append(WalletRoute.asset(chain))
+                    } onControlCenter: {
+                        showControlCenter = true
                     }
                 case .chats:
                     ChatsHomeView(onOpen: { contact in
@@ -33,9 +39,13 @@ struct WalletRootView: View {
             .navigationDestination(for: WalletRoute.self) { route in
                 switch route {
                 case .chat(let contact):
-                    SpyderTerminalChatContainer(contact: contact, onBack: { path.removeLast() }, onAction: { action in
+                    ChatDetailView(contact: contact, onBack: {
+                        if !path.isEmpty { path.removeLast() }
+                    }, onAction: { action in
                         selectedContact = contact
                         presented = action
+                    }, onOpenActivity: {
+                        path.append(WalletRoute.activity)
                     })
                 case .activity:
                     WalletActivityView(onBack: { if !path.isEmpty { path.removeLast() } })
@@ -59,12 +69,40 @@ struct WalletRootView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if path.isEmpty { bottomBar }
         }
+        .fullScreenCover(isPresented: $showControlCenter, onDismiss: {
+            if let next = nextControlModal {
+                nextControlModal = nil
+                presented = next
+            } else if nextControlActivity {
+                nextControlActivity = false
+                path.append(WalletRoute.activity)
+            } else if nextControlNetwork {
+                nextControlNetwork = false
+                path = NavigationPath()
+                selectedTab = .chats
+            }
+        }) {
+            WalletControlCenterView(
+                onAccounts: { queueControlModal(.accounts) },
+                onSecurity: { queueControlModal(.security) },
+                onAddressBook: { queueControlModal(.addressBook) },
+                onActivity: { nextControlActivity = true; showControlCenter = false },
+                onSettings: { queueControlModal(.profile) },
+                onNetwork: { nextControlNetwork = true; showControlCenter = false },
+                onClose: { showControlCenter = false }
+            )
+        }
         .sheet(item: $presented) { modal in
             modalView(modal)
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(30)
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
+    }
+
+    private func queueControlModal(_ modal: WalletModal) {
+        nextControlModal = modal
+        showControlCenter = false
     }
 
     private func openChatAfterNotificationIfNeeded() {
@@ -97,6 +135,10 @@ struct WalletRootView: View {
             SpyderIdentityHubView()
         case .accounts:
             WalletAccountsView()
+        case .security:
+            WalletSecurityCenterView()
+        case .addressBook:
+            WalletAddressBookView()
         }
     }
 
