@@ -62,7 +62,9 @@ struct SpyderChatTerminalView: View {
     private var background: Color {
         switch settings.appearance {
         case .oled: return .black
-        case .system, .dark: return Color(red: 0.045, green: 0.053, blue: 0.075)
+        // The terminal currently renders white text in a forced dark color scheme.
+        // Keep its background dark for .light until the full light palette is implemented.
+        case .system, .light, .dark: return Color(red: 0.045, green: 0.053, blue: 0.075)
         }
     }
     private var engine: TerminalEngine? { try? TerminalEngine() }
