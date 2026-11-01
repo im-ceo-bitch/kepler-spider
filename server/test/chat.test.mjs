@@ -14,7 +14,7 @@ function harness(){
    const response=await hub.fetch(new Request('https://example.com'+path,{method,headers,body:body?JSON.stringify(body):undefined}));
    return {status:response.status,data:await response.json()};
  };
- return {call,db};
+ return {call,db,hub};
 }
 const key=(char='A')=>({version:2,key_agreement:Buffer.alloc(32,char).toString('base64'),signature:Buffer.alloc(32,char).toString('base64')});
 const ids={a:'a'.repeat(32),b:'b'.repeat(32),c:'c'.repeat(32),as:'d'.repeat(64),bs:'e'.repeat(64),cs:'f'.repeat(64),ac:'A'.repeat(24),bc:'B'.repeat(24),cc:'C'.repeat(24)};
@@ -98,4 +98,27 @@ test('search privacy requires explicit consent; private users remain inviteable 
  assert.equal((await call('POST','/v1/invites',{code:ids.bc},auth(ids.a,ids.as))).status,200);
  assert.equal((await call('POST','/v2/profile/privacy',{discoverable:true},auth(ids.b,ids.bs))).status,200);
  assert.equal((await call('GET','/v1/users/search?q=bob',undefined,auth(ids.a,ids.as))).data.users[0].username,'bob_user');
+});
+
+
+test('new messages and invitations trigger one wake-up; retries do not duplicate push',async()=>{
+ const {call,hub}=harness(),events=[];
+ hub.notify=async(recipient,event)=>{events.push({recipient,event})};
+ await registerPair(call);
+ assert.equal((await call('POST','/v2/profile/privacy',{discoverable:true},auth(ids.b,ids.bs))).status,200);
+ assert.equal((await call('POST','/v1/invites',{username:'bob_user'},auth(ids.a,ids.as))).status,200);
+ assert.deepEqual(events,[{recipient:ids.b,event:'invite'}]);
+ assert.equal((await call('POST','/v1/invites/accept',{from_id:ids.a},auth(ids.b,ids.bs))).status,200);
+ assert.equal((await call('POST','/v2/messages',envelope(ids.b),auth(ids.a,ids.as))).status,201);
+ assert.equal((await call('POST','/v2/messages',envelope(ids.b),auth(ids.a,ids.as))).status,200);
+ assert.deepEqual(events,[{recipient:ids.b,event:'invite'},{recipient:ids.b,event:'message'}]);
+});
+
+test('new account can explicitly opt into discoverability during registration',async()=>{
+ const {call}=harness();
+ await registerPair(call);
+ assert.equal((await call('POST','/v1/register',{id:ids.c,secret:ids.cs,
+    invite_code:ids.cc,name:'C',username:'c_user',discoverable:true,keys:key('C')})).status,201);
+ const result=await call('GET','/v1/users/search?q=c_user',null,auth(ids.a,ids.as));
+ assert.equal(result.data.users[0].username,'c_user');
 });

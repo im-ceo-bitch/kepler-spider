@@ -1,6 +1,8 @@
 import Foundation
 import Security
 import SwiftUI
+import UIKit
+import UserNotifications
 
 // Spyder Chat Devnet identity is separate from the BIP-39 wallet. Never upload recovery words.
 // Chat v2 stores only encrypted envelopes. Legacy v1 server may have historic plaintext;
@@ -114,6 +116,9 @@ final class SpyderChatStore: ObservableObject {
     @Published private(set) var encryptionReady = false
     @Published private(set) var discoverable = false
     @Published private(set) var serverStatus: String?
+    @Published private(set) var pushEnabled = UserDefaults.standard.bool(forKey: "spyder.chat.push.optin")
+    @Published private(set) var pushStatus: String?
+    private static let pendingUnregisterKey = "spyder.chat.push.unregister.pending"
 
     var hasConfiguredServer: Bool {
         guard let url = URL(string: serverAddress), url.scheme == "https", url.host != nil else { return false }
@@ -198,7 +203,8 @@ final class SpyderChatStore: ObservableObject {
             let version: Int
             let e2ee: Bool
         }
-        let health: Health = try await perform("/health", anonymous: true)
+        // The existing /health route belongs to MessageChain; chat has its own health path.
+        let health: Health = try await perform("/chat/health", anonymous: true)
         guard health.status == "ok", health.service == "spyder-chat-devnet", health.version == 2, health.e2ee else {
             throw SpyderChatNetworkError.invalidResponse
         }
@@ -219,7 +225,7 @@ final class SpyderChatStore: ObservableObject {
         }
     }
 
-    func register(name: String, username: String) async {
+    func register(name: String, username: String, discoverable: Bool = false) async {
         guard !working, identity == nil else { return }
         working = true
         defer { working = false }
@@ -236,9 +242,9 @@ final class SpyderChatStore: ObservableObject {
             // Local device-specific chat keys are unrelated to the wallet recovery phrase.
             let publicKeys = try SpyderMessageCrypto.localKeys()
             let candidate = SpyderChatIdentity(id: try randomHex(16), secret: try randomHex(32), inviteCode: try randomHex(12).uppercased(), name: cleaned, username: handle, server: serverAddress)
-            struct Register: Encodable { let id: String; let secret: String; let invite_code: String; let name: String; let username: String; let keys: SpyderPeerKeys }
+            struct Register: Encodable { let id: String; let secret: String; let invite_code: String; let name: String; let username: String; let keys: SpyderPeerKeys; let discoverable: Bool }
             struct Ack: Decodable { let id: String; let name: String; let username: String?; let invite_code: String }
-            let body = try JSONEncoder().encode(Register(id: candidate.id, secret: candidate.secret, invite_code: candidate.inviteCode, name: candidate.name, username: handle, keys: publicKeys))
+            let body = try JSONEncoder().encode(Register(id: candidate.id, secret: candidate.secret, invite_code: candidate.inviteCode, name: candidate.name, username: handle, keys: publicKeys, discoverable: discoverable))
             let response: Ack = try await perform("/v1/register", method: "POST", payload: body, anonymous: true)
             guard response.id == candidate.id, response.invite_code == candidate.inviteCode else { throw SpyderChatNetworkError.invalidResponse }
             try SpyderChatKeychain.save(JSONEncoder().encode(candidate))
@@ -251,6 +257,68 @@ final class SpyderChatStore: ObservableObject {
             encryptionReady = true
             await refresh()
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// APNs token is never cached on disk. The app delegate gives us a fresh token.
+    func registerPushToken(_ data: Data) async {
+        guard pushEnabled, hasIdentity, hasConfiguredServer else { return }
+        let token = data.map { String(format: "%02x", $0) }.joined()
+        guard token.count >= 32, token.count <= 256, token.count.isMultiple(of: 2) else {
+            pushStatus = "APNs вернул неверный токен"
+            return
+        }
+        do {
+            struct Payload: Encodable { let token: String }
+            let ack: SpyderChatKeysAck = try await perform("/v2/push/register", method: "POST",
+                payload: JSONEncoder().encode(Payload(token: token)))
+            guard ack.status == "registered" else { throw SpyderChatNetworkError.invalidResponse }
+            pushStatus = "Уведомления подключены"
+        } catch {
+            pushStatus = "Уведомления недоступны: " + error.localizedDescription
+        }
+    }
+
+    func reportPushFailure(_ detail: String) {
+        pushStatus = "APNs: " + detail
+    }
+
+    func enablePush() async {
+        guard hasIdentity, hasConfiguredServer else {
+            pushStatus = "Сначала создай Spyder ID и подключись к сети"
+            return
+        }
+        do {
+            let allowed = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
+            guard allowed else {
+                pushStatus = "Разреши уведомления для Spyder в настройках iPhone"
+                return
+            }
+            pushEnabled = true
+            UserDefaults.standard.set(true, forKey: "spyder.chat.push.optin")
+            UserDefaults.standard.set(false, forKey: Self.pendingUnregisterKey)
+            pushStatus = "Подключаем APNs…"
+            UIApplication.shared.registerForRemoteNotifications()
+        } catch { pushStatus = error.localizedDescription }
+    }
+
+    func disablePush() async {
+        pushEnabled = false
+        UserDefaults.standard.set(false, forKey: "spyder.chat.push.optin")
+        UserDefaults.standard.set(true, forKey: Self.pendingUnregisterKey)
+        await retryPushUnregister()
+    }
+
+    private func retryPushUnregister() async {
+        guard UserDefaults.standard.bool(forKey: Self.pendingUnregisterKey),
+              !pushEnabled, hasIdentity, hasConfiguredServer else { return }
+        do {
+            let ack: SpyderChatKeysAck = try await perform("/v2/push/unregister", method: "POST")
+            guard ack.status == "unregistered" else { throw SpyderChatNetworkError.invalidResponse }
+            UserDefaults.standard.set(false, forKey: Self.pendingUnregisterKey)
+            pushStatus = "Уведомления выключены"
+        } catch {
+            pushStatus = "Не удалось отключить на сервере — повторим при подключении"
+        }
     }
 
     /// Activate immutable encryption keys for older chat profiles after server upgrade.
@@ -296,6 +364,7 @@ final class SpyderChatStore: ObservableObject {
             struct Privacy: Decodable { let discoverable: Bool }
             let privacy: Privacy = try await perform("/v2/profile/privacy")
             discoverable = privacy.discoverable
+            await retryPushUnregister()
             connected = true
         } catch {
             connected = false

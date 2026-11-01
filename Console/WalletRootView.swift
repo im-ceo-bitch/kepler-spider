@@ -52,6 +52,10 @@ struct WalletRootView: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .tint(WalletTheme.ink)
+        .task { openChatAfterNotificationIfNeeded() }
+        .onReceive(NotificationCenter.default.publisher(for: .spyderChatOpenRequested)) { _ in
+            openChatAfterNotificationIfNeeded()
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if path.isEmpty { bottomBar }
         }
@@ -61,6 +65,13 @@ struct WalletRootView: View {
                 .presentationCornerRadius(30)
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
+    }
+
+    private func openChatAfterNotificationIfNeeded() {
+        guard UserDefaults.standard.bool(forKey: "spyder.chat.push.open.pending") else { return }
+        UserDefaults.standard.set(false, forKey: "spyder.chat.push.open.pending")
+        path = NavigationPath()
+        selectedTab = .chats
     }
 
     @ViewBuilder
@@ -73,7 +84,7 @@ struct WalletRootView: View {
         case .devnetTransfer:
             WalletTransferView(isRequest: false, contact: selectedContact)
         case .receive:
-            WalletReceiveView(preselected: sendChain ?? .ethereum)
+            WalletReceiveView(preselected: sendChain)
                 .presentationDetents([.medium, .large])
         case .touch:
             WalletTouchView(onConnect: { contact in

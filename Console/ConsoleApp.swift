@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct ConsoleApp: App {
+    @UIApplicationDelegateAdaptor(SpyderPushAppDelegate.self) private var pushDelegate
     @AppStorage("spyder.wallet.appearance") private var appearance = WalletAppearance.system.rawValue
     @AppStorage("spyder.wallet.language") private var language = "ru"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,7 +15,6 @@ struct ConsoleApp: App {
     @StateObject private var walletAccess = WalletAccess()
     @StateObject private var walletChains = WalletChainStore()
     @StateObject private var publicAssets = WalletPublicAssetsStore()
-    @StateObject private var marketData = WalletMarketStore()
     @StateObject private var walletHistory = WalletActivityStore()
     @StateObject private var spyderChat = SpyderChatStore()
     @StateObject private var legacyChat = LegacyConsoleChatStore()
@@ -36,7 +36,6 @@ struct ConsoleApp: App {
                 .environmentObject(walletAccess)
                 .environmentObject(walletChains)
                 .environmentObject(publicAssets)
-                .environmentObject(marketData)
                 .environmentObject(walletHistory)
                 .environmentObject(spyderChat)
                 .environmentObject(legacyChat)
@@ -52,13 +51,25 @@ struct ConsoleApp: App {
                         .zIndex(1)
                 }
             }
-            .onReceive(marketData.$quotes) { quotes in
-                publicAssets.applyMarketQuotes(quotes)
-            }
             .preferredColorScheme(preferredScheme)
             .environment(\.locale, Locale(identifier: language))
             .tint(WalletTheme.ink)
+            .task {
+                if spyderChat.pushEnabled && spyderChat.hasIdentity {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .spyderChatDeviceToken)) { notification in
+                if let token = notification.userInfo?["token"] as? Data {
+                    Task { await spyderChat.registerPushToken(token) }
+                } else if let failure = notification.userInfo?["error"] as? String {
+                    spyderChat.reportPushFailure(failure)
+                }
+            }
             .onChange(of: scenePhase) { _, phase in
+                if phase == .active, spyderChat.pushEnabled, spyderChat.hasIdentity {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
                 if phase == .background {
                     walletAccess.lock()
                     walletChains.clear()

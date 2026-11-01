@@ -1,11 +1,33 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "spyder-chat-devnet",
+  "name": "kepler-spider",
   "main": "src/index.mjs",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
   "durable_objects": {
-    "bindings": [{"name":"CHAT_HUB","class_name":"ChatHub"}]
+    "bindings": [
+      {
+        "name": "MESSAGE_ROOMS",
+        "class_name": "SpyderMessageRoom"
+      },
+      {
+        "name": "CHAT_HUB",
+        "class_name": "ChatHub"
+      }
+    ]
   },
-  "migrations": [{"tag":"v1","new_sqlite_classes":["ChatHub"]}]
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "SpyderMessageRoom"
+      ]
+    },
+    {
+      "tag": "v2-add-chat-hub",
+      "new_sqlite_classes": [
+        "ChatHub"
+      ]
+    }
+  ]
 }

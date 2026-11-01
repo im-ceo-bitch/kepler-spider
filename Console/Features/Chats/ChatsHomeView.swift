@@ -14,6 +14,14 @@ struct SpyderDevnetChatsHomeView: View {
     @State private var adding = false
     @State private var inviteSent = false
     @State private var showingPrivacy = false
+    @State private var visibleInSearch = true
+    @AppStorage(SpyderMotionKeys.accent) private var accentValue = SpyderSignalAccent.red.rawValue
+    @AppStorage(SpyderMotionKeys.avatar) private var avatarValue = SpyderAvatarMotion.pulse.rawValue
+    @AppStorage(SpyderMotionKeys.enabled) private var motionEnabled = true
+
+    private var accent: SpyderSignalAccent { SpyderSignalAccent(rawValue: accentValue) ?? .red }
+    private var avatarMotion: SpyderAvatarMotion { SpyderAvatarMotion(rawValue: avatarValue) ?? .pulse }
+
 
     private var filtered: [SpyderChatPerson] {
         search.isEmpty ? chat.contacts : chat.contacts.filter { $0.name.localizedCaseInsensitiveContains(search) }
@@ -25,25 +33,21 @@ struct SpyderDevnetChatsHomeView: View {
                 HStack {
                     Text("Сеть").font(.system(size: 34, weight: .bold)).foregroundStyle(WalletTheme.ink)
                     Spacer()
+                    Button { showingPrivacy = true } label: {
+                        SpyderProfileAvatarView(motion: avatarMotion, accent: accent,
+                                                diameter: 46, animate: motionEnabled)
+                    }
+                    .accessibilityLabel("Мой профиль Spyder")
                     if chat.hasIdentity {
-                        Button { showingPrivacy = true } label: {
-                            Image(systemName: "person.crop.circle")
-                                .font(.system(size: 19))
-                                .foregroundStyle(WalletTheme.ink)
-                                .frame(width: 44, height: 44)
-                                .background(WalletTheme.surface, in: Circle())
-                        }
-                        .accessibilityLabel("Публичный профиль и приватность")
                         Button { adding = true } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundStyle(WalletTheme.ink)
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 19)).foregroundStyle(WalletTheme.ink)
                                 .frame(width: 44, height: 44)
                                 .background(WalletTheme.surface, in: Circle())
-                        }
-                        .accessibilityLabel("Добавить контакт")
+                        }.accessibilityLabel("Новый контакт")
                     }
                 }.spyderReveal(0.03)
+                identityCard
 
                 if !chat.hasIdentity { setup }
                 else {
@@ -119,7 +123,7 @@ struct SpyderDevnetChatsHomeView: View {
                                     .font(.system(size: 29)).foregroundStyle(WalletTheme.ink)
                                 Text("Пока нет переписок")
                                     .font(.system(size: 18, weight: .semibold)).foregroundStyle(WalletTheme.ink)
-                                Text("Обменяйтесь кодами приглашения и начните общение один на один.")
+                                Text("Найди друга по @username, отправь запрос и начни переписку после его принятия.")
                                     .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
                                 Button("Добавить контакт") { adding = true }
                                     .font(.system(size: 14, weight: .semibold))
@@ -173,6 +177,36 @@ struct SpyderDevnetChatsHomeView: View {
         } message: { Text(chat.errorMessage ?? "") }
     }
 
+    private var identityCard: some View {
+        HStack(spacing: 15) {
+            SpyderProfileAvatarView(motion: avatarMotion, accent: accent,
+                                    diameter: 88, animate: motionEnabled)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(chat.hasIdentity ? (chat.myName.isEmpty ? "Мой Spyder ID" : chat.myName) : "Твой Spyder ID")
+                    .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+                    .lineLimit(2)
+                Text(chat.hasIdentity && !chat.myUsername.isEmpty ? "@" + chat.myUsername : "Создай имя и @username")
+                    .font(.system(size: 13)).foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+                Text(chat.connected ? "Связь установлена" : "Сервис сообщений не подключён")
+                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.58))
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.65))
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, minHeight: 145)
+        .background(Color(red: 0.065, green: 0.067, blue: 0.078),
+                    in: RoundedRectangle(cornerRadius: 28))
+        .overlay(RoundedRectangle(cornerRadius: 28).stroke(accent.color.opacity(0.28), lineWidth: 1))
+        .contentShape(RoundedRectangle(cornerRadius: 28))
+        .onTapGesture { showingPrivacy = true }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
+
     private var privacySheet: some View {
         NavigationStack {
             ScrollView {
@@ -181,11 +215,27 @@ struct SpyderDevnetChatsHomeView: View {
                         .font(.system(size: 28, weight: .semibold))
                     WalletCard {
                         VStack(alignment: .leading, spacing: 11) {
-                            Text(chat.myName).font(.title3.weight(.semibold))
+                            SpyderProfileAvatarView(motion: avatarMotion, accent: accent, diameter: 112, animate: motionEnabled)
+                            .frame(maxWidth: .infinity)
+                            Text(chat.myName.isEmpty ? "Твой Spyder ID" : chat.myName).font(.title3.weight(.semibold))
                             Text(chat.myUsername.isEmpty ? "Без публичного username" : "@" + chat.myUsername)
                                 .foregroundStyle(WalletTheme.secondary)
                             Label("Ключи чата не связаны с фразой восстановления кошелька", systemImage: "lock.shield")
                                 .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Toggle(isOn: Binding(get: { chat.pushEnabled }, set: { enabled in
+                                Task { if enabled { await chat.enablePush() } else { await chat.disablePush() } }
+                            })) {
+                                Label("Уведомления о сообщениях", systemImage: "bell.badge")
+                            }
+                            Text("Когда приложение закрыто, iPhone покажет только уведомление о новом зашифрованном сообщении — без его текста.")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                            if let status = chat.pushStatus {
+                                Text(status).font(.footnote).foregroundStyle(WalletTheme.secondary)
+                            }
                         }
                     }
                     WalletCard {
@@ -195,10 +245,12 @@ struct SpyderDevnetChatsHomeView: View {
                             })) {
                                 Label("Показывать профиль в поиске", systemImage: "magnifyingglass")
                             }
-                            Text("По умолчанию профиль скрыт. Даже при выключенном поиске Вы можете приглашать контакты по личному коду.")
+                            Text("Если выключить поиск, друзья смогут добавить тебя только по коду приглашения.")
                                 .font(.footnote).foregroundStyle(WalletTheme.secondary)
                         }
                     }
+                    Text("Сейчас доступен один чат-профиль на устройство. Несколько независимых @username потребуют отдельной поддержки на сервере и в Keychain.")
+                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
                     Text("E2EE v2: сквозное шифрование при проверке ключей. Это предварительный криптографический протокол для одного устройства; он не имеет аудита и не поддерживает восстановление чатов через seed-фразу. Серверу видны участники, время и длина сообщений.")
                         .font(.footnote).foregroundStyle(WalletTheme.secondary)
                 }.padding(20)
@@ -216,9 +268,9 @@ struct SpyderDevnetChatsHomeView: View {
 
     private var setup: some View {
         VStack(alignment: .leading, spacing: 17) {
-            Text("Твоя сеть. Твои контакты.")
+            Text("Создай свой Spyder ID")
                 .font(.system(size: 25, weight: .bold)).foregroundStyle(WalletTheme.ink)
-            Text("Выбери имя и уникальный @username. Найди друзей и общайся напрямую — адрес кошелька не нужен.")
+            Text("Одно имя и уникальный @username — чтобы тебя могли найти друзья. Адрес кошелька не нужен.")
                 .font(.system(size: 14)).foregroundStyle(WalletTheme.secondary)
             if !chat.hasConfiguredServer {
                 WalletCard {
@@ -242,6 +294,10 @@ struct SpyderDevnetChatsHomeView: View {
                         .font(.system(size: 16)).foregroundStyle(WalletTheme.ink)
                     Text("3–20 символов: a–z, 0–9, _. Начинай с буквы.")
                         .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                    Toggle("Показывать мой @username в поиске", isOn: $visibleInSearch)
+                        .font(.system(size: 14))
+                    Text("Если включено, другие пользователи Spyder смогут найти твой профиль и отправить запрос на общение.")
+                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                 }
             }
             if let status = chat.serverStatus, chat.hasConfiguredServer {
@@ -249,11 +305,11 @@ struct SpyderDevnetChatsHomeView: View {
                     .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
             }
             Button {
-                Task { await chat.register(name: name, username: username) }
+                Task { await chat.register(name: name, username: username, discoverable: visibleInSearch) }
             } label: {
                 Text(chat.working ? "Подключаем…" : "Начать общение").spyderPrimaryButton()
             }.buttonStyle(.plain).disabled(!chat.hasConfiguredServer || chat.working || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || username.count < 3)
-            Text("Сообщения требуют сервер Chat v2 и проверки ключей контактов. Никогда не отправляйте сид-фразы, пароли или приватные ключи.")
+            Text("После создания профиля найди друга по @username. Он примет запрос — и вы сможете переписываться. Никогда не делись фразой восстановления.")
                 .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
         }.spyderReveal(0.08)
     }
@@ -270,7 +326,7 @@ struct SpyderDevnetChatsHomeView: View {
                     Text("Мой профиль: @" + chat.myUsername)
                         .font(.system(size: 16, weight: .semibold)).textSelection(.enabled)
                 }
-                Text("Найти человека по username")
+                Text("Найти человека по @username")
                     .font(.system(size: 19, weight: .semibold))
                 HStack(spacing: 9) {
                     Image(systemName: "magnifyingglass").foregroundStyle(WalletTheme.secondary)
@@ -324,7 +380,7 @@ struct SpyderDevnetChatsHomeView: View {
                 } label: { Text("Отправить приглашение").spyderPrimaryButton() }
                     .buttonStyle(.plain)
                     .disabled(invitation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                if inviteSent { Label("Запрос отправлен. Друг должен принять его в Chats.", systemImage: "checkmark.circle")
+                if inviteSent { Label("Приглашение отправлено. Друг увидит его во вкладке «Сеть».", systemImage: "checkmark.circle")
                     .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary) }
             }
             .foregroundStyle(WalletTheme.ink)
