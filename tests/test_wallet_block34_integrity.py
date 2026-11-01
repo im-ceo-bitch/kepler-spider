@@ -14,7 +14,11 @@ class Block34Integrity(unittest.TestCase):
         self.assertIn('SpyderMessageCrypto.verifyAndPin', s)
 
     def test_server_refuses_plaintext(self):
+        # Chat Unified moved secure handling into chat.mjs, while index.mjs
+        # is now a router. Verify the real enforcement module, not a stale path.
+        router = source('server/src/index.mjs')
         s = source('server/src/chat.mjs')
+        self.assertIn('chatWorker.fetch', router)
         self.assertIn('plaintext_protocol_retired', s)
         self.assertIn("if(path==='/v1/messages')", s)
         self.assertIn('!Object.hasOwn(value,\'text\')', s)

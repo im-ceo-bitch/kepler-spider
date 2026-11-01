@@ -15,6 +15,7 @@ struct WalletSettingsView: View {
     @State private var backupCloudBusy = false
     @State private var showDevnetSettings = false
     @State private var showChatSettings = false
+    @State private var showTerminalSettings = false
     @State private var showDeveloperOptions = false
     @State private var vaultError: String?
     @EnvironmentObject private var chat: SpyderChatStore
@@ -137,6 +138,17 @@ struct WalletSettingsView: View {
                         .foregroundStyle(WalletTheme.ink)
                     }
                     WalletCard {
+                        Button { showTerminalSettings = true } label: {
+                            HStack {
+                                Label("Spyder Terminal", systemImage: "terminal")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                            }
+                            .foregroundStyle(WalletTheme.ink)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    WalletCard {
                         DisclosureGroup(isExpanded: $showDeveloperOptions) {
                             VStack(alignment: .leading, spacing: 16) {
                                 Button { showChatSettings = true } label: {
@@ -178,6 +190,11 @@ struct WalletSettingsView: View {
         }
         .sheet(isPresented: $showDevnetSettings) {
             SpiderDevnetSettingsView()
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(30)
+        }
+        .sheet(isPresented: $showTerminalSettings) {
+            SpyderTerminalSettingsScreen()
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(30)
         }

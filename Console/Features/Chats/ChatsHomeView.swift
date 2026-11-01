@@ -171,7 +171,7 @@ struct SpyderDevnetChatsHomeView: View {
             }
         }
         .sheet(isPresented: $adding) { inviteSheet }
-        .sheet(isPresented: $showingPrivacy) { SpyderIdentityHubView() }
+        .sheet(isPresented: $showingPrivacy) { privacySheet }
         .alert("Spyder Chat", isPresented: Binding(get: { chat.errorMessage != nil }, set: { if !$0 { chat.errorMessage = nil } })) {
             Button("Понятно", role: .cancel) { chat.errorMessage = nil }
         } message: { Text(chat.errorMessage ?? "") }
@@ -205,6 +205,59 @@ struct SpyderDevnetChatsHomeView: View {
         .onTapGesture { showingPrivacy = true }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
+    }
+
+    private var privacySheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Label("Spyder Identity", systemImage: "person.crop.circle")
+                        .font(.system(size: 28, weight: .semibold))
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 11) {
+                            SpyderProfileAvatarView(motion: avatarMotion, accent: accent, diameter: 112, animate: motionEnabled)
+                            .frame(maxWidth: .infinity)
+                            Text(chat.myName.isEmpty ? "Твой Spyder ID" : chat.myName).font(.title3.weight(.semibold))
+                            Text(chat.myUsername.isEmpty ? "Без публичного username" : "@" + chat.myUsername)
+                                .foregroundStyle(WalletTheme.secondary)
+                            Label("Ключи чата не связаны с фразой восстановления кошелька", systemImage: "lock.shield")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Toggle(isOn: Binding(get: { chat.pushEnabled }, set: { enabled in
+                                Task { if enabled { await chat.enablePush() } else { await chat.disablePush() } }
+                            })) {
+                                Label("Уведомления о сообщениях", systemImage: "bell.badge")
+                            }
+                            Text("Когда приложение закрыто, iPhone покажет только уведомление о новом зашифрованном сообщении — без его текста.")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                            if let status = chat.pushStatus {
+                                Text(status).font(.footnote).foregroundStyle(WalletTheme.secondary)
+                            }
+                        }
+                    }
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Toggle(isOn: Binding(get: { chat.discoverable }, set: { value in
+                                Task { await chat.updateDiscovery(value) }
+                            })) {
+                                Label("Показывать профиль в поиске", systemImage: "magnifyingglass")
+                            }
+                            Text("Если выключить поиск, друзья смогут добавить тебя только по коду приглашения.")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    Text("Сейчас доступен один чат-профиль на устройство. Несколько независимых @username потребуют отдельной поддержки на сервере и в Keychain.")
+                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                    Text("E2EE v2: сквозное шифрование при проверке ключей. Это предварительный криптографический протокол для одного устройства; он не имеет аудита и не поддерживает восстановление чатов через seed-фразу. Серверу видны участники, время и длина сообщений.")
+                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                }.padding(20)
+            }
+            .background(WalletTheme.canvas.ignoresSafeArea())
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { showingPrivacy = false } } }
+        }
     }
 
     private func avatar(_ name: String) -> some View {

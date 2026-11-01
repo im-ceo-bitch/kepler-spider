@@ -9,6 +9,8 @@ packages:
     exactVersion: 2.0.1
   WalletCore:
     path: Packages/WalletCore
+  SpyderTerminalKit:
+    path: Packages/SpyderTerminalKit
 
 targets:
   Console:
@@ -23,6 +25,8 @@ targets:
         product: WalletCore
       - package: WalletCore
         product: WalletCoreSwiftProtobuf
+      - package: SpyderTerminalKit
+        product: SpyderTerminalKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.spyder.wallet

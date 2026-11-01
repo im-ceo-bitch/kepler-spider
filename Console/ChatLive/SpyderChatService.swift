@@ -118,13 +118,7 @@ final class SpyderChatStore: ObservableObject {
     @Published private(set) var serverStatus: String?
     @Published private(set) var pushEnabled = UserDefaults.standard.bool(forKey: "spyder.chat.push.optin")
     @Published private(set) var pushStatus: String?
-    @Published private(set) var pushProviderReady: Bool? = nil
-    @Published private(set) var pushRegisteredOnServer: Bool? = nil
-    @Published private(set) var pushSoundOnServer: String? = nil
-    @Published private(set) var lastAPNsResponse: Int? = nil
-    @Published private(set) var lastAPNsAttempt: String? = nil
     private static let pendingUnregisterKey = "spyder.chat.push.unregister.pending"
-    private static let soundKey = "spyder.chat.sound.preference"
 
     var hasConfiguredServer: Bool {
         guard let url = URL(string: serverAddress), url.scheme == "https", url.host != nil else { return false }
@@ -274,86 +268,14 @@ final class SpyderChatStore: ObservableObject {
             return
         }
         do {
-            struct Payload: Encodable { let token: String; let sound: String }
-            let preferred = UserDefaults.standard.string(forKey: Self.soundKey) ?? "pulse"
+            struct Payload: Encodable { let token: String }
             let ack: SpyderChatKeysAck = try await perform("/v2/push/register", method: "POST",
-                payload: JSONEncoder().encode(Payload(token: token, sound: preferred)))
+                payload: JSONEncoder().encode(Payload(token: token)))
             guard ack.status == "registered" else { throw SpyderChatNetworkError.invalidResponse }
-            pushStatus = "APNs-токен зарегистрирован на сервере"
-            await refreshPushDiagnostics()
+            pushStatus = "Уведомления подключены"
         } catch {
             pushStatus = "Уведомления недоступны: " + error.localizedDescription
         }
-    }
-
-    func refreshPushDiagnostics() async {
-        guard hasIdentity && hasConfiguredServer else {
-            pushProviderReady = nil
-            pushRegisteredOnServer = nil
-            return
-        }
-        struct Status: Decodable {
-            let provider_ready: Bool
-            let enabled: Bool
-            let sound: String?
-            let last_apns_status: Int?
-            let last_attempt_at: String?
-        }
-        do {
-            let response: Status = try await perform("/v2/push/status")
-            pushProviderReady = response.provider_ready
-            pushRegisteredOnServer = response.enabled
-            pushSoundOnServer = response.sound
-            lastAPNsResponse = response.last_apns_status
-            lastAPNsAttempt = response.last_attempt_at
-        } catch {
-            pushProviderReady = nil
-            pushRegisteredOnServer = nil
-            pushStatus = "Не удалось проверить подписку: " + error.localizedDescription
-        }
-    }
-
-    func updatePushSound(_ sound: String) async {
-        guard ["pulse", "system", "mute"].contains(sound) else { return }
-        UserDefaults.standard.set(sound, forKey: Self.soundKey)
-        guard hasIdentity && hasConfiguredServer && pushEnabled else { return }
-        struct Payload: Encodable { let sound: String }
-        do {
-            let _: SpyderChatKeysAck = try await perform("/v2/push/preferences", method: "POST",
-                    payload: JSONEncoder().encode(Payload(sound: sound)))
-            pushStatus = "Звук уведомления сохранён"
-            await refreshPushDiagnostics()
-        } catch { pushStatus = "Не удалось сохранить звук: " + error.localizedDescription }
-    }
-
-    func sendTestPush() async {
-        guard pushEnabled && hasIdentity else { return }
-        do {
-            let _: SpyderChatKeysAck = try await perform("/v2/push/test", method: "POST")
-            pushStatus = "Тест поставлен в очередь APNs — проверяем ответ Apple…"
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
-            await refreshPushDiagnostics()
-        } catch { pushStatus = "Тест APNs: " + error.localizedDescription }
-    }
-
-    func updateDisplayName(_ value: String) async -> Bool {
-        let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty && cleaned.count <= 36 else {
-            errorMessage = "Имя должно содержать от 1 до 36 символов."
-            return false
-        }
-        struct Payload: Encodable { let name: String }
-        struct Result: Decodable { let name: String }
-        do {
-            let response: Result = try await perform("/v2/profile/name", method: "POST",
-                 payload: JSONEncoder().encode(Payload(name: cleaned)))
-            guard var saved = identity else { throw SpyderChatNetworkError.missingAccount }
-            saved.name = response.name
-            try SpyderChatKeychain.save(JSONEncoder().encode(saved))
-            identity = saved
-            myName = saved.name
-            return true
-        } catch { errorMessage = error.localizedDescription; return false }
     }
 
     func reportPushFailure(_ detail: String) {
@@ -374,9 +296,8 @@ final class SpyderChatStore: ObservableObject {
             pushEnabled = true
             UserDefaults.standard.set(true, forKey: "spyder.chat.push.optin")
             UserDefaults.standard.set(false, forKey: Self.pendingUnregisterKey)
-            pushStatus = "Запрашиваем APNs-токен…"
+            pushStatus = "Подключаем APNs…"
             UIApplication.shared.registerForRemoteNotifications()
-            await refreshPushDiagnostics()
         } catch { pushStatus = error.localizedDescription }
     }
 
@@ -395,7 +316,6 @@ final class SpyderChatStore: ObservableObject {
             guard ack.status == "unregistered" else { throw SpyderChatNetworkError.invalidResponse }
             UserDefaults.standard.set(false, forKey: Self.pendingUnregisterKey)
             pushStatus = "Уведомления выключены"
-            pushRegisteredOnServer = false
         } catch {
             pushStatus = "Не удалось отключить на сервере — повторим при подключении"
         }
@@ -521,7 +441,6 @@ final class SpyderChatStore: ObservableObject {
             struct Ack: Decodable { let status: String }
             let _: Ack = try await perform("/v1/invites/accept", method: "POST", payload: JSONEncoder().encode(Payload(from_id: person.id)))
             await refresh()
-            SpyderSonicPlayer.shared.playConnect()
         } catch { errorMessage = error.localizedDescription }
     }
 

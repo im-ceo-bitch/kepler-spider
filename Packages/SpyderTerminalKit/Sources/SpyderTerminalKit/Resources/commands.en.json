@@ -1,0 +1,420 @@
+[
+  {
+    "id": "chat.theme.set",
+    "risk": "write",
+    "requiredParameters": [
+      "theme"
+    ],
+    "title": "Chat theme",
+    "summary": "Change theme of current chat",
+    "standard": [
+      "sp change chat theme to {theme}",
+      "sp chat theme {theme}",
+      "sp change theme to {theme}",
+      "sp theme {theme}"
+    ],
+    "beginner": [
+      "change chat theme to {theme}",
+      "set chat theme to {theme}",
+      "make chat theme {theme}",
+      "change theme to {theme}"
+    ]
+  },
+  {
+    "id": "chat.background.change",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Chat background",
+    "summary": "Open background picker or update wallpaper",
+    "standard": [
+      "sp change background",
+      "sp change background to {background}",
+      "sp chat background"
+    ],
+    "beginner": [
+      "change background",
+      "change chat background",
+      "set background to {background}",
+      "make background {background}"
+    ]
+  },
+  {
+    "id": "chat.send",
+    "risk": "write",
+    "requiredParameters": [
+      "text"
+    ],
+    "title": "Send message",
+    "summary": "Send a message to the current conversation",
+    "standard": [
+      "sp send {text}",
+      "sp chat send {text}"
+    ],
+    "beginner": [
+      "send message {text}",
+      "send {text} to this chat"
+    ]
+  },
+  {
+    "id": "chat.broadcast",
+    "risk": "sensitive",
+    "requiredParameters": [
+      "text"
+    ],
+    "title": "Broadcast",
+    "summary": "Requires recipient review and confirmation",
+    "standard": [
+      "sp broadcast {text}",
+      "sp message all {text}"
+    ],
+    "beginner": [
+      "send everyone {text}",
+      "send to all contacts {text}"
+    ]
+  },
+  {
+    "id": "chat.search",
+    "risk": "read",
+    "requiredParameters": [
+      "query"
+    ],
+    "title": "Search messages",
+    "summary": "Search within the current chat",
+    "standard": [
+      "sp search chat {query}",
+      "sp chat search {query}"
+    ],
+    "beginner": [
+      "find in chat {query}"
+    ]
+  },
+  {
+    "id": "chat.mute",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Mute chat",
+    "summary": "Mute the current conversation",
+    "standard": [
+      "sp mute chat"
+    ],
+    "beginner": [
+      "mute this chat"
+    ]
+  },
+  {
+    "id": "chat.unmute",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Unmute chat",
+    "summary": "Unmute the current conversation",
+    "standard": [
+      "sp unmute chat"
+    ],
+    "beginner": [
+      "unmute this chat"
+    ]
+  },
+  {
+    "id": "chat.pin",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Pin chat",
+    "summary": "Pin current conversation",
+    "standard": [
+      "sp pin chat"
+    ],
+    "beginner": [
+      "pin this chat"
+    ]
+  },
+  {
+    "id": "contacts.list",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Contacts",
+    "summary": "List saved contacts",
+    "standard": [
+      "sp show contacts",
+      "sp contacts list"
+    ],
+    "beginner": [
+      "show my contacts",
+      "open contacts"
+    ]
+  },
+  {
+    "id": "contacts.search",
+    "risk": "read",
+    "requiredParameters": [
+      "query"
+    ],
+    "title": "Find contact",
+    "summary": "Find a contact by name",
+    "standard": [
+      "sp find contact {query}"
+    ],
+    "beginner": [
+      "search contacts for {query}"
+    ]
+  },
+  {
+    "id": "profile.show",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "My profile",
+    "summary": "Show my own profile",
+    "standard": [
+      "sp show profile",
+      "sp profile show"
+    ],
+    "beginner": [
+      "open my profile",
+      "show my profile"
+    ]
+  },
+  {
+    "id": "profile.name.set",
+    "risk": "write",
+    "requiredParameters": [
+      "name"
+    ],
+    "title": "Change name",
+    "summary": "Update display name",
+    "standard": [
+      "sp change name to {name}",
+      "sp profile name {name}"
+    ],
+    "beginner": [
+      "call me {name}",
+      "update my name to {name}"
+    ]
+  },
+  {
+    "id": "profile.bio.set",
+    "risk": "write",
+    "requiredParameters": [
+      "bio"
+    ],
+    "title": "Change bio",
+    "summary": "Update profile bio",
+    "standard": [
+      "sp change bio to {bio}",
+      "sp profile bio {bio}"
+    ],
+    "beginner": [
+      "update my bio to {bio}"
+    ]
+  },
+  {
+    "id": "profile.photo.change",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Profile photo",
+    "summary": "Open avatar picker",
+    "standard": [
+      "sp change profile photo"
+    ],
+    "beginner": [
+      "update my avatar"
+    ]
+  },
+  {
+    "id": "wallet.balance",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Wallet balance",
+    "summary": "Show wallet balance",
+    "standard": [
+      "sp show balance",
+      "sp wallet balance"
+    ],
+    "beginner": [
+      "how much crypto do i have",
+      "show wallet balance"
+    ]
+  },
+  {
+    "id": "wallet.receive",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Receive crypto",
+    "summary": "Show receiving address and QR",
+    "standard": [
+      "sp wallet receive",
+      "sp receive crypto"
+    ],
+    "beginner": [
+      "show my receiving address"
+    ]
+  },
+  {
+    "id": "wallet.transactions",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Wallet activity",
+    "summary": "Show transaction history",
+    "standard": [
+      "sp wallet transactions"
+    ],
+    "beginner": [
+      "show my transactions"
+    ]
+  },
+  {
+    "id": "wallet.send",
+    "risk": "sensitive",
+    "requiredParameters": [
+      "amount",
+      "asset",
+      "recipient"
+    ],
+    "title": "Send crypto",
+    "summary": "Requires network and fee review, then signing",
+    "standard": [
+      "sp wallet send {amount} {asset} to {recipient}"
+    ],
+    "beginner": [
+      "send {amount} {asset} to {recipient}"
+    ]
+  },
+  {
+    "id": "settings.theme.set",
+    "risk": "write",
+    "requiredParameters": [
+      "theme"
+    ],
+    "title": "App theme",
+    "summary": "Set application appearance",
+    "standard": [
+      "sp app theme {theme}",
+      "sp change app theme to {theme}"
+    ],
+    "beginner": [
+      "make the app {theme}"
+    ]
+  },
+  {
+    "id": "settings.language.set",
+    "risk": "write",
+    "requiredParameters": [
+      "language"
+    ],
+    "title": "App language",
+    "summary": "Change app language",
+    "standard": [
+      "sp app language {language}"
+    ],
+    "beginner": [
+      "switch app to {language}"
+    ]
+  },
+  {
+    "id": "settings.notifications.disable",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Disable notifications",
+    "summary": "Disable app notifications",
+    "standard": [
+      "sp disable notifications"
+    ],
+    "beginner": [
+      "turn off notifications"
+    ]
+  },
+  {
+    "id": "settings.notifications.enable",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Enable notifications",
+    "summary": "Enable app notifications",
+    "standard": [
+      "sp enable notifications"
+    ],
+    "beginner": [
+      "turn on notifications"
+    ]
+  },
+  {
+    "id": "network.status",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Network status",
+    "summary": "Show available network status",
+    "standard": [
+      "sp network status",
+      "sp mesh status"
+    ],
+    "beginner": [
+      "show network status"
+    ]
+  },
+  {
+    "id": "network.view",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Spyder mesh",
+    "summary": "Open network graph",
+    "standard": [
+      "sp mesh view"
+    ],
+    "beginner": [
+      "show me network graph"
+    ]
+  },
+  {
+    "id": "terminal.settings.open",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Terminal settings",
+    "summary": "Open terminal settings",
+    "standard": [
+      "sp terminal settings"
+    ],
+    "beginner": [
+      "open terminal settings"
+    ]
+  },
+  {
+    "id": "terminal.help",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Help",
+    "summary": "Open command catalog",
+    "standard": [
+      "sp help",
+      "sp commands"
+    ],
+    "beginner": [
+      "what can you do",
+      "show commands"
+    ]
+  },
+  {
+    "id": "terminal.history.open",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "History",
+    "summary": "Open command history",
+    "standard": [
+      "sp history"
+    ],
+    "beginner": [
+      "show my command history"
+    ]
+  },
+  {
+    "id": "terminal.mode.set",
+    "risk": "write",
+    "requiredParameters": [
+      "mode"
+    ],
+    "title": "Terminal level",
+    "summary": "Switch terminal mode",
+    "standard": [
+      "sp terminal mode {mode}"
+    ],
+    "beginner": [
+      "switch terminal to {mode} mode"
+    ]
+  }
+]

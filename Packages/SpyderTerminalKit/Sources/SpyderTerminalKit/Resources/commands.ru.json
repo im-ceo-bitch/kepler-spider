@@ -1,0 +1,425 @@
+[
+  {
+    "id": "chat.theme.set",
+    "risk": "write",
+    "requiredParameters": [
+      "theme"
+    ],
+    "title": "Тема чата",
+    "summary": "Изменить оформление текущего чата",
+    "standard": [
+      "сп измени тему чата на {theme}",
+      "сп тема чата {theme}",
+      "сп измени тему на {theme}",
+      "сп тема {theme}"
+    ],
+    "beginner": [
+      "измени тему чата на {theme}",
+      "поставь {theme} в чате",
+      "сделай тему чата {theme}",
+      "хочу тему {theme}",
+      "измени тему на {theme}",
+      "изменить тему на {theme}"
+    ]
+  },
+  {
+    "id": "chat.background.change",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Фон чата",
+    "summary": "Открыть выбор фона или установить фон",
+    "standard": [
+      "сп измени фон",
+      "сп измени фон на {background}",
+      "сп фон чата"
+    ],
+    "beginner": [
+      "поменяй фон чата",
+      "измени фон",
+      "сделай фон {background}",
+      "поставь фон {background}"
+    ]
+  },
+  {
+    "id": "chat.send",
+    "risk": "write",
+    "requiredParameters": [
+      "text"
+    ],
+    "title": "Отправить сообщение",
+    "summary": "Отправить текст в текущий чат",
+    "standard": [
+      "сп отправь {text}",
+      "сп сообщение {text}"
+    ],
+    "beginner": [
+      "напиши {text} в этот чат",
+      "отправь сообщение {text}"
+    ]
+  },
+  {
+    "id": "chat.broadcast",
+    "risk": "sensitive",
+    "requiredParameters": [
+      "text"
+    ],
+    "title": "Рассылка контактам",
+    "summary": "Предпросмотр получателей и подтверждение обязательны",
+    "standard": [
+      "сп отправь всем {text}",
+      "сп рассылка {text}"
+    ],
+    "beginner": [
+      "напиши всем моим контактам {text}",
+      "отправь всем контактам {text}"
+    ]
+  },
+  {
+    "id": "chat.search",
+    "risk": "read",
+    "requiredParameters": [
+      "query"
+    ],
+    "title": "Поиск сообщений",
+    "summary": "Искать в текущем чате",
+    "standard": [
+      "сп найди сообщение {query}",
+      "сп поиск чата {query}"
+    ],
+    "beginner": [
+      "найди в переписке {query}"
+    ]
+  },
+  {
+    "id": "chat.mute",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Выключить уведомления чата",
+    "summary": "Отключить уведомления текущего чата",
+    "standard": [
+      "сп выключи уведомления чата"
+    ],
+    "beginner": [
+      "не беспокой меня в этом чате"
+    ]
+  },
+  {
+    "id": "chat.unmute",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Включить уведомления чата",
+    "summary": "Включить уведомления текущего чата",
+    "standard": [
+      "сп включи уведомления чата"
+    ],
+    "beginner": [
+      "включи звук этого чата"
+    ]
+  },
+  {
+    "id": "chat.pin",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Закрепить чат",
+    "summary": "Закрепить текущий чат",
+    "standard": [
+      "сп закрепи чат"
+    ],
+    "beginner": [
+      "закрепи эту переписку"
+    ]
+  },
+  {
+    "id": "contacts.list",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Контакты",
+    "summary": "Показать сохранённые контакты",
+    "standard": [
+      "сп покажи контакты",
+      "сп контакты"
+    ],
+    "beginner": [
+      "открой мои контакты",
+      "покажи список контактов"
+    ]
+  },
+  {
+    "id": "contacts.search",
+    "risk": "read",
+    "requiredParameters": [
+      "query"
+    ],
+    "title": "Поиск контакта",
+    "summary": "Найти контакт по имени",
+    "standard": [
+      "сп найди контакт {query}"
+    ],
+    "beginner": [
+      "отыщи контакт {query}"
+    ]
+  },
+  {
+    "id": "profile.show",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Мой профиль",
+    "summary": "Показать собственный профиль",
+    "standard": [
+      "сп покажи профиль",
+      "сп профиль"
+    ],
+    "beginner": [
+      "открой мой профиль",
+      "покажи информацию обо мне"
+    ]
+  },
+  {
+    "id": "profile.name.set",
+    "risk": "write",
+    "requiredParameters": [
+      "name"
+    ],
+    "title": "Изменить имя",
+    "summary": "Обновить отображаемое имя",
+    "standard": [
+      "сп измени имя на {name}",
+      "сп имя {name}"
+    ],
+    "beginner": [
+      "назови меня {name}",
+      "поменяй мое имя на {name}"
+    ]
+  },
+  {
+    "id": "profile.bio.set",
+    "risk": "write",
+    "requiredParameters": [
+      "bio"
+    ],
+    "title": "О себе",
+    "summary": "Изменить описание профиля",
+    "standard": [
+      "сп измени био на {bio}",
+      "сп био {bio}"
+    ],
+    "beginner": [
+      "добавь в описание профиля {bio}"
+    ]
+  },
+  {
+    "id": "profile.photo.change",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Фото профиля",
+    "summary": "Открыть выбор аватара",
+    "standard": [
+      "сп измени фото профиля"
+    ],
+    "beginner": [
+      "хочу новый аватар",
+      "поменяй мою аватарку"
+    ]
+  },
+  {
+    "id": "wallet.balance",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Баланс кошелька",
+    "summary": "Показать доступный баланс",
+    "standard": [
+      "сп покажи баланс",
+      "сп баланс кошелька"
+    ],
+    "beginner": [
+      "сколько у меня криптовалюты",
+      "покажи деньги в кошельке"
+    ]
+  },
+  {
+    "id": "wallet.receive",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Получить криптовалюту",
+    "summary": "Открыть адрес и QR для получения",
+    "standard": [
+      "сп получить криптовалюту",
+      "сп адрес кошелька"
+    ],
+    "beginner": [
+      "покажи мой адрес для получения"
+    ]
+  },
+  {
+    "id": "wallet.transactions",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "История операций",
+    "summary": "Показать транзакции",
+    "standard": [
+      "сп история кошелька"
+    ],
+    "beginner": [
+      "покажи мои переводы"
+    ]
+  },
+  {
+    "id": "wallet.send",
+    "risk": "sensitive",
+    "requiredParameters": [
+      "amount",
+      "asset",
+      "recipient"
+    ],
+    "title": "Отправить криптовалюту",
+    "summary": "Требует проверки сети, комиссии и подписи",
+    "standard": [
+      "сп переведи {amount} {asset} для {recipient}"
+    ],
+    "beginner": [
+      "отправь {amount} {asset} пользователю {recipient}"
+    ]
+  },
+  {
+    "id": "settings.theme.set",
+    "risk": "write",
+    "requiredParameters": [
+      "theme"
+    ],
+    "title": "Тема приложения",
+    "summary": "Изменить оформление приложения",
+    "standard": [
+      "сп тема приложения {theme}",
+      "сп измени тему приложения на {theme}"
+    ],
+    "beginner": [
+      "сделай приложение {theme}"
+    ]
+  },
+  {
+    "id": "settings.language.set",
+    "risk": "write",
+    "requiredParameters": [
+      "language"
+    ],
+    "title": "Язык приложения",
+    "summary": "Изменить язык интерфейса",
+    "standard": [
+      "сп язык приложения {language}"
+    ],
+    "beginner": [
+      "переключи приложение на {language}"
+    ]
+  },
+  {
+    "id": "settings.notifications.disable",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Отключить уведомления",
+    "summary": "Изменить настройки уведомлений",
+    "standard": [
+      "сп отключи уведомления"
+    ],
+    "beginner": [
+      "хочу тишину",
+      "выключи все уведомления"
+    ]
+  },
+  {
+    "id": "settings.notifications.enable",
+    "risk": "write",
+    "requiredParameters": [],
+    "title": "Включить уведомления",
+    "summary": "Изменить настройки уведомлений",
+    "standard": [
+      "сп включи уведомления"
+    ],
+    "beginner": [
+      "хочу получать уведомления"
+    ]
+  },
+  {
+    "id": "network.status",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Сеть Spyder",
+    "summary": "Показать доступное состояние сети",
+    "standard": [
+      "сп статус сети",
+      "сп сеть"
+    ],
+    "beginner": [
+      "как работает моя сеть",
+      "покажи состояние сети"
+    ]
+  },
+  {
+    "id": "network.view",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Паутина Spyder",
+    "summary": "Показать визуализацию сети",
+    "standard": [
+      "сп покажи паутину"
+    ],
+    "beginner": [
+      "открой карту сети"
+    ]
+  },
+  {
+    "id": "terminal.settings.open",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Настройки терминала",
+    "summary": "Открыть настройки терминала",
+    "standard": [
+      "сп настройки терминала"
+    ],
+    "beginner": [
+      "открой настройки консоли"
+    ]
+  },
+  {
+    "id": "terminal.help",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "Помощь",
+    "summary": "Каталог команд и подсказки",
+    "standard": [
+      "сп помощь",
+      "сп команды"
+    ],
+    "beginner": [
+      "что ты умеешь",
+      "справка по командам"
+    ]
+  },
+  {
+    "id": "terminal.history.open",
+    "risk": "read",
+    "requiredParameters": [],
+    "title": "История команд",
+    "summary": "Показать предыдущие команды",
+    "standard": [
+      "сп история команд"
+    ],
+    "beginner": [
+      "покажи что я вводил"
+    ]
+  },
+  {
+    "id": "terminal.mode.set",
+    "risk": "write",
+    "requiredParameters": [
+      "mode"
+    ],
+    "title": "Уровень терминала",
+    "summary": "Переключить уровень терминала",
+    "standard": [
+      "сп режим {mode}"
+    ],
+    "beginner": [
+      "переключи терминал в режим {mode}"
+    ]
+  }
+]

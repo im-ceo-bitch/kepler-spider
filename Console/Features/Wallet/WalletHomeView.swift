@@ -25,10 +25,6 @@ struct WalletHomeView: View {
     @EnvironmentObject private var history: WalletActivityStore
     @EnvironmentObject private var spider: SpiderDevnetStore
     @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
-    // Motion Kit preferences are independent from market and wallet state.
-    @AppStorage(SpyderMotionKeys.accent) private var profileAccentValue = SpyderSignalAccent.red.rawValue
-    @AppStorage(SpyderMotionKeys.avatar) private var profileAvatarValue = SpyderAvatarMotion.pulse.rawValue
-    @AppStorage(SpyderMotionKeys.enabled) private var profileMotionEnabled = true
     @StateObject private var catalog = WalletCatalogStore()
     @AppStorage("spyder.wallet.home.section") private var selectedSection = WalletHomeSection.assets.rawValue
     @State private var selectedToken: WalletVerifiedToken?
@@ -37,6 +33,7 @@ struct WalletHomeView: View {
     let onAction: (WalletModal) -> Void
     let onActivity: () -> Void
     let onAsset: (SpyderChain) -> Void
+    let onControlCenter: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -104,6 +101,15 @@ struct WalletHomeView: View {
                 }
             }
         }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 28, coordinateSpace: .local).onEnded { value in
+                // An edge-only gesture avoids stealing pan gestures from market charts.
+                guard value.startLocation.x <= 26,
+                      value.translation.width > 95,
+                      abs(value.translation.height) < 65 else { return }
+                onControlCenter()
+            }
+        )
         // Keep scrolling content below the actual iOS status-bar safe area.
         // The header is a sibling of ScrollView, not its first scrolling row.
         .background(WalletTheme.canvas.ignoresSafeArea())
@@ -161,14 +167,6 @@ struct WalletHomeView: View {
         _ = await (balances, activity)
     }
 
-    private var profileAccent: SpyderSignalAccent {
-        SpyderSignalAccent(rawValue: profileAccentValue) ?? .red
-    }
-
-    private var profileAvatar: SpyderAvatarMotion {
-        SpyderAvatarMotion(rawValue: profileAvatarValue) ?? .pulse
-    }
-
     private var walletHeader: some View {
         HStack(alignment: .center, spacing: 10) {
             Button { onAction(.accounts) } label: {
@@ -196,15 +194,7 @@ struct WalletHomeView: View {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { privacyHidden.toggle() }
                 UISelectionFeedbackGenerator().selectionChanged()
             }
-            Button { onAction(.profile) } label: {
-                SpyderProfileAvatarView(motion: profileAvatar, accent: profileAccent,
-                                        diameter: 44, animate: profileMotionEnabled)
-                    .frame(width: 44, height: 44)
-                    .background(WalletTheme.surface, in: Circle())
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Профиль")
+            headerButton("line.3.horizontal", label: "Открыть Control Center") { onControlCenter() }
         }
     }
 
@@ -684,7 +674,19 @@ struct WalletActivityView: View {
     @EnvironmentObject private var history: WalletActivityStore
     @EnvironmentObject private var chains: WalletChainStore
     @EnvironmentObject private var spider: SpiderDevnetStore
+    @State private var chainFilter = "all"
+    @State private var statusFilter = "all"
     let onBack: () -> Void
+
+    private var selectedChains: [SpyderChain] {
+        SpyderChain.allCases.filter { chainFilter == "all" || $0.rawValue == chainFilter }
+    }
+
+    private func visibleEntries(_ chain: SpyderChain) -> [WalletChainActivity] {
+        (history.activity[chain] ?? [])
+            .filter { statusFilter == "all" || $0.state.rawValue == statusFilter }
+            .sorted { ($0.timestamp ?? .distantPast) > ($1.timestamp ?? .distantPast) }
+    }
 
     var body: some View {
         ScrollView {
@@ -697,20 +699,48 @@ struct WalletActivityView: View {
                     }.disabled(!history.loading.isEmpty)
                 }
                 Text("История операций").font(.system(size: 30, weight: .bold))
-                Text("Mainnet: последние транзакции для текущих адресов. История может быть неполной: публичные API ограничивают глубину просмотра. Для SOL показываются подписи без расчёта сумм.")
+                Text("Mainnet: публичные API могут показывать неполную историю. Для Solana суммы неизвестны, пока не обработаны изменения балансов транзакций.")
                     .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                ForEach(SpyderChain.allCases) { chain in
+                WalletCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Фильтры")
+                            .font(.system(size: 15, weight: .semibold))
+                        Picker("Сеть", selection: $chainFilter) {
+                            Text("Все сети").tag("all")
+                            ForEach(SpyderChain.allCases) { chain in
+                                Text(chain.name).tag(chain.rawValue)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        Picker("Статус", selection: $statusFilter) {
+                            Text("Все операции").tag("all")
+                            Text("Подтверждено").tag(WalletChainActivity.State.confirmed.rawValue)
+                            Text("Ожидание").tag(WalletChainActivity.State.pending.rawValue)
+                            Text("Ошибка").tag(WalletChainActivity.State.failed.rawValue)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+                ForEach(selectedChains) { chain in
                     WalletCard {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text(chain.name).font(.headline)
+                            HStack {
+                                Text(chain.name).font(.headline)
+                                Spacer()
+                                if let date = history.updatedAt[chain] {
+                                    Text(date.formatted(date: .omitted, time: .shortened))
+                                        .font(.caption).foregroundStyle(WalletTheme.secondary)
+                                }
+                            }
                             if let error = history.errors[chain] {
                                 Label("Провайдер недоступен: " + error, systemImage: "wifi.exclamationmark")
                                     .font(.footnote).foregroundStyle(WalletTheme.secondary)
                             }
                             if history.loading.contains(chain) { ProgressView("Загрузка…") }
-                            let entries = history.activity[chain] ?? []
+                            let entries = visibleEntries(chain)
                             if entries.isEmpty && !history.loading.contains(chain) {
-                                Text(history.errors[chain] == nil ? "Нет записей в доступном диапазоне" : "Данные могут быть устаревшими")
+                                Text(history.errors[chain] != nil ? "Данные могут быть устаревшими" :
+                                     (statusFilter == "all" ? "Нет записей в доступном диапазоне" : "По выбранному статусу операций нет"))
                                     .font(.footnote).foregroundStyle(WalletTheme.secondary)
                             }
                             ForEach(entries) { item in
@@ -730,23 +760,23 @@ struct WalletActivityView: View {
                                 }
                                 Divider()
                             }
-                            if let date = history.updatedAt[chain] {
-                                Text("Обновлено: " + date.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption).foregroundStyle(WalletTheme.secondary)
-                            }
                         }
                     }
                 }
-                Text("Spider Chain · Devnet").font(.headline)
-                WalletCard {
-                    if spider.activities.isEmpty { Text("Тестовые подтверждённые операции отсутствуют.") }
-                    ForEach(spider.activities) { entry in
-                        Text("SPD · Блок \(entry.height) · \(entry.id.prefix(14))…")
-                            .font(.caption.monospaced())
+                if chainFilter == "all" {
+                    Text("Spider Chain · Devnet").font(.headline)
+                    WalletCard {
+                        if spider.activities.isEmpty { Text("Тестовые подтверждённые операции отсутствуют.") }
+                        ForEach(spider.activities) { entry in
+                            Text("SPD · Блок \(entry.height) · \(entry.id.prefix(14))…")
+                                .font(.caption.monospaced())
+                        }
                     }
                 }
             }
             .foregroundStyle(WalletTheme.ink).padding(20)
+            .frame(maxWidth: 700)
+            .frame(maxWidth: .infinity)
         }
         .navigationBarBackButtonHidden(true)
         .background(WalletTheme.canvas.ignoresSafeArea())

@@ -18,6 +18,7 @@ struct ConsoleApp: App {
     @StateObject private var marketData = WalletMarketStore()
     @StateObject private var liveMarket = WalletLiveMarketStore()
     @StateObject private var walletHistory = WalletActivityStore()
+    @StateObject private var addressBook = WalletAddressBookStore()
     @StateObject private var spyderChat = SpyderChatStore()
     @StateObject private var legacyChat = LegacyConsoleChatStore()
     @StateObject private var spiderDevnet = SpiderDevnetStore()
@@ -41,6 +42,7 @@ struct ConsoleApp: App {
                 .environmentObject(marketData)
                 .environmentObject(liveMarket)
                 .environmentObject(walletHistory)
+                .environmentObject(addressBook)
                 .environmentObject(spyderChat)
                 .environmentObject(legacyChat)
                 .environmentObject(spiderDevnet)
@@ -76,6 +78,12 @@ struct ConsoleApp: App {
                 } else if let failure = notification.userInfo?["error"] as? String {
                     spyderChat.reportPushFailure(failure)
                 }
+            }
+            .onChange(of: walletAccess.activeWalletID) { _, id in
+                addressBook.selectWallet(id)
+            }
+            .onChange(of: walletAccess.unlocked) { _, unlocked in
+                if unlocked { addressBook.reload() }
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active, spyderChat.pushEnabled, spyderChat.hasIdentity {

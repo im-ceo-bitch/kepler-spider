@@ -1,0 +1,26 @@
+[
+  {
+    "id": "chrome",
+    "names": {
+      "ru": "Хром",
+      "en": "Chrome"
+    },
+    "description": "Metallic/graphite chat theme identifier; visuals to implement in app"
+  },
+  {
+    "id": "cyberpunk",
+    "names": {
+      "ru": "Киберпанк",
+      "en": "Cyberpunk"
+    },
+    "description": "Cyberpunk chat theme identifier; visuals to implement in app"
+  },
+  {
+    "id": "thunder",
+    "names": {
+      "ru": "Гром",
+      "en": "Thunder"
+    },
+    "description": "Thunder chat theme identifier; visuals to implement in app"
+  }
+]

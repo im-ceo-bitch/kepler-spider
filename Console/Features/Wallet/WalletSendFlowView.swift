@@ -10,6 +10,7 @@ struct WalletSendFlowView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var chains: WalletChainStore
     @EnvironmentObject private var assets: WalletPublicAssetsStore
+    @EnvironmentObject private var addressBook: WalletAddressBookStore
     @State private var selected: SpyderChain = .ethereum
     @State private var recipient = ""
     @State private var amount = ""
@@ -17,6 +18,8 @@ struct WalletSendFlowView: View {
     @State private var showUnavailable = false
     @State private var observedError: String?
     @State private var checkmark = false
+    @State private var showAddressBook = false
+    @State private var showSaveRecipient = false
     let preselected: SpyderChain?
 
     init(preselected: SpyderChain? = nil) { self.preselected = preselected }
@@ -31,17 +34,7 @@ struct WalletSendFlowView: View {
         let allowed = selected == .ethereum ? 18 : selected == .solana ? 9 : 8
         return decimals <= allowed ? value : nil
     }
-    private var recipientValid: Bool {
-        switch selected {
-        case .ethereum:
-            return normalizedRecipient.range(of: "^0x[0-9a-fA-F]{40}$", options: .regularExpression) != nil
-        case .solana:
-            return (32...44).contains(normalizedRecipient.count) &&
-                normalizedRecipient.range(of: "^[1-9A-HJ-NP-Za-km-z]+$", options: .regularExpression) != nil
-        case .bitcoin:
-            return normalizedRecipient.range(of: "^bc1[ac-hj-np-z02-9]{38,87}$", options: .regularExpression) != nil
-        }
-    }
+    private var recipientValid: Bool { WalletAddressValidator.check(normalizedRecipient, for: selected) == .valid }
     private var validToReview: Bool {
         recipientValid && normalizedRecipient != chains.address(for: selected) && parsedAmount != nil &&
         (assets.balances[selected].map { (parsedAmount ?? 0) <= $0 } ?? false)
@@ -74,13 +67,21 @@ struct WalletSendFlowView: View {
                                 .textContentType(.none)
                                 .font(.system(size: 14, design: .monospaced))
                                 .onChange(of: recipient) { _, _ in reviewing = false }
-                            Button {
-                                if let text = UIPasteboard.general.string { recipient = text }
-                            } label: { Label("Вставить адрес", systemImage: "doc.on.clipboard") }
-                                .font(.footnote)
+                            HStack(spacing: 16) {
+                                Button {
+                                    if let text = UIPasteboard.general.string { recipient = text }
+                                } label: { Label("Вставить", systemImage: "doc.on.clipboard") }
+                                Button { showAddressBook = true } label: { Label("Получатели", systemImage: "person.crop.rectangle.stack") }
+                                if recipientValid {
+                                    Button { showSaveRecipient = true } label: { Label("Сохранить", systemImage: "bookmark") }
+                                }
+                            }
+                            .font(.footnote)
                             if !recipient.isEmpty && !recipientValid {
-                                Label("Проверь адрес и выбранную сеть", systemImage: "exclamationmark.triangle")
-                                    .font(.footnote).foregroundStyle(.orange)
+                                if case .invalid(let detail) = WalletAddressValidator.check(recipient, for: selected) {
+                                    Label(detail, systemImage: "exclamationmark.triangle")
+                                        .font(.footnote).foregroundStyle(.orange)
+                                }
                             }
                             Divider()
                             Text("Сумма \(selected.ticker)").font(.system(size: 14, weight: .semibold))
@@ -139,6 +140,17 @@ struct WalletSendFlowView: View {
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Закрыть") { dismiss() } } }
         }
         .onAppear { if let preselected { selected = preselected } }
+        .sheet(isPresented: $showAddressBook) {
+            WalletAddressBookView(onSelect: { entry in
+                selected = entry.chain
+                recipient = entry.address
+                amount = ""
+                reviewing = false
+            })
+        }
+        .sheet(isPresented: $showSaveRecipient) {
+            WalletAddressBookAddView(chain: selected, address: normalizedRecipient)
+        }
         .alert("Отправка ещё не включена", isPresented: $showUnavailable) {
             Button("Понятно", role: .cancel) { }
         } message: {

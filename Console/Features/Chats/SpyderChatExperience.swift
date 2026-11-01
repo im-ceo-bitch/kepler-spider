@@ -4,15 +4,17 @@ import UIKit
 // All chat appearance preferences are local-only: no contact identifiers, private keys,
 // message text or other content is sent to Cloudflare for styling.
 enum SpyderChatWallpaper: String, CaseIterable, Identifiable, Codable {
-    case void, web, orbit, cyber, constellation
+    case void, web, orbit, cyber, constellation, chrome, thunder
     var id: String { rawValue }
     var title: String {
         switch self {
         case .void: return "Void"
         case .web: return "Web"
         case .orbit: return "Orbit"
-        case .cyber: return "Cyber"
+        case .cyber: return "Cyberpunk"
         case .constellation: return "Constellation"
+        case .chrome: return "Chrome"
+        case .thunder: return "Thunder"
         }
     }
     var subtitle: String {
@@ -22,6 +24,8 @@ enum SpyderChatWallpaper: String, CaseIterable, Identifiable, Codable {
         case .orbit: return "Орбитальные линии"
         case .cyber: return "Неоновые импульсы"
         case .constellation: return "Созвездия"
+        case .chrome: return "Металлическая сетка"
+        case .thunder: return "Электрические разряды"
         }
     }
 }
@@ -93,26 +97,6 @@ enum SpyderLocalChatReactions {
     }
 }
 
-// Keep the coordinate arithmetic outside the SwiftUI Canvas renderer.
-// A complex generic map expression here exceeded the Xcode Swift type-checker budget.
-private enum SpyderConstellationLayout {
-    static func nodes(in size: CGSize) -> [CGPoint] {
-        var result: [CGPoint] = []
-        result.reserveCapacity(52)
-
-        for index in 0..<52 {
-            let gridX: Int = (index * 167 + 37) % 997
-            let gridY: Int = (index * 311 + 59) % 991
-            let normalizedX: CGFloat = CGFloat(gridX) / 997.0
-            let normalizedY: CGFloat = CGFloat(gridY) / 991.0
-            let pointX: CGFloat = normalizedX * size.width
-            let pointY: CGFloat = normalizedY * size.height
-            result.append(CGPoint(x: pointX, y: pointY))
-        }
-        return result
-    }
-}
-
 struct SpyderChatWallpaperView: View {
     var wallpaper: SpyderChatWallpaper
     var accent: Color
@@ -177,8 +161,37 @@ struct SpyderChatWallpaperView: View {
                         line.addLine(to: CGPoint(x: size.width, y: y))
                         context.stroke(line, with: .color(accent.opacity(thin * 0.55)), lineWidth: 0.5)
                     }
+                case .chrome:
+                    for index in 0..<22 {
+                        let y = CGFloat(index) * 38
+                        var line = Path()
+                        line.move(to: CGPoint(x: 0, y: y))
+                        line.addLine(to: CGPoint(x: size.width, y: y - 24))
+                        context.stroke(line, with: .color(Color.gray.opacity(thin * 0.92)), lineWidth: index.isMultiple(of: 4) ? 1.4 : 0.55)
+                    }
+                    for index in 0..<8 {
+                        let x = CGFloat(index) * 72
+                        var line = Path()
+                        line.move(to: CGPoint(x: x, y: 0))
+                        line.addLine(to: CGPoint(x: x + 28, y: size.height))
+                        context.stroke(line, with: .color(.white.opacity(thin * 0.38)), lineWidth: 0.8)
+                    }
+                case .thunder:
+                    for index in 0..<8 {
+                        let anchor = CGFloat(index) * 100 - 65
+                        var bolt = Path()
+                        bolt.move(to: CGPoint(x: anchor, y: 0))
+                        bolt.addLine(to: CGPoint(x: anchor + 43, y: size.height * 0.24))
+                        bolt.addLine(to: CGPoint(x: anchor + 20, y: size.height * 0.40))
+                        bolt.addLine(to: CGPoint(x: anchor + 90, y: size.height * 0.68))
+                        bolt.addLine(to: CGPoint(x: anchor + 55, y: size.height))
+                        context.stroke(bolt, with: .color(accent.opacity(thin * 1.4)), style: StrokeStyle(lineWidth: 1.0, lineCap: .round, lineJoin: .round))
+                    }
                 case .constellation:
-                    let nodes = SpyderConstellationLayout.nodes(in: size)
+                    let nodes: [CGPoint] = (0..<52).map { index in
+                        CGPoint(x: CGFloat((index * 167 + 37) % 997) / 997 * size.width,
+                                y: CGFloat((index * 311 + 59) % 991) / 991 * size.height)
+                    }
                     for index in 1..<nodes.count where index % 3 != 0 {
                         var edge = Path()
                         edge.move(to: nodes[index - 1])
