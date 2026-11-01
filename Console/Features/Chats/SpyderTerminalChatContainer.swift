@@ -67,6 +67,9 @@ struct SpyderTerminalChatContainer: View {
     let contact: WalletContact
     let onBack: () -> Void
     let onAction: (WalletModal) -> Void
+    // The activity route is supplied by the parent when this legacy container is used.
+    // Default keeps existing callers source-compatible; main navigation uses ChatDetailView directly.
+    var onOpenActivity: () -> Void = {}
 
     var body: some View {
         Group {
@@ -75,11 +78,11 @@ struct SpyderTerminalChatContainer: View {
                     context: TerminalActionContext(conversationID: contact.id),
                     host: host
                 ) {
-                    ChatDetailView(contact: contact, onBack: onBack, onAction: onAction)
+                    ChatDetailView(contact: contact, onBack: onBack, onAction: onAction, onOpenActivity: onOpenActivity)
                 }
             } else {
                 // If the command catalog is unavailable, never break E2EE chat.
-                ChatDetailView(contact: contact, onBack: onBack, onAction: onAction)
+                ChatDetailView(contact: contact, onBack: onBack, onAction: onAction, onOpenActivity: onOpenActivity)
             }
         }
         .onAppear { bindings.connect(chat: chat, peerID: contact.id) }

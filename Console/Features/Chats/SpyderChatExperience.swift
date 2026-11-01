@@ -97,24 +97,32 @@ enum SpyderLocalChatReactions {
     }
 }
 
-struct SpyderChatWallpaperView: View {
-    var wallpaper: SpyderChatWallpaper
-    var accent: Color
-    var glowEnabled: Bool
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var glowing = false
-    @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+// Keep the coordinate arithmetic outside the SwiftUI Canvas renderer.
+// A complex generic map expression here exceeded the Xcode Swift type-checker budget.
+private enum SpyderConstellationLayout {
+    static func nodes(in size: CGSize) -> [CGPoint] {
+        var result: [CGPoint] = []
+        result.reserveCapacity(52)
 
-    private var activeGlow: Bool { glowEnabled && !reduceMotion && !lowPower && wallpaper != .void }
+        for index in 0..<52 {
+            let gridX: Int = (index * 167 + 37) % 997
+            let gridY: Int = (index * 311 + 59) % 991
+            let normalizedX: CGFloat = CGFloat(gridX) / 997.0
+            let normalizedY: CGFloat = CGFloat(gridY) / 991.0
+            let pointX: CGFloat = normalizedX * size.width
+            let pointY: CGFloat = normalizedY * size.height
+            result.append(CGPoint(x: pointX, y: pointY))
+        }
+        return result
+    }
+}
 
-    var body: some View {
-        ZStack {
-            (colorScheme == .dark ? Color(red: 0.045, green: 0.052, blue: 0.065) : Color(red: 0.965, green: 0.965, blue: 0.979))
-            Canvas(opaque: false) { context, size in
-                guard wallpaper != .void else { return }
-                let center = CGPoint(x: size.width * 0.5, y: size.height * 0.47)
-                let thin = colorScheme == .dark ? 0.15 : 0.11
+
+// Keep procedural path construction outside SwiftUI's ViewBuilder and Canvas closure.
+// The previous 52-point expression was repeatedly timing out the Xcode type-checker.
+private enum SpyderWallpaperRenderer {
+    static func render(context: GraphicsContext, size: CGSize, wallpaper: SpyderChatWallpaper, accent: Color, thin: Double) {
+        let center = CGPoint(x: size.width * 0.5, y: size.height * 0.47)
                 switch wallpaper {
                 case .void: break
                 case .web:
@@ -174,7 +182,7 @@ struct SpyderChatWallpaperView: View {
                         var line = Path()
                         line.move(to: CGPoint(x: x, y: 0))
                         line.addLine(to: CGPoint(x: x + 28, y: size.height))
-                        context.stroke(line, with: .color(.white.opacity(thin * 0.38)), lineWidth: 0.8)
+                        context.stroke(line, with: .color(Color.white.opacity(thin * 0.38)), lineWidth: 0.8)
                     }
                 case .thunder:
                     for index in 0..<8 {
@@ -188,10 +196,7 @@ struct SpyderChatWallpaperView: View {
                         context.stroke(bolt, with: .color(accent.opacity(thin * 1.4)), style: StrokeStyle(lineWidth: 1.0, lineCap: .round, lineJoin: .round))
                     }
                 case .constellation:
-                    let nodes: [CGPoint] = (0..<52).map { index in
-                        CGPoint(x: CGFloat((index * 167 + 37) % 997) / 997 * size.width,
-                                y: CGFloat((index * 311 + 59) % 991) / 991 * size.height)
-                    }
+                    let nodes = SpyderConstellationLayout.nodes(in: size)
                     for index in 1..<nodes.count where index % 3 != 0 {
                         var edge = Path()
                         edge.move(to: nodes[index - 1])
@@ -199,10 +204,32 @@ struct SpyderChatWallpaperView: View {
                         context.stroke(edge, with: .color(accent.opacity(thin * 0.65)), lineWidth: 0.6)
                     }
                     for node in nodes {
-                        context.fill(Path(ellipseIn: CGRect(x: node.x - 1, y: node.y - 1, width: 2, height: 2)),
-                                     with: .color(accent.opacity(thin * 2.0)))
+                        let dot = CGRect(x: node.x - 1.0, y: node.y - 1.0, width: 2.0, height: 2.0)
+                        let path = Path(ellipseIn: dot)
+                        context.fill(path, with: .color(accent.opacity(thin * 2.0)))
                     }
                 }
+    }
+}
+
+struct SpyderChatWallpaperView: View {
+    var wallpaper: SpyderChatWallpaper
+    var accent: Color
+    var glowEnabled: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var glowing = false
+    @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+
+    private var activeGlow: Bool { glowEnabled && !reduceMotion && !lowPower && wallpaper != .void }
+
+    var body: some View {
+        ZStack {
+            (colorScheme == .dark ? Color(red: 0.045, green: 0.052, blue: 0.065) : Color(red: 0.965, green: 0.965, blue: 0.979))
+            Canvas(opaque: false) { context, size in
+                guard wallpaper != .void else { return }
+                let thin: Double = colorScheme == .dark ? 0.15 : 0.11
+                SpyderWallpaperRenderer.render(context: context, size: size, wallpaper: wallpaper, accent: accent, thin: thin)
             }
             if wallpaper != .void {
                 Circle()
