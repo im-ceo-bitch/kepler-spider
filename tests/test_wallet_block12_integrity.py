@@ -38,7 +38,7 @@ class WalletBlock12Integrity(unittest.TestCase):
     def test_no_unverified_mainnet_broadcast(self):
         source = self.source("Console/Features/Wallet/WalletSendFlowView.swift")
         self.assertIn("Отправка пока недоступна", source)
-        self.assertIn("Никогда не вставляй сюда сид-фразу", source)
+        self.assertIn("Никогда не вставляйте сюда seed-фразу", source)
         self.assertNotIn("eth_sendRawTransaction", source)
         self.assertNotIn("sendTransaction(", source)
 

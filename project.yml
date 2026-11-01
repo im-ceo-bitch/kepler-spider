@@ -60,6 +60,8 @@ targets:
       - path: Tests
     dependencies:
       - target: Console
+      - package: WalletCore
+        product: WalletCore
     settings:
       base:
         SWIFT_VERSION: 5.10
