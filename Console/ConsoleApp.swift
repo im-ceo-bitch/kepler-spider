@@ -15,7 +15,8 @@ struct ConsoleApp: App {
     @StateObject private var walletAccess = WalletAccess()
     @StateObject private var walletChains = WalletChainStore()
     @StateObject private var publicAssets = WalletPublicAssetsStore()
-    @StateObject private var market = WalletMarketStore()
+    @StateObject private var marketData = WalletMarketStore()
+    @StateObject private var liveMarket = WalletLiveMarketStore()
     @StateObject private var walletHistory = WalletActivityStore()
     @StateObject private var spyderChat = SpyderChatStore()
     @StateObject private var legacyChat = LegacyConsoleChatStore()
@@ -37,7 +38,8 @@ struct ConsoleApp: App {
                 .environmentObject(walletAccess)
                 .environmentObject(walletChains)
                 .environmentObject(publicAssets)
-                .environmentObject(market)
+                .environmentObject(marketData)
+                .environmentObject(liveMarket)
                 .environmentObject(walletHistory)
                 .environmentObject(spyderChat)
                 .environmentObject(legacyChat)
@@ -52,6 +54,13 @@ struct ConsoleApp: App {
                         .transition(.opacity)
                         .zIndex(1)
                 }
+            }
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                await liveMarket.run()
+            }
+            .onReceive(marketData.$quotes) { quotes in
+                publicAssets.applyMarketQuotes(quotes)
             }
             .preferredColorScheme(preferredScheme)
             .environment(\.locale, Locale(identifier: language))
@@ -73,6 +82,7 @@ struct ConsoleApp: App {
                     UIApplication.shared.registerForRemoteNotifications()
                 }
                 if phase == .background {
+                    liveMarket.stop()
                     walletAccess.lock()
                     walletChains.clear()
                     walletHistory.clear()

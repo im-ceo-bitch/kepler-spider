@@ -39,7 +39,7 @@ class MarketEngineRegression(unittest.TestCase):
         views = read('Console/Features/Wallet/WalletMarketViews.swift')
         detail = read('Console/Features/Wallet/WalletProductViews.swift')
         self.assertIn('import Charts', views)
-        self.assertIn('Chart(snapshot.points)', views)
+        self.assertIn('Chart {', views)
         self.assertIn('WalletMarketPanel(ticker: chain.ticker)', detail)
         self.assertIn('WalletMarketPanel(ticker: token.ticker)', detail)
         self.assertIn('AsyncImage(url:', detail)

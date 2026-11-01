@@ -3,6 +3,11 @@ import UIKit
 
 /// Wallet-only presentation. All financial values come from verified store responses;
 /// absent balances and prices are never replaced with plausible sample numbers.
+private struct WalletMarketSelection: Identifiable {
+    let ticker: String
+    var id: String { ticker }
+}
+
 struct WalletHomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -10,10 +15,12 @@ struct WalletHomeView: View {
     @EnvironmentObject private var access: WalletAccess
     @EnvironmentObject private var publicAssets: WalletPublicAssetsStore
     @EnvironmentObject private var market: WalletMarketStore
+    @EnvironmentObject private var live: WalletLiveMarketStore
     @EnvironmentObject private var history: WalletActivityStore
     @EnvironmentObject private var spider: SpiderDevnetStore
     @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
     @State private var selectedToken: WalletVerifiedToken?
+    @State private var expandedMarket: WalletMarketSelection?
     @State private var showDevnet = false
     let onAction: (WalletModal) -> Void
     let onActivity: () -> Void
@@ -75,6 +82,11 @@ struct WalletHomeView: View {
         // Keep scrolling content below the actual iOS status-bar safe area.
         // The header is a sibling of ScrollView, not its first scrolling row.
         .background(WalletTheme.canvas.ignoresSafeArea())
+        .fullScreenCover(item: $expandedMarket) { selection in
+            WalletLiveStageView(ticker: selection.ticker)
+                .environmentObject(market)
+                .environmentObject(live)
+        }
         .sheet(item: $selectedToken) { token in
             WalletTokenDetailView(token: token)
                 .environmentObject(chains)
@@ -240,19 +252,21 @@ struct WalletHomeView: View {
                 Text("Рынок")
                     .font(.system(size: 16, weight: .semibold))
                 Spacer()
-                Text("CoinGecko · USD")
+                Text(live.ticks.values.contains(where: { $0.isFresh() })
+                     ? NSLocalizedString("LIVE · Coinbase / CoinGecko 24ч", comment: "")
+                     : NSLocalizedString("CoinGecko · USD", comment: ""))
                     .font(.system(size: 11))
                     .foregroundStyle(WalletTheme.secondary)
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 9) {
                     ForEach([SpyderChain.bitcoin, .ethereum, .solana]) { chain in
-                        Button { onAsset(chain) } label: {
+                        Button { expandedMarket = WalletMarketSelection(ticker: chain.ticker) } label: {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(chain.ticker)
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(WalletTheme.secondary)
-                                Text(market.quote(chain.ticker).flatMap { $0.isStale() ? nil : WalletMarketFormatting.price($0.usdPrice) } ?? "—")
+                                Text(live.tick(chain.ticker).map { WalletMarketFormatting.price($0.usdPrice) } ?? market.quote(chain.ticker).flatMap { $0.isStale() ? nil : WalletMarketFormatting.price($0.usdPrice) } ?? "—")
                                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                                     .monospacedDigit()
                                     .foregroundStyle(WalletTheme.ink)
@@ -263,6 +277,7 @@ struct WalletHomeView: View {
                             .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 19))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Открыть live-график " + chain.name)
                     }
                 }
             }

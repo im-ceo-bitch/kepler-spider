@@ -1,7 +1,6 @@
 import SwiftUI
 import Charts
 
-// A single presentation layer for verified coin IDs, shared by native and ERC-20 screens.
 struct WalletMarketChangeView: View {
     let ticker: String
     @EnvironmentObject private var market: WalletMarketStore
@@ -24,129 +23,51 @@ struct WalletMarketChangeView: View {
 struct WalletMarketPanel: View {
     let ticker: String
     @EnvironmentObject private var market: WalletMarketStore
+    @EnvironmentObject private var live: WalletLiveMarketStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedPeriod: WalletChartPeriod = .day
+    @State private var selectedTimestamp: Date?
+    @State private var showsLiveStage = false
 
     private var quote: WalletMarketQuote? { market.quote(ticker) }
     private var snapshot: WalletChartSnapshot? { market.chart(ticker, period: selectedPeriod) }
-    private var bounds: ClosedRange<Double> {
-        guard let prices = snapshot?.points.map(\.usdPrice),
-              let minPrice = prices.min(), let maxPrice = prices.max() else { return 0...1 }
-        let expansion = max((maxPrice - minPrice) * 0.15, maxPrice * 0.002)
-        return max(0, minPrice - expansion)...(maxPrice + expansion)
+
+    private func graphPoints(at now: Date) -> [WalletMarketPoint] {
+        let history = snapshot?.points ?? []
+        let cutoff = now.addingTimeInterval(-TimeInterval(selectedPeriod.rawValue) * 86_400)
+        let since = history.last?.timestamp ?? cutoff
+        let livePoints = live.recentPoints(ticker, after: max(cutoff, since), now: now)
+        return history + livePoints.filter { $0.timestamp > since }
+    }
+
+    private func selectedPoint(in points: [WalletMarketPoint]) -> WalletMarketPoint? {
+        guard let selectedTimestamp else { return nil }
+        return points.min { abs($0.timestamp.timeIntervalSince(selectedTimestamp)) < abs($1.timestamp.timeIntervalSince(selectedTimestamp)) }
+    }
+
+    private func bounds(for points: [WalletMarketPoint]) -> ClosedRange<Double> {
+        guard let low = points.map(\.usdPrice).min(), let high = points.map(\.usdPrice).max() else { return 0...1 }
+        let margin = max((high - low) * 0.15, high * 0.0005)
+        return max(0, low - margin)...(high + margin)
+    }
+
+    private func changeColor(for points: [WalletMarketPoint]) -> Color {
+        guard let first = points.first, let last = points.last else { return WalletTheme.ink }
+        if last.usdPrice > first.usdPrice { return .green }
+        if last.usdPrice < first.usdPrice { return .red }
+        return WalletTheme.secondary
     }
 
     var body: some View {
-        WalletCard {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("Рыночная цена")
-                            .font(.system(size: 13))
-                            .foregroundStyle(WalletTheme.secondary)
-                        if let quote {
-                            Text(WalletMarketFormatting.price(quote.usdPrice))
-                                .font(.system(size: 27, weight: .semibold, design: .rounded))
-                                .monospacedDigit()
-                                .contentTransition(.numericText())
-                                .minimumScaleFactor(0.65)
-                                .lineLimit(1)
-                        } else {
-                            Text("—")
-                                .font(.system(size: 27, weight: .semibold))
-                        }
-                    }
-                    Spacer(minLength: 4)
-                    VStack(alignment: .trailing, spacing: 7) {
-                        Text("24 часа")
-                            .font(.system(size: 12))
-                            .foregroundStyle(WalletTheme.secondary)
-                        WalletMarketChangeView(ticker: ticker)
-                    }
-                }
-                Group {
-                    if let snapshot, snapshot.points.count > 1 {
-                        Chart(snapshot.points) { point in
-                            AreaMark(x: .value("Дата", point.timestamp), yStart: .value("Ноль", bounds.lowerBound), yEnd: .value("USD", point.usdPrice))
-                                .foregroundStyle(LinearGradient(colors: [WalletTheme.ink.opacity(0.16), WalletTheme.ink.opacity(0.01)], startPoint: .top, endPoint: .bottom))
-                                .interpolationMethod(.catmullRom)
-                            LineMark(x: .value("Дата", point.timestamp), y: .value("USD", point.usdPrice))
-                                .foregroundStyle(WalletTheme.ink)
-                                .interpolationMethod(.catmullRom)
-                                .lineStyle(StrokeStyle(lineWidth: 2.3, lineCap: .round))
-                        }
-                        .chartYScale(domain: bounds)
-                        .chartXAxis(.hidden)
-                        .chartYAxis(.hidden)
-                        .frame(height: 168)
-                        .accessibilityLabel(NSLocalizedString("График цены", comment: "") + " \(ticker), \(selectedPeriod.label)")
-                        .accessibilityValue("От \(WalletMarketFormatting.price(snapshot.points.first!.usdPrice)) до \(WalletMarketFormatting.price(snapshot.points.last!.usdPrice))")
-                    } else if market.isLoadingChart(ticker, period: selectedPeriod) {
-                        VStack(spacing: 9) {
-                            ProgressView()
-                            Text("Загружаем график…")
-                                .font(.system(size: 12))
-                                .foregroundStyle(WalletTheme.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 168)
-                    } else {
-                        VStack(spacing: 9) {
-                            Image(systemName: "chart.xyaxis.line")
-                                .font(.system(size: 24))
-                            Text(market.chartError(ticker, period: selectedPeriod) ?? "История цен пока недоступна")
-                                .font(.system(size: 12))
-                                .multilineTextAlignment(.center)
-                        }
-                        .foregroundStyle(WalletTheme.secondary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 168)
-                    }
-                }
-                HStack(spacing: 7) {
-                    ForEach(WalletChartPeriod.allCases) { period in
-                        Button {
-                            if !reduceMotion { withAnimation(.easeInOut(duration: 0.2)) { selectedPeriod = period } }
-                            else { selectedPeriod = period }
-                        } label: {
-                            Text(period.label)
-                                .font(.system(size: 13, weight: .semibold))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 34)
-                                .foregroundStyle(selectedPeriod == period ? WalletTheme.contrast : WalletTheme.secondary)
-                                .background(selectedPeriod == period ? WalletTheme.accent : WalletTheme.canvas, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(selectedPeriod == period ? .isSelected : [])
-                    }
-                }
-                HStack(spacing: 5) {
-                    Image(systemName: "clock")
-                    if let quote {
-                        Text(quote.isStale() ? NSLocalizedString("Котировка устарела", comment: "") + " · " + quote.providerUpdatedAt.formatted(date: .omitted, time: .shortened)
-                             : NSLocalizedString("Данные от", comment: "") + " " + quote.providerUpdatedAt.formatted(date: .omitted, time: .shortened))
-                    } else if market.loadingQuotes {
-                        Text("Обновляем котировки…")
-                    } else {
-                        Text("Нет актуальной котировки")
-                    }
-                    Spacer(minLength: 2)
-                    Text("CoinGecko")
-                }
-                .font(.system(size: 11))
-                .foregroundStyle(WalletTheme.secondary)
-                if let error = market.chartError(ticker, period: selectedPeriod), snapshot != nil {
-                    Text(NSLocalizedString("Показан сохранённый график:", comment: "") + " " + error)
-                        .font(.system(size: 11))
-                        .foregroundStyle(WalletTheme.secondary)
-                }
-                if let error = market.quoteError {
-                    Text(NSLocalizedString("Котировки:", comment: "") + " " + error)
-                        .font(.system(size: 11))
-                        .foregroundStyle(WalletTheme.secondary)
-                }
-            }
+        // TimelineView updates freshness even if an exchange stops trading or the socket stalls.
+        TimelineView(.periodic(from: .now, by: 3)) { timeline in
+            chartContent(now: timeline.date)
+        }
+        .fullScreenCover(isPresented: $showsLiveStage) {
+            WalletLiveStageView(ticker: ticker)
+                .environmentObject(market)
+                .environmentObject(live)
         }
         .task(id: selectedPeriod) {
             guard scenePhase == .active else { return }
@@ -160,6 +81,171 @@ struct WalletMarketPanel: View {
                 await market.loadChart(ticker: ticker, period: selectedPeriod)
                 do { try await Task.sleep(nanoseconds: 90_000_000_000) }
                 catch { break }
+            }
+        }
+    }
+
+    private func chartContent(now: Date) -> some View {
+        let tick = live.tick(ticker, at: now)
+        let points = graphPoints(at: now)
+        let cursorPoint = selectedPoint(in: points)
+        let activePrice = cursorPoint?.usdPrice ?? tick?.usdPrice ?? quote?.usdPrice
+        let chartColor = changeColor(for: points)
+        let graphBounds = bounds(for: points)
+        return WalletCard {
+            VStack(alignment: .leading, spacing: 15) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(spacing: 7) {
+                            Text(cursorPoint == nil ? "Рыночная цена" : "Цена в выбранной точке")
+                                .font(.system(size: 13))
+                                .foregroundStyle(WalletTheme.secondary)
+                            if tick != nil && cursorPoint == nil {
+                                Circle().fill(Color.green).frame(width: 6, height: 6)
+                                Text("LIVE")
+                                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.green)
+                            }
+                        }
+                        Text(activePrice.map(WalletMarketFormatting.price) ?? "—")
+                            .font(.system(size: 27, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+                            .foregroundStyle(cursorPoint == nil && tick?.rising != nil ? (tick!.rising! ? Color.green : Color.red) : WalletTheme.ink)
+                        if let cursorPoint {
+                            Text(cursorPoint.timestamp.formatted(date: .abbreviated, time: .shortened))
+                                .font(.system(size: 11))
+                                .foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    Spacer(minLength: 4)
+                    VStack(alignment: .trailing, spacing: 7) {
+                        Button {
+                            showsLiveStage = true
+                        } label: {
+                            Label("LIVE график", systemImage: "arrow.up.left.and.arrow.down.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(WalletTheme.ink)
+                                .padding(.horizontal, 12)
+                                .frame(height: 32)
+                                .background(WalletTheme.canvas, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Открыть полноэкранный live-график")
+                        Text("24 часа")
+                            .font(.system(size: 12))
+                            .foregroundStyle(WalletTheme.secondary)
+                        WalletMarketChangeView(ticker: ticker)
+                    }
+                }
+                if points.count > 1 {
+                    Chart {
+                        ForEach(points) { point in
+                            AreaMark(x: .value("Дата", point.timestamp),
+                                     yStart: .value("Основание", graphBounds.lowerBound),
+                                     yEnd: .value("USD", point.usdPrice))
+                                .interpolationMethod(.linear)
+                                .foregroundStyle(LinearGradient(colors: [chartColor.opacity(0.18), chartColor.opacity(0.01)], startPoint: .top, endPoint: .bottom))
+                            LineMark(x: .value("Дата", point.timestamp), y: .value("USD", point.usdPrice))
+                                .interpolationMethod(.linear)
+                                .foregroundStyle(chartColor)
+                                .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                        }
+                        if let latest = points.last, cursorPoint == nil {
+                            PointMark(x: .value("LIVE", latest.timestamp), y: .value("USD", latest.usdPrice))
+                                .symbolSize(170)
+                                .foregroundStyle(chartColor.opacity(0.18))
+                            PointMark(x: .value("LIVE", latest.timestamp), y: .value("USD", latest.usdPrice))
+                                .symbolSize(42)
+                                .foregroundStyle(chartColor)
+                        }
+                        if let cursorPoint {
+                            RuleMark(x: .value("Выбранное время", cursorPoint.timestamp))
+                                .foregroundStyle(WalletTheme.secondary.opacity(0.65))
+                                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                            PointMark(x: .value("Дата", cursorPoint.timestamp), y: .value("Цена", cursorPoint.usdPrice))
+                                .symbolSize(65)
+                                .foregroundStyle(chartColor)
+                        }
+                    }
+                    .chartYScale(domain: graphBounds)
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    .chartOverlay { proxy in
+                        GeometryReader { geometry in
+                            Rectangle()
+                                .fill(.clear)
+                                .contentShape(Rectangle())
+                                .gesture(DragGesture(minimumDistance: 0)
+                                    .onChanged { drag in
+                                        guard let frame = proxy.plotFrame else { return }
+                                        let x = drag.location.x - geometry[frame].origin.x
+                                        guard let date: Date = proxy.value(atX: x, as: Date.self) else { return }
+                                        selectedTimestamp = date
+                                    }
+                                    .onEnded { _ in selectedTimestamp = nil })
+                        }
+                    }
+                    .frame(height: 225)
+                    .accessibilityLabel(NSLocalizedString("Интерактивный график цены", comment: "") + " \(ticker), \(selectedPeriod.label)")
+                    .accessibilityValue("\(WalletMarketFormatting.price(points.first!.usdPrice)) → \(WalletMarketFormatting.price(points.last!.usdPrice))")
+                } else if market.isLoadingChart(ticker, period: selectedPeriod) {
+                    ProgressView("Загружаем график…")
+                        .frame(maxWidth: .infinity).frame(height: 225)
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: "chart.xyaxis.line").font(.system(size: 23))
+                        Text(market.chartError(ticker, period: selectedPeriod) ?? "История цен пока недоступна")
+                            .font(.system(size: 12)).multilineTextAlignment(.center)
+                    }
+                    .foregroundStyle(WalletTheme.secondary)
+                    .frame(maxWidth: .infinity).frame(height: 225)
+                }
+                HStack(spacing: 7) {
+                    ForEach(WalletChartPeriod.allCases) { period in
+                        Button {
+                            selectedTimestamp = nil
+                            if reduceMotion { selectedPeriod = period }
+                            else { withAnimation(.easeInOut(duration: 0.2)) { selectedPeriod = period } }
+                        } label: {
+                            Text(period.label)
+                                .font(.system(size: 13, weight: .semibold))
+                                .frame(maxWidth: .infinity).frame(height: 34)
+                                .foregroundStyle(selectedPeriod == period ? WalletTheme.contrast : WalletTheme.secondary)
+                                .background(selectedPeriod == period ? WalletTheme.accent : WalletTheme.canvas, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(selectedPeriod == period ? .isSelected : [])
+                    }
+                }
+                HStack(spacing: 5) {
+                    Image(systemName: tick == nil ? "clock" : "dot.radiowaves.left.and.right")
+                    if let tick {
+                        Text("LIVE · Coinbase · " + tick.timestamp.formatted(date: .omitted, time: .standard))
+                    } else if let quote {
+                        Text((quote.isStale() ? "Устаревшая цена · " : "CoinGecko · ") + quote.providerUpdatedAt.formatted(date: .omitted, time: .shortened))
+                    } else {
+                        Text("Нет актуальной цены")
+                    }
+                    Spacer(minLength: 2)
+                    Text(snapshot == nil ? "История не загружена" : "История: CoinGecko")
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(WalletTheme.secondary)
+                if tick == nil && (ticker == "BTC" || ticker == "ETH" || ticker == "SOL") {
+                    Text("Live-поток недоступен · показана последняя доступная котировка")
+                        .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                }
+                if let error = market.chartError(ticker, period: selectedPeriod), snapshot != nil {
+                    Text(NSLocalizedString("Показан сохранённый график:", comment: "") + " " + error)
+                        .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                }
+                if let error = market.quoteError {
+                    Text(NSLocalizedString("Котировки:", comment: "") + " " + error)
+                        .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                }
             }
         }
     }
