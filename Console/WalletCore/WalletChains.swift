@@ -134,6 +134,10 @@ enum SpyderAddressDeriver {
 final class WalletChainStore: ObservableObject {
     @Published private(set) var addresses: [SpyderAddress] = []
     @Published private(set) var isLoading = false
+    // Public-address cache is intentionally NOT an authority for receiving real funds.
+    // A QR can be revealed only after an address was re-derived from the authenticated vault.
+    @Published private(set) var verifiedForReceiving = false
+    @Published private(set) var verifiedWalletID: String?
     @Published var errorMessage: String?
 
     // Addresses are public. Cache ONLY these values, never mnemonic words or keys.
@@ -174,12 +178,16 @@ final class WalletChainStore: ObservableObject {
     func clear() {
         // A background lock invalidates pending derivations; caches contain ONLY public addresses.
         derivationGeneration = UUID()
+        verifiedForReceiving = false
+        verifiedWalletID = nil
         isLoading = false
     }
 
     func selectAccount(_ id: String) {
         guard activeID != id else { return }
         activeID = id
+        verifiedForReceiving = false
+        verifiedWalletID = nil
         derivationGeneration = UUID()
         isLoading = false
         addresses = []
@@ -206,13 +214,23 @@ final class WalletChainStore: ObservableObject {
                     return try SpyderAddressDeriver.addresses(phrase: phrase)
                 }.value
                 guard id == activeID, generation == derivationGeneration else { return }
+                // The authenticated derivation is the only trust boundary for a receive QR.
+                // Verify the full address syntax (including BTC checksum) before authorizing it.
+                guard resolved.count == SpyderChain.allCases.count,
+                      resolved.allSatisfy({ WalletAddressValidator.check($0.value, for: $0.chain) == .valid }) else {
+                    throw SpyderDerivationError.invalidTestVector
+                }
                 addresses = resolved
+                verifiedForReceiving = true
+                verifiedWalletID = id
                 if let data = try? JSONEncoder().encode(resolved) {
                     UserDefaults.standard.set(data, forKey: Self.cacheKey(id))
                 }
             } catch {
                 if id == activeID && generation == derivationGeneration {
                     addresses = []
+                    verifiedForReceiving = false
+                    verifiedWalletID = nil
                     errorMessage = error.localizedDescription
                 }
             }

@@ -30,13 +30,14 @@ class WalletPortfolioUIRegressions(unittest.TestCase):
         self.assertIn('WalletTokenDetailView(token: token)', HOME)
         self.assertIn('let token: WalletVerifiedToken', DETAILS)
         self.assertIn('Text(token.contract)', DETAILS)
-        self.assertIn('WalletReceiveView(preselected: .ethereum)', DETAILS)
+        self.assertIn('WalletReceiveView(preselected: .ethereum, tokenTicker: token.ticker)', DETAILS)
 
     def test_receive_goes_to_ethereum_not_test_devnet(self):
         self.assertIn('WalletReceiveView(preselected: sendChain ?? .ethereum)', ROOT_VIEW)
-        self.assertIn('@State private var selected: SpyderChain? = .ethereum', RECEIVE)
-        self.assertLess(RECEIVE.index('ForEach(SpyderChain.allCases)'),
-                        RECEIVE.index('Button { selected = nil; acknowledge = false; copied = false }'))
+        self.assertIn('@State private var selected: WalletReceiveAsset', RECEIVE)
+        self.assertIn('WalletReceiveAsset.preselected(chainID:', RECEIVE)
+        self.assertIn('ForEach(WalletReceiveAsset.supportedMainnet)', RECEIVE)
+        self.assertIn('DisclosureGroup("Тестовая сеть Spider Chain")', RECEIVE)
 
     def test_devnet_only_shown_when_configured(self):
         self.assertRegex(HOME, r'if\s+spider\.hasConfiguration\s*\{\s*DisclosureGroup')

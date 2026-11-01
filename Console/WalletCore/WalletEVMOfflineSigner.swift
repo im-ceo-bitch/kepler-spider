@@ -7,6 +7,7 @@ struct WalletEVMOfflineSignature {
     let encoded: Data
     let sender: String
     let asset: WalletEVMAsset
+    let fingerprints: WalletEVMFingerprints
 }
 
 enum WalletEVMOfflineSigner {
@@ -46,8 +47,12 @@ enum WalletEVMOfflineSigner {
         } else if !output.data.isEmpty {
             throw WalletEVMSigningError.signingFailed
         }
+        // Stage 7: structural intent validation plus independent EIP-1559 hashing.
+        // Neither substitutes for cryptographic secp256k1 sender recovery.
+        let fingerprints = try WalletEVMSignedEnvelopeGuard.fingerprints(raw: output.encoded, intent: intent)
         try intent.ensureFresh()
-        return WalletEVMOfflineSignature(encoded: output.encoded, sender: intent.sender, asset: intent.asset)
+        return WalletEVMOfflineSignature(encoded: output.encoded, sender: intent.sender,
+                                         asset: intent.asset, fingerprints: fingerprints)
     }
 
     /// Visible for iOS vector tests; does not access the vault or sign by itself.

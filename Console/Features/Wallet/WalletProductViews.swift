@@ -15,7 +15,8 @@ struct WalletAccountsView: View {
     @State private var showingNew = false
 
     var body: some View {
-        ScrollView {
+        NavigationStack {
+            ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Label("Ваши кошельки", systemImage: "wallet.pass")
                         .font(.system(size: 30, weight: .bold))
@@ -73,12 +74,13 @@ struct WalletAccountsView: View {
             }
             .foregroundStyle(WalletTheme.ink)
             .background(WalletTheme.canvas.ignoresSafeArea())
-            .navigationTitle("Мои кошельки")
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
             .alert("Название кошелька", isPresented: $showingRename) {
                 TextField("Название", text: $rename)
                 Button("Сохранить") { access.renameActive(rename) }
                 Button("Отмена", role: .cancel) { }
             } message: { Text("Название видно только на этом устройстве.") }
+        }
         .fullScreenCover(isPresented: $showingNew) {
             WalletOnboardingView(isAddingAccount: true, onComplete: {
                 showingNew = false
@@ -136,10 +138,11 @@ struct WalletAssetDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var chains: WalletChainStore
+    @EnvironmentObject private var access: WalletAccess
     @EnvironmentObject private var assets: WalletPublicAssetsStore
     @EnvironmentObject private var history: WalletActivityStore
 
-    private var address: String { chains.address(for: chain) ?? "" }
+    private var address: String { (chains.verifiedForReceiving && chains.verifiedWalletID == access.activeWalletID) ? (chains.address(for: chain) ?? "") : "" }
     private var balance: Decimal? { assets.balances[chain] }
     private var explorer: URL? {
         let prefix: String
@@ -251,7 +254,7 @@ struct WalletAssetDetailView: View {
                                 Image(systemName: "qrcode")
                                     .foregroundStyle(WalletTheme.secondary)
                             }
-                            Text(address.isEmpty ? "Адрес недоступен" : address)
+                            Text(address.isEmpty ? "Проверьте адрес через «Получить»" : address)
                                 .font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(WalletTheme.secondary)
                                 .textSelection(.enabled)
@@ -363,13 +366,14 @@ struct WalletTokenDetailView: View {
     @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var chains: WalletChainStore
+    @EnvironmentObject private var access: WalletAccess
     @EnvironmentObject private var assets: WalletPublicAssetsStore
     @EnvironmentObject private var spider: SpiderDevnetStore
     @State private var showingReceive = false
     @EnvironmentObject private var history: WalletActivityStore
     let token: WalletVerifiedToken
 
-    private var address: String { chains.address(for: .ethereum) ?? "" }
+    private var address: String { (chains.verifiedForReceiving && chains.verifiedWalletID == access.activeWalletID) ? (chains.address(for: .ethereum) ?? "") : "" }
     private var balance: Decimal? { assets.stablecoins[token.ticker] }
 
     var body: some View {
@@ -419,7 +423,7 @@ struct WalletTokenDetailView: View {
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
                             Text("Адрес получения").font(.system(size: 14, weight: .semibold))
-                            Text(address.isEmpty ? "Адрес недоступен" : address)
+                            Text(address.isEmpty ? "Проверьте адрес через «Получить»" : address)
                                 .font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(WalletTheme.secondary)
                                 .textSelection(.enabled)
@@ -471,7 +475,7 @@ struct WalletTokenDetailView: View {
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
         }
         .sheet(isPresented: $showingReceive) {
-            WalletReceiveView(preselected: .ethereum)
+            WalletReceiveView(preselected: .ethereum, tokenTicker: token.ticker)
                 .environmentObject(chains)
                 .environmentObject(spider)
         }

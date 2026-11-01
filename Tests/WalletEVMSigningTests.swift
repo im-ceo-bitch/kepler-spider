@@ -28,6 +28,13 @@ final class WalletEVMSigningTests: XCTestCase {
         XCTAssertEqual(output.encoded.map { String(format: "%02x", $0) }.joined(), expected)
     }
 
+    func testSignedFixtureKeccakDigestIsEthereumNotSHA3() throws {
+        // Hash independently confirmed with OpenSSL KECCAK-256; published Wallet Core bytes.
+        let hex = "02f8b00180847735940084b2d05e00830130b9946b175474e89094c44da98b954eedeac495271d0f80b844a9059cbb0000000000000000000000005322b34c88ed0691971bf52a7047448f0f4efc840000000000000000000000000000000000000000000000001bc16d674ec80000c080a0adfcfdf98d4ed35a8967a0c1d78b42adb7c5d831cf5a3272654ec8f8bcd7be2ea011641e065684f6aa476f4fd250aa46cd0b44eccdb0a6e1650d658d1998684cdf"
+        let encoded = try WalletEVMSigningBytes.hex("0x" + hex, maxBytes: 512)
+        XCTAssertEqual(WalletEVMKeccak256.hex(encoded), "0x75d9966501dec85f4a0e96ef700a18f40fc634146a78ba549e8beb1f80d00a1a")
+    }
+
     func testMainnetIntentProducesEnvelopedTransactionWithCorrectContract() throws {
         let now = Date()
         let sender = "0x1111111111111111111111111111111111111111"

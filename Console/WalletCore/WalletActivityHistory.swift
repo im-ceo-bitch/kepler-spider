@@ -120,6 +120,11 @@ private enum WalletActivityClient {
                   let amount = Decimal(string: units), amount >= .zero,
                   let url = URL(string: "https://etherscan.io/tx/\(hash)") else { return nil }
             let from = (item["from"] as? [String: Any])?["hash"] as? String
+            let to = (item["to"] as? [String: Any])?["hash"] as? String
+            // The indexer may include unrelated internal transfers. NEVER label a
+            // transaction as an incoming deposit without matching the recipient.
+            guard from?.caseInsensitiveCompare(address) == .orderedSame ||
+                  to?.caseInsensitiveCompare(address) == .orderedSame else { return nil }
             let time = (item["timestamp"] as? String).flatMap { parser.date(from: $0) ?? alternate.date(from: $0) }
             return WalletChainActivity(id: "erc20:\(hash):\(index)", chain: .ethereum, hash: hash,
                  timestamp: time, state: .confirmed,
