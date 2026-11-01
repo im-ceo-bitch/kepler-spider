@@ -15,8 +15,7 @@ struct WalletAccountsView: View {
     @State private var showingNew = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Label("Ваши кошельки", systemImage: "wallet.pass")
                         .font(.system(size: 30, weight: .bold))
@@ -74,13 +73,12 @@ struct WalletAccountsView: View {
             }
             .foregroundStyle(WalletTheme.ink)
             .background(WalletTheme.canvas.ignoresSafeArea())
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
+            .navigationTitle("Мои кошельки")
             .alert("Название кошелька", isPresented: $showingRename) {
                 TextField("Название", text: $rename)
                 Button("Сохранить") { access.renameActive(rename) }
                 Button("Отмена", role: .cancel) { }
             } message: { Text("Название видно только на этом устройстве.") }
-        }
         .fullScreenCover(isPresented: $showingNew) {
             WalletOnboardingView(isAddingAccount: true, onComplete: {
                 showingNew = false

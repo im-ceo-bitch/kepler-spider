@@ -6,13 +6,11 @@ struct SpyderChatConnectionSettingsView: View {
     @EnvironmentObject private var chat: SpyderChatStore
 
     var body: some View {
-        NavigationStack {
-            Form {
+        Form {
                 Section("Spyder Chat Server") {
-                    TextField("https://your-worker.workers.dev", text: $chat.serverAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
+                    Text(chat.serverAddress.isEmpty ? "Адрес не задан" : chat.serverAddress)
+                        .font(.system(size: 13, design: .monospaced))
+                        .textSelection(.enabled)
                     Button(chat.checkingServer ? "Проверяем…" : "Проверить HTTPS") {
                         Task { await chat.probeServer() }
                     }
@@ -20,14 +18,10 @@ struct SpyderChatConnectionSettingsView: View {
                     if let status = chat.serverStatus { Text(status).font(.footnote) }
                 }
                 Section {
-                    Text("URL настраивается владельцем сети через GitHub Actions. Не используйте неизвестные серверы: текущие сообщения не имеют сквозного шифрования.")
+                    Text("Адрес встроен в приложение при сборке или берётся из сохранённого Spyder ID. Не меняй сервер без миграции идентичности: Chat v2 использует отдельные ключи сквозного шифрования.")
                         .font(.footnote)
                 }
             }
             .navigationTitle("Диагностика чата")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } }
-            }
-        }
     }
 }

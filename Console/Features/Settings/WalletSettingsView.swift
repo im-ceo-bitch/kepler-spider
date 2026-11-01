@@ -22,25 +22,21 @@ struct WalletSettingsView: View {
     @EnvironmentObject private var access: WalletAccess
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     HStack {
                         Text("Настройки")
                             .font(.system(size: 30, weight: .bold))
                             .foregroundStyle(WalletTheme.ink)
                         Spacer()
-                        SpyderNavigationButton(symbol: "xmark", label: "Закрыть", action: { dismiss() })
                     }
                     .spyderReveal(0.01)
                     WalletCard {
                         HStack(spacing: 14) {
-                            SpyderProfileAvatarView(
-                                motion: SpyderAvatarMotion(rawValue: avatarValue) ?? .pulse,
-                                accent: SpyderSignalAccent(rawValue: accentValue) ?? .red,
-                                diameter: 64,
-                                animate: motionEnabled
-                            )
+                            Image(systemName: "wallet.bifold.fill")
+                                .font(.system(size: 24))
+                                .frame(width: 64, height: 64)
+                                .background(WalletTheme.canvas, in: RoundedRectangle(cornerRadius: 20))
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Кошелёк и безопасность")
                                     .font(.system(size: 19, weight: .semibold))
@@ -61,21 +57,9 @@ struct WalletSettingsView: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        Button { showMotionStudio = true } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "sparkles")
-                                    .foregroundStyle((SpyderSignalAccent(rawValue: accentValue) ?? .red).color)
-                                Text("Анимации и персонализация")
-                                    .font(.system(size: 15, weight: .medium))
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(WalletTheme.secondary)
-                            }
-                            .padding(16)
-                            .background(WalletTheme.surface,
-                                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
+                        Text("Аватар и анимации Spyder ID настраиваются только в разделе «Сеть».")
+                            .font(.footnote)
+                            .foregroundStyle(WalletTheme.secondary)
                     }
                     .foregroundStyle(WalletTheme.ink)
                     .spyderReveal(0.13)
@@ -90,7 +74,7 @@ struct WalletSettingsView: View {
                     .foregroundStyle(WalletTheme.ink)
                     WalletCard {
                         VStack(alignment: .leading, spacing: 17) {
-                            Button { showAccounts = true } label: {
+                            NavigationLink { WalletAccountsView() } label: {
                                 HStack {
                                     Label("Управление кошельками", systemImage: "wallet.bifold")
                                     Spacer()
@@ -138,23 +122,8 @@ struct WalletSettingsView: View {
                         .foregroundStyle(WalletTheme.ink)
                     }
                     WalletCard {
-                        Button { showTerminalSettings = true } label: {
-                            HStack {
-                                Label("Spyder Terminal", systemImage: "terminal")
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                            }
-                            .foregroundStyle(WalletTheme.ink)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    WalletCard {
                         DisclosureGroup(isExpanded: $showDeveloperOptions) {
                             VStack(alignment: .leading, spacing: 16) {
-                                Button { showChatSettings = true } label: {
-                                    Label("Диагностика подключения чата", systemImage: "message.badge")
-                                        .font(.system(size: 14))
-                                }
                                 Button { showDevnetSettings = true } label: {
                                     Label("Spider Chain · Test Devnet", systemImage: "network")
                                         .font(.system(size: 14))
@@ -177,29 +146,9 @@ struct WalletSettingsView: View {
                 .padding(20)
             }
             .background(WalletTheme.canvas.ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
-        }
-        .sheet(isPresented: $showMotionStudio) {
-            SpyderMotionSettingsView()
-                .presentationDragIndicator(.visible)
-                .presentationCornerRadius(30)
-        }
-        .sheet(isPresented: $showAccounts) {
-            WalletAccountsView()
-                .presentationDragIndicator(.visible)
-        }
+            .navigationTitle("Настройки кошелька")
         .sheet(isPresented: $showDevnetSettings) {
             SpiderDevnetSettingsView()
-                .presentationDragIndicator(.visible)
-                .presentationCornerRadius(30)
-        }
-        .sheet(isPresented: $showTerminalSettings) {
-            SpyderTerminalSettingsScreen()
-                .presentationDragIndicator(.visible)
-                .presentationCornerRadius(30)
-        }
-        .sheet(isPresented: $showChatSettings) {
-            SpyderChatConnectionSettingsView()
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(30)
         }

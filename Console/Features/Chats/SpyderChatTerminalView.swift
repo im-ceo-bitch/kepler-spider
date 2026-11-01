@@ -13,16 +13,21 @@ struct SpyderTerminalEntry: Identifiable {
 struct SpyderTerminalSettingsScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var settings = TerminalSettingsStore().load()
+    @AppStorage("spyder.terminal.typewriter") private var typewriter = true
 
     var body: some View {
-        NavigationStack {
-            SpyderTerminalSettingsView(settings: $settings)
+        SpyderTerminalSettingsView(settings: $settings)
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(typewriter ? "Печать: вкл" : "Печать: выкл") {
+                            typewriter.toggle()
+                        }
+                        .accessibilityLabel("Анимация печати терминала")
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Готово") { dismiss() }
                     }
                 }
-        }
         .onChange(of: settings) { _, newValue in
             try? TerminalSettingsStore().save(newValue)
         }
@@ -116,10 +121,8 @@ struct SpyderChatTerminalView: View {
                                 Text(entry.isCommand ? "❯" : "●")
                                     .foregroundStyle(entry.isCommand ? accent : .green)
                                     .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                Text(entry.text)
+                                SpyderTerminalOutputLine(entry: entry, fontSize: CGFloat(settings.fontSize))
                                     .foregroundStyle(entry.isCommand ? Color.white : Color.white.opacity(0.76))
-                                    .font(.system(size: CGFloat(settings.fontSize), design: .monospaced))
-                                    .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .id(entry.id)
@@ -150,7 +153,7 @@ struct SpyderChatTerminalView: View {
         .sheet(isPresented: $showingSettings, onDismiss: {
             settings = TerminalSettingsStore().load()
         }) {
-            SpyderTerminalSettingsScreen()
+            NavigationStack { SpyderTerminalSettingsScreen() }
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(28)
         }
@@ -335,5 +338,42 @@ struct SpyderChatTerminalView: View {
         case "constellation", "созвездия": return .constellation
         default: return nil
         }
+    }
+}
+
+
+/// A lightweight native typewriter for newly rendered, non-sensitive terminal output.
+/// Commands, long results, Reduce Motion and Low Power mode display immediately.
+private struct SpyderTerminalOutputLine: View {
+    let entry: SpyderTerminalEntry
+    let fontSize: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("spyder.terminal.typewriter") private var typewriter = true
+    @State private var visible = ""
+
+    var body: some View {
+        Text(visible)
+            .font(.system(size: fontSize, design: .monospaced))
+            .textSelection(.enabled)
+            .task(id: entry.id) {
+                let fullText = entry.text
+                guard typewriter, !entry.isCommand, !reduceMotion,
+                      !ProcessInfo.processInfo.isLowPowerModeEnabled,
+                      fullText.count <= 320 else {
+                    visible = fullText
+                    return
+                }
+                let glyphs = Array(fullText)
+                var position = 0
+                visible = ""
+                while position < glyphs.count && !Task.isCancelled {
+                    position = min(position + 6, glyphs.count)
+                    visible = String(glyphs.prefix(position))
+                    do { try await Task.sleep(nanoseconds: 22_000_000) }
+                    catch { break }
+                }
+                if Task.isCancelled { visible = fullText }
+            }
+            .accessibilityLabel(entry.text)
     }
 }

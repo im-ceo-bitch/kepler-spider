@@ -6,21 +6,23 @@ def read(p): return (ROOT/p).read_text(encoding='utf-8')
 class TerminalWalletCumulativeMergeTests(unittest.TestCase):
     def test_control_center_and_terminal_routing_coexist(self):
         root=read('Console/WalletRootView.swift')
-        for token in ('WalletControlCenterView(', 'onControlCenter:', 'case .security:',
+        for token in ('SpyderWalletProfilePage(', 'onControlCenter:', 'case .security:',
                       'WalletSecurityCenterView()', 'case .addressBook:',
                       'WalletAddressBookView()', 'onOpenActivity:',
                       'ChatDetailView(contact: contact', 'SpyderIdentityHubView()',
-                      'openChatAfterNotificationIfNeeded()', '.spyderChatOpenRequested'):
+                      'openChatAfterNotificationIfNeeded()', '.spyderChatOpenRequested',
+                      'NavigationStack(path: $walletPath)', 'NavigationStack(path: $networkPath)'):
             self.assertIn(token,root)
-        # Settings moved into Spyder ID; do not reintroduce two competing profile pages.
-        self.assertIn('WalletSettingsView()',read('Console/Features/Settings/SpyderIdentityHubView.swift'))
+        self.assertNotIn('WalletControlCenterView(', root)
+        self.assertIn('SpyderTerminalSettingsScreen()',
+                      read('Console/Features/Settings/SpyderIdentityHubView.swift'))
     def test_terminal_package_in_xcodegen(self):
         project=read('project.yml')
         for token in ('path: Packages/SpyderTerminalKit','product: SpyderTerminalKit','product: WalletCore'):
             self.assertIn(token,project)
     def test_terminal_ui_available_in_chats_and_settings(self):
         self.assertIn('SpyderChatTerminalView(',read('Console/Features/Chats/ChatDetailView.swift'))
-        self.assertIn('SpyderTerminalSettingsScreen()',read('Console/Features/Settings/WalletSettingsView.swift'))
+        self.assertIn('SpyderTerminalSettingsScreen()',read('Console/Features/Settings/SpyderIdentityHubView.swift'))
         self.assertIn('struct SpyderChatTerminalView',read('Console/Features/Chats/SpyderChatTerminalView.swift'))
     def test_market_and_chat_preserved(self):
         self.assertIn('WalletCatalogSection(catalog: catalog)',read('Console/Features/Wallet/WalletHomeView.swift'))

@@ -1,115 +1,166 @@
 import SwiftUI
 import UIKit
 
+/// Two independent histories: financial navigation never replaces a conversation.
+/// Only short, transactional workflows are presented modally.
+private enum SpyderWalletPage: Hashable {
+    case center, accounts, security, addressBook, settings, activity, asset(SpyderChain)
+}
+
+private enum SpyderNetworkPage: Hashable {
+    case identity, chat(WalletContact), contact(WalletContact)
+}
+
 struct WalletRootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedTab: WalletTab = .wallet
-    @State private var path = NavigationPath()
+    @State private var walletPath: [SpyderWalletPage] = []
+    @State private var networkPath: [SpyderNetworkPage] = []
     @State private var presented: WalletModal?
-    @State private var showControlCenter = false
-    @State private var nextControlModal: WalletModal?
-    @State private var nextControlActivity = false
-    @State private var nextControlNetwork = false
     @State private var sendChain: SpyderChain?
-    @State private var selectedContact: WalletContact = WalletContact(id: "", name: "Не выбран", handle: "", letter: "", preview: "", time: "")
+    @State private var selectedContact = WalletContact(id: "", name: "Не выбран", handle: "", letter: "", preview: "", time: "")
+
+    private var atRoot: Bool {
+        selectedTab == .wallet ? walletPath.isEmpty : networkPath.isEmpty
+    }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            Group {
-                switch selectedTab {
-                case .wallet:
-                    WalletHomeView { action in
-                        sendChain = nil
-                        presented = action
-                    } onActivity: {
-                        path.append(WalletRoute.activity)
-                    } onAsset: { chain in
-                        path.append(WalletRoute.asset(chain))
-                    } onControlCenter: {
-                        showControlCenter = true
-                    }
-                case .chats:
-                    ChatsHomeView(onOpen: { contact in
-                        path.append(WalletRoute.chat(contact))
-                    }, onAdd: {
-                        presented = .touch
-                    })
-                }
-            }
-            .navigationDestination(for: WalletRoute.self) { route in
-                switch route {
-                case .chat(let contact):
-                    ChatDetailView(contact: contact, onBack: {
-                        if !path.isEmpty { path.removeLast() }
-                    }, onAction: { action in
-                        selectedContact = contact
-                        presented = action
-                    }, onOpenActivity: {
-                        path.append(WalletRoute.activity)
-                    })
-                case .activity:
-                    WalletActivityView(onBack: { if !path.isEmpty { path.removeLast() } })
-                case .asset(let chain):
-                    WalletAssetDetailView(chain: chain, onSend: { target in
-                        sendChain = target
-                        presented = .send
-                    }, onReceive: {
-                        sendChain = chain
-                        presented = .receive
-                    })
-                }
-            }
-            .toolbar(.hidden, for: .navigationBar)
+        ZStack {
+            walletNavigation
+                .opacity(selectedTab == .wallet ? 1 : 0)
+                .allowsHitTesting(selectedTab == .wallet)
+                .accessibilityHidden(selectedTab != .wallet)
+                .zIndex(selectedTab == .wallet ? 1 : 0)
+            networkNavigation
+                .opacity(selectedTab == .chats ? 1 : 0)
+                .allowsHitTesting(selectedTab == .chats)
+                .accessibilityHidden(selectedTab != .chats)
+                .zIndex(selectedTab == .chats ? 1 : 0)
         }
         .tint(WalletTheme.ink)
-        .task { openChatAfterNotificationIfNeeded() }
-        .onReceive(NotificationCenter.default.publisher(for: .spyderChatOpenRequested)) { _ in
-            openChatAfterNotificationIfNeeded()
-        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if path.isEmpty { bottomBar }
-        }
-        .fullScreenCover(isPresented: $showControlCenter, onDismiss: {
-            if let next = nextControlModal {
-                nextControlModal = nil
-                presented = next
-            } else if nextControlActivity {
-                nextControlActivity = false
-                path.append(WalletRoute.activity)
-            } else if nextControlNetwork {
-                nextControlNetwork = false
-                path = NavigationPath()
-                selectedTab = .chats
-            }
-        }) {
-            WalletControlCenterView(
-                onAccounts: { queueControlModal(.accounts) },
-                onSecurity: { queueControlModal(.security) },
-                onAddressBook: { queueControlModal(.addressBook) },
-                onActivity: { nextControlActivity = true; showControlCenter = false },
-                onSettings: { queueControlModal(.profile) },
-                onNetwork: { nextControlNetwork = true; showControlCenter = false },
-                onClose: { showControlCenter = false }
-            )
+            if atRoot { bottomBar }
         }
         .sheet(item: $presented) { modal in
             modalView(modal)
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(30)
         }
+        .task { openChatAfterNotificationIfNeeded() }
+        .onReceive(NotificationCenter.default.publisher(for: .spyderChatOpenRequested)) { _ in
+            openChatAfterNotificationIfNeeded()
+        }
         .background(WalletTheme.canvas.ignoresSafeArea())
     }
 
-    private func queueControlModal(_ modal: WalletModal) {
-        nextControlModal = modal
-        showControlCenter = false
+    private var walletNavigation: some View {
+        NavigationStack(path: $walletPath) {
+            WalletHomeView(onAction: { action in
+                sendChain = nil
+                presented = action
+            }, onActivity: {
+                walletPath.append(.activity)
+            }, onAsset: { chain in
+                walletPath.append(.asset(chain))
+            }, onControlCenter: {
+                walletPath.append(.center)
+            })
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: SpyderWalletPage.self) { destination in
+                walletDestination(destination)
+                    .toolbar(.visible, for: .navigationBar)
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        }
+    }
+
+    private var networkNavigation: some View {
+        NavigationStack(path: $networkPath) {
+            ChatsHomeView(onOpen: { person in
+                networkPath.append(.chat(person))
+            }, onAdd: {
+                presented = .touch
+            }, onProfile: {
+                networkPath.append(.identity)
+            }, isActive: selectedTab == .chats)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: SpyderNetworkPage.self) { destination in
+                networkDestination(destination)
+                    .toolbar(.visible, for: .navigationBar)
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func walletDestination(_ destination: SpyderWalletPage) -> some View {
+        switch destination {
+        case .center:
+            SpyderWalletProfilePage(
+                onAccounts: { walletPath.append(.accounts) },
+                onSecurity: { walletPath.append(.security) },
+                onAddressBook: { walletPath.append(.addressBook) },
+                onActivity: { walletPath.append(.activity) },
+                onSettings: { walletPath.append(.settings) },
+                onReceive: { sendChain = nil; presented = .receive }
+            )
+        case .accounts:
+            WalletAccountsView()
+        case .security:
+            WalletSecurityCenterView()
+        case .addressBook:
+            WalletAddressBookView()
+        case .settings:
+            WalletSettingsView()
+        case .activity:
+            WalletActivityView(onBack: { if !walletPath.isEmpty { walletPath.removeLast() } })
+        case .asset(let chain):
+            WalletAssetDetailView(chain: chain, onSend: { target in
+                sendChain = target
+                presented = .send
+            }, onReceive: {
+                sendChain = chain
+                presented = .receive
+            })
+        }
+    }
+
+    @ViewBuilder
+    private func networkDestination(_ destination: SpyderNetworkPage) -> some View {
+        switch destination {
+        case .identity:
+            SpyderIdentityHubView()
+        case .chat(let contact):
+            ChatDetailView(contact: contact, onBack: {
+                if !networkPath.isEmpty { networkPath.removeLast() }
+            }, onAction: { action in
+                selectedContact = contact
+                if action == .profile {
+                    networkPath.append(.identity)
+                } else {
+                    presented = action
+                }
+            }, onOpenActivity: {
+                // Explicitly switch to the financial history when requested by Terminal.
+                selectedTab = .wallet
+                walletPath.append(.activity)
+            }, onOpenContact: {
+                networkPath.append(.contact(contact))
+            })
+        case .contact(let contact):
+            SpyderContactProfilePage(contact: contact, onOpenChat: {
+                if !networkPath.isEmpty { networkPath.removeLast() }
+            }, onBlocked: {
+                networkPath.removeAll()
+            })
+        }
     }
 
     private func openChatAfterNotificationIfNeeded() {
         guard UserDefaults.standard.bool(forKey: "spyder.chat.push.open.pending") else { return }
         UserDefaults.standard.set(false, forKey: "spyder.chat.push.open.pending")
-        path = NavigationPath()
         selectedTab = .chats
+        // Keep the Network path if the person was already reading a conversation.
     }
 
     @ViewBuilder
@@ -125,14 +176,13 @@ struct WalletRootView: View {
             WalletReceiveView(preselected: sendChain ?? .ethereum)
                 .presentationDetents([.medium, .large])
         case .touch:
-            WalletTouchView(onConnect: { contact in
-                // Spyder Touch is still a visual demo. It cannot create an authorized chat.
+            WalletTouchView(onConnect: { _ in
+                // Demo-only connection; no chat contact is added automatically.
                 presented = nil
                 selectedTab = .chats
-                path = NavigationPath()
             })
         case .profile:
-            SpyderIdentityHubView()
+            SpyderIdentityHubView() // Legacy external action fallback.
         case .accounts:
             WalletAccountsView()
         case .security:
@@ -159,17 +209,15 @@ struct WalletRootView: View {
     private func tabButton(_ tab: WalletTab, title: String, symbol: String) -> some View {
         let isSelected = selectedTab == tab
         return Button {
-            if selectedTab != tab {
-                UISelectionFeedbackGenerator().selectionChanged()
-                path = NavigationPath()
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) { selectedTab = tab }
+            guard selectedTab != tab else { return }
+            UISelectionFeedbackGenerator().selectionChanged()
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) {
+                selectedTab = tab
             }
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .font(.system(size: 19, weight: .medium))
-                Text(LocalizedStringKey(title))
-                    .font(.system(size: 16, weight: .medium))
+                Image(systemName: symbol).font(.system(size: 19, weight: .medium))
+                Text(LocalizedStringKey(title)).font(.system(size: 16, weight: .medium))
             }
             .frame(maxWidth: .infinity)
             .frame(height: 52)
@@ -180,4 +228,3 @@ struct WalletRootView: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
-

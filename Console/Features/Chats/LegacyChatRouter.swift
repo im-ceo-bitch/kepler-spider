@@ -5,8 +5,10 @@ import SwiftUI
 struct ChatsHomeView: View {
     let onOpen: (WalletContact) -> Void
     let onAdd: () -> Void
+    var onProfile: () -> Void = {}
+    var isActive: Bool = true
 
     var body: some View {
-        SpyderDevnetChatsHomeView(onOpen: onOpen, onAdd: onAdd)
+        SpyderDevnetChatsHomeView(onOpen: onOpen, onAdd: onAdd, onProfile: onProfile, isActive: isActive)
     }
 }

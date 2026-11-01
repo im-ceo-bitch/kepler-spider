@@ -22,8 +22,7 @@ struct SpyderMotionSettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Motion Studio")
@@ -35,7 +34,7 @@ struct SpyderMotionSettingsView: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         sectionTitle("Цвет сигнала")
-                        HStack(spacing: 12) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
                             ForEach(SpyderSignalAccent.allCases) { option in
                                 Button {
                                     accentValue = option.rawValue
@@ -172,12 +171,6 @@ struct SpyderMotionSettingsView: View {
             .background(WalletTheme.canvas.ignoresSafeArea())
             .navigationTitle("Персонализация")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Готово") { dismiss() }
-                }
-            }
-        }
         .fullScreenCover(isPresented: $showLaunchPreview) {
             SpyderLaunchPreview(motion: currentLaunch, accent: currentAccent)
         }

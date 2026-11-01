@@ -270,8 +270,7 @@ struct SpyderChatAppearanceSettingsView: View {
     private var accent: Color { (SpyderSignalAccent(rawValue: accentRaw) ?? .red).color }
 
     var body: some View {
-        NavigationStack {
-            ScrollView(showsIndicators: false) {
+        ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(peerID == nil ? "Твои чаты" : "Этот чат")
@@ -332,8 +331,6 @@ struct SpyderChatAppearanceSettingsView: View {
             .background(WalletTheme.canvas.ignoresSafeArea())
             .navigationTitle("Оформление чатов")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
-        }
         .onAppear {
             appearance = SpyderChatAppearanceStore.load(peer: peerID)
             loaded = true

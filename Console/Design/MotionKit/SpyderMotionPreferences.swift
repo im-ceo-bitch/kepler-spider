@@ -11,19 +11,39 @@ enum SpyderMotionKeys {
 }
 
 enum SpyderSignalAccent: String, CaseIterable, Identifiable {
-    case red, blue
+    case red, blue, violet, cyan, magenta, lime, amber, emerald, orange, ice, pink, ultraviolet
 
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .red: return "Signal Red"
-        case .blue: return "Electric Blue"
+        case .red: "Signal Red"
+        case .blue: "Electric Blue"
+        case .violet: "Neon Violet"
+        case .cyan: "Cyber Cyan"
+        case .magenta: "Magenta"
+        case .lime: "Neon Lime"
+        case .amber: "Amber"
+        case .emerald: "Emerald"
+        case .orange: "Neon Orange"
+        case .ice: "Ice Blue"
+        case .pink: "Cyber Pink"
+        case .ultraviolet: "Ultraviolet"
         }
     }
     var color: Color {
         switch self {
-        case .red: return Color(red: 0.86, green: 0.025, blue: 0.16)
-        case .blue: return Color(red: 0.20, green: 0.47, blue: 0.97)
+        case .red: Color(red: 0.86, green: 0.025, blue: 0.16)
+        case .blue: Color(red: 0.20, green: 0.47, blue: 0.97)
+        case .violet: Color(red: 0.62, green: 0.34, blue: 1.0)
+        case .cyan: Color(red: 0.05, green: 0.84, blue: 0.96)
+        case .magenta: Color(red: 0.96, green: 0.18, blue: 0.74)
+        case .lime: Color(red: 0.57, green: 0.92, blue: 0.18)
+        case .amber: Color(red: 1.0, green: 0.68, blue: 0.18)
+        case .emerald: Color(red: 0.18, green: 0.82, blue: 0.55)
+        case .orange: Color(red: 1.0, green: 0.38, blue: 0.16)
+        case .ice: Color(red: 0.49, green: 0.74, blue: 1.0)
+        case .pink: Color(red: 1.0, green: 0.43, blue: 0.65)
+        case .ultraviolet: Color(red: 0.38, green: 0.19, blue: 0.97)
         }
     }
 }

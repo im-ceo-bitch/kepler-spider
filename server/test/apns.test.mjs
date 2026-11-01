@@ -26,7 +26,7 @@ test('APNs signs ES256 JWT and never leaks the message text',async()=>{
   assert.equal(JSON.parse(Buffer.from(jwt[1],'base64url').toString()).iss,e.APNS_TEAM_ID);
   assert.equal(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},e.verifyKey,
     Buffer.from(jwt[2],'base64url'),new TextEncoder().encode(jwt[0]+'.'+jwt[1])),true);
-  assert.deepEqual(JSON.parse(options.body),{aps:{alert:{title:'Spyder Network',body:'Новое зашифрованное сообщение'},sound:'default'},spyder_event:'message'});
+  assert.deepEqual(JSON.parse(options.body),{aps:{alert:{title:'Spyder Network',body:'Новое зашифрованное сообщение'},sound:'spyder_receive.caf','thread-id':'spyder.chat'},spyder_event:'message'});
   assert.equal(options.body.includes('secret'),false);
 });
 
@@ -53,11 +53,11 @@ test('Push routes require authorization and never reveal stored APNs token',asyn
   assert.equal((await call('POST','/v2/push/register',{token})).status,401);
   assert.equal((await call('POST','/v1/register',{id,secret,invite_code:'A'.repeat(24),name:'A'})).status,201);
   const auth=id+'.'+secret;
-  assert.deepEqual((await call('GET','/v2/push/status',null,auth)).body,{provider_ready:true,enabled:false});
+  assert.deepEqual((await call('GET','/v2/push/status',null,auth)).body,{provider_ready:true,enabled:false,sound:null,last_apns_status:null,last_attempt_at:null});
   assert.equal((await call('POST','/v2/push/register',{token:'wrong'},auth)).status,400);
   assert.equal((await call('POST','/v2/push/register',{token},auth)).status,200);
   const info=(await call('GET','/v2/push/status',null,auth)).body;
-  assert.deepEqual(info,{provider_ready:true,enabled:true});
+  assert.deepEqual(info,{provider_ready:true,enabled:true,sound:'system',last_apns_status:null,last_attempt_at:null});
   assert.equal(JSON.stringify(info).includes(token),false);
   assert.equal((await call('POST','/v2/push/unregister',{},auth)).status,200);
   assert.equal(db.has('push:'+id),false);

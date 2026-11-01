@@ -5,11 +5,12 @@ ROOT = Path(__file__).resolve().parents[2]
 def src(p): return (ROOT/p).read_text(encoding='utf-8')
 class ControlCenterTests(unittest.TestCase):
     def test_wallet_and_chat_use_distinct_credentials(self):
-        panel=src('Console/Features/Wallet/WalletControlCenterView.swift')
-        assert 'WalletAccess' in panel and 'SpyderChatStore' in panel
+        panel=src('Console/Features/Wallet/SpyderWalletProfilePage.swift')
+        network=src('Console/Features/Settings/SpyderIdentityHubView.swift')
+        assert 'WalletAccess' in panel and 'SpyderChatStore' not in panel
         assert 'WalletVault.revealForBackup' not in panel
         assert 'spyder.chat.push.open.pending' not in panel
-        assert 'chat.myUsername' in panel and 'access.activeAccountName' in panel
+        assert 'chat.myUsername' in network and 'access.activeAccountName' in panel
         self.assertNotIn('WalletVault.save(',panel)
     def test_gesture_only_edge_on_wallet_not_chat(self):
         home=src('Console/Features/Wallet/WalletHomeView.swift')
@@ -23,7 +24,10 @@ class ControlCenterTests(unittest.TestCase):
         assert 'openChatAfterNotificationIfNeeded()' in root
         assert 'selectedTab = .chats' in root
         assert '.spyderChatOpenRequested' in root
-        assert 'WalletControlCenterView(' in root
+        assert 'SpyderWalletProfilePage(' in root
+        assert 'NavigationStack(path: $walletPath)' in root
+        assert 'NavigationStack(path: $networkPath)' in root
+        assert '.fullScreenCover(isPresented: $showControlCenter)' not in root
         assert 'case .security:' in root
         assert 'WalletSendFlowView(preselected: sendChain)' in root
     def test_security_does_not_claim_cloud_copy_was_verified(self):

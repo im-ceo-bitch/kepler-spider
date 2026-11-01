@@ -21,7 +21,8 @@ class SpyderIntegrationCompat(unittest.TestCase):
         identity = source('Console/Features/Settings/SpyderIdentityHubView.swift')
         self.assertIn('SpyderProfileAvatarView', identity)
         self.assertIn('case .profile:\n            SpyderIdentityHubView()', root)
-        self.assertIn('.sheet(isPresented: $showingPrivacy) { SpyderIdentityHubView() }', chat)
+        self.assertIn('onProfile()', chat)
+        self.assertIn('case .identity:', root)
     def test_chat_experience_and_sonic_integrated(self):
         details = source('Console/Features/Chats/ChatDetailView.swift')
         identity = source('Console/Features/Settings/SpyderIdentityHubView.swift')

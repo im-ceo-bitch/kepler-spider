@@ -24,8 +24,7 @@ struct WalletAddressBookView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     searchField
                     if let storeError = addressBook.errorMessage {
@@ -46,9 +45,6 @@ struct WalletAddressBookView: View {
             .navigationTitle("Адресная книга")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Закрыть") { dismiss() }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showAdd = true } label: { Image(systemName: "plus") }
                         .disabled(addressBook.errorMessage != nil)
@@ -67,7 +63,6 @@ struct WalletAddressBookView: View {
             } message: {
                 Text(errorMessage ?? "")
             }
-        }
     }
 
     private var searchField: some View {

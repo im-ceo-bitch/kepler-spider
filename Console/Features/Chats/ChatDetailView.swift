@@ -29,6 +29,7 @@ struct ChatDetailView: View {
     let onBack: () -> Void
     let onAction: (WalletModal) -> Void
     let onOpenActivity: () -> Void
+    var onOpenContact: () -> Void = {}
 
     @AppStorage("spyder.wallet.language") private var uiLanguage = "ru"
     @State private var terminalActive = false
@@ -120,7 +121,7 @@ struct ChatDetailView: View {
         .background(WalletTheme.canvas.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showingAppearance, onDismiss: reloadAppearance) {
-            SpyderChatAppearanceSettingsView(peerID: contact.id)
+            NavigationStack { SpyderChatAppearanceSettingsView(peerID: contact.id) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .spyderTerminalChatAppearanceChanged)) { notification in
             guard notification.userInfo?["peerID"] as? String == contact.id else { return }
@@ -152,21 +153,30 @@ struct ChatDetailView: View {
     private var header: some View {
         HStack(spacing: 11) {
             SpyderNavigationButton(symbol: "chevron.left", label: "Назад", action: onBack)
-            ZStack {
-                Circle().fill(accent.opacity(0.12))
-                Circle().stroke(accent.opacity(0.55), lineWidth: 1)
-                Text(contact.letter).font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(WalletTheme.ink)
-            }.frame(width: 42, height: 42)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(contact.name).font(.system(size: 17, weight: .semibold))
-                    .lineLimit(1)
-                Text(contact.handle.isEmpty ? "Spyder Network" : contact.handle)
-                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                    .lineLimit(1)
+            Button(action: onOpenContact) {
+                HStack(spacing: 11) {
+                    ZStack {
+                        Circle().fill(accent.opacity(0.12))
+                        Circle().stroke(accent.opacity(0.55), lineWidth: 1)
+                        Text(contact.letter).font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(WalletTheme.ink)
+                    }.frame(width: 42, height: 42)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(contact.name).font(.system(size: 17, weight: .semibold))
+                            .lineLimit(1)
+                        Text(contact.handle.isEmpty ? "Spyder Network" : contact.handle)
+                            .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                            .lineLimit(1)
+                    }
+                }
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Профиль контакта " + contact.name)
             Spacer(minLength: 4)
             Menu {
+                Button(action: onOpenContact) {
+                    Label("Профиль собеседника", systemImage: "person.crop.circle")
+                }
                 Button { showingAppearance = true } label: {
                     Label("Оформление чата", systemImage: "paintpalette")
                 }
@@ -281,6 +291,9 @@ struct ChatDetailView: View {
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
             Menu {
+                Button(action: onOpenContact) {
+                    Label("Профиль собеседника", systemImage: "person.crop.circle")
+                }
                 Button { showingAppearance = true } label: {
                     Label("Фон и оформление", systemImage: "paintpalette")
                 }

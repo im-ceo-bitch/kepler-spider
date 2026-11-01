@@ -6,6 +6,8 @@ struct SpyderDevnetChatsHomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     let onOpen: (WalletContact) -> Void
     let onAdd: () -> Void
+    let onProfile: () -> Void
+    let isActive: Bool
     @State private var search = ""
     @State private var name = ""
     @State private var username = ""
@@ -14,7 +16,6 @@ struct SpyderDevnetChatsHomeView: View {
     @State private var invitation = ""
     @State private var adding = false
     @State private var inviteSent = false
-    @State private var showingPrivacy = false
     @State private var visibleInSearch = true
     @AppStorage(SpyderMotionKeys.accent) private var accentValue = SpyderSignalAccent.red.rawValue
     @AppStorage(SpyderMotionKeys.avatar) private var avatarValue = SpyderAvatarMotion.pulse.rawValue
@@ -34,7 +35,7 @@ struct SpyderDevnetChatsHomeView: View {
                 HStack {
                     Text("Сеть").font(.system(size: 34, weight: .bold)).foregroundStyle(WalletTheme.ink)
                     Spacer()
-                    Button { showingPrivacy = true } label: {
+                    Button { onProfile() } label: {
                         SpyderProfileAvatarView(motion: avatarMotion, accent: accent,
                                                 diameter: 46, animate: motionEnabled)
                     }
@@ -185,18 +186,17 @@ struct SpyderDevnetChatsHomeView: View {
             // Native iOS pull-to-refresh indicator appears at the top of the list.
             await chat.refresh()
         }
-        .task(id: scenePhase) {
-            guard scenePhase == .active else { return }
+        .task(id: isActive) {
+            guard isActive, scenePhase == .active else { return }
             await chat.refresh()
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(chat.connected ? 10 : 6)) }
                 catch { break }
-                guard !Task.isCancelled, scenePhase == .active else { break }
+                guard !Task.isCancelled, scenePhase == .active, isActive else { break }
                 await chat.refresh()
             }
         }
         .sheet(isPresented: $adding) { inviteSheet }
-        .sheet(isPresented: $showingPrivacy) { SpyderIdentityHubView() }
         .alert("Spyder Chat", isPresented: Binding(get: { chat.errorMessage != nil }, set: { if !$0 { chat.errorMessage = nil } })) {
             Button("Понятно", role: .cancel) { chat.errorMessage = nil }
         } message: { Text(chat.errorMessage ?? "") }
@@ -227,7 +227,7 @@ struct SpyderDevnetChatsHomeView: View {
                     in: RoundedRectangle(cornerRadius: 28))
         .overlay(RoundedRectangle(cornerRadius: 28).stroke(accent.color.opacity(0.28), lineWidth: 1))
         .contentShape(RoundedRectangle(cornerRadius: 28))
-        .onTapGesture { showingPrivacy = true }
+        .onTapGesture { onProfile() }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
     }

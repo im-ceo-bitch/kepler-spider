@@ -25,8 +25,7 @@ struct SpyderNotificationSettingsView: View {
     private var accent: Color { (SpyderSignalAccent(rawValue: accentValue) ?? .red).color }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 7) {
                         Image(systemName: "bell.badge.fill")
@@ -122,11 +121,8 @@ struct SpyderNotificationSettingsView: View {
                 .padding(20)
             }
             .background(WalletTheme.canvas.ignoresSafeArea())
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } }
-            }
+            .navigationTitle("Уведомления и звуки")
             .task { await reloadDiagnostics() }
-        }
     }
 
     private func statusRow(_ label: String, _ detail: String) -> some View {
