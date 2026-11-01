@@ -95,8 +95,8 @@ private enum WalletPublicAssetClient {
         return try decimalHex(hex) / Decimal(1_000_000)
     }
 
-    static func prices() async throws -> [SpyderChain: Decimal] {
-        let endpoint = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd"
+    static func prices() async throws -> (native: [SpyderChain: Decimal], stable: [String: Decimal]) {
+        let endpoint = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,tether,usd-coin&vs_currencies=usd"
         guard let url = URL(string: endpoint) else { throw WalletPublicRPCError.badResponse }
         let data = try await get(url)
         let object = try JSONSerialization.jsonObject(with: data) as? [String: [String: NSNumber]]
@@ -106,8 +106,14 @@ private enum WalletPublicAssetClient {
             let price = object[chain.rawValue]?["usd"]?.doubleValue ?? 0
             if price > 0 && price.isFinite { result[chain] = Decimal(price) }
         }
-        guard result.count == SpyderChain.allCases.count else { throw WalletPublicRPCError.missingResult }
-        return result
+        let stable = ["USDT": "tether", "USDC": "usd-coin"]
+        var stablePrices: [String: Decimal] = [:]
+        for (ticker, id) in stable {
+            let value = object[id]?["usd"]?.doubleValue ?? 0
+            if value > 0 && value.isFinite { stablePrices[ticker] = Decimal(value) }
+        }
+        guard !result.isEmpty || !stablePrices.isEmpty else { throw WalletPublicRPCError.missingResult }
+        return (result, stablePrices)
     }
 }
 
@@ -117,20 +123,30 @@ final class WalletPublicAssetsStore: ObservableObject {
     @Published private(set) var prices: [SpyderChain: Decimal] = [:]
     @Published private(set) var failures: [SpyderChain: String] = [:]
     @Published private(set) var stablecoins: [String: Decimal] = [:]
+    @Published private(set) var stablecoinPrices: [String: Decimal] = [:]
     @Published private(set) var stablecoinFailures: [String: String] = [:]
     @Published private(set) var updatedAt: Date?
     @Published private(set) var loading = false
     @Published private(set) var priceError: String?
 
+    // Use only the amounts actually retrieved. Failures never become fake zeroes.
+    // Label the displayed estimate as partial when any network or price is missing.
     var totalUSD: Decimal? {
-        guard balances.count == SpyderChain.allCases.count, prices.count == SpyderChain.allCases.count else { return nil }
-        var value = Decimal.zero
+        var result = Decimal.zero
+        var found = false
         for (chain, amount) in balances {
-            guard let price = prices[chain] else { return nil }
-            value += amount * price
+            if let price = prices[chain] { result += amount * price; found = true }
         }
-        // Portfolio estimate covers only the three native coins; stablecoins shown separately.
-        return value
+        for (ticker, amount) in stablecoins {
+            if let price = stablecoinPrices[ticker] { result += amount * price; found = true }
+        }
+        return found ? result : nil
+    }
+
+    var isPartialEstimate: Bool {
+        balances.count != SpyderChain.allCases.count ||
+        prices.count != SpyderChain.allCases.count ||
+        stablecoins.count != 2 || stablecoinPrices.count != 2
     }
 
     static func formatted(_ value: Decimal, fractionDigits: Int = 8) -> String {
@@ -192,10 +208,13 @@ final class WalletPublicAssetsStore: ObservableObject {
             stablecoinFailures = [:]
         }
         do {
-            prices = try await WalletPublicAssetClient.prices()
+            let market = try await WalletPublicAssetClient.prices()
+            prices = market.native
+            stablecoinPrices = market.stable
             priceError = nil
         } catch {
             prices = [:]
+            stablecoinPrices = [:]
             priceError = "USD-курсы недоступны: " + error.localizedDescription
         }
         updatedAt = Date()

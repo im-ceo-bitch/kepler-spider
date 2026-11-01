@@ -4,7 +4,7 @@ import WalletCore
 
 /// Supported *native* address formats in v0.4.
 /// WalletCore derives from the existing BIP-39 vault; no seed is sent over a network.
-enum SpyderChain: String, CaseIterable, Identifiable, Hashable {
+enum SpyderChain: String, CaseIterable, Identifiable, Hashable, Codable {
     case ethereum, solana, bitcoin
 
     var id: String { rawValue }
@@ -45,7 +45,7 @@ enum SpyderChain: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-struct SpyderAddress: Identifiable, Hashable {
+struct SpyderAddress: Identifiable, Hashable, Codable {
     let chain: SpyderChain
     let value: String
     var id: String { chain.id }
@@ -136,13 +136,39 @@ final class WalletChainStore: ObservableObject {
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
 
+    // Addresses are public. Cache ONLY these values, never mnemonic words or keys.
+    // Prevent an extra Face ID prompt on every visit to the Wallet tab.
+    private static let addressCacheKey = "spyder.wallet.publicAddresses.v1"
+
+    init() {
+        guard WalletVault.exists(),
+              let data = UserDefaults.standard.data(forKey: Self.addressCacheKey),
+              let saved = try? JSONDecoder().decode([SpyderAddress].self, from: data),
+              Set(saved.map(\.chain)) == Set(SpyderChain.allCases),
+              saved.count == SpyderChain.allCases.count,
+              saved.allSatisfy({ Self.isPlausiblePublicAddress($0) }) else { return }
+        addresses = saved
+    }
+
+    private static func isPlausiblePublicAddress(_ entry: SpyderAddress) -> Bool {
+        let value = entry.value
+        switch entry.chain {
+        case .ethereum:
+            return value.range(of: "^0x[0-9a-fA-F]{40}$", options: .regularExpression) != nil
+        case .solana:
+            return (32...44).contains(value.count) && value.range(of: "^[1-9A-HJ-NP-Za-km-z]+$", options: .regularExpression) != nil
+        case .bitcoin:
+            return value.range(of: "^bc1[ac-hj-np-z02-9]{38,87}$", options: .regularExpression) != nil
+        }
+    }
+
     func address(for chain: SpyderChain) -> String? {
         addresses.first(where: { $0.chain == chain })?.value
     }
 
     func clear() {
-        // Public addresses are cleared together with the locked screen. No phrase is cached.
-        addresses = []
+        // Public receive addresses are safe to keep between lock/unlock cycles.
+        // Neither the seed nor a private key is retained by this store.
         isLoading = false
     }
 
@@ -160,6 +186,9 @@ final class WalletChainStore: ObservableObject {
                     return try SpyderAddressDeriver.addresses(phrase: phrase)
                 }.value
                 addresses = resolved
+                if let data = try? JSONEncoder().encode(resolved) {
+                    UserDefaults.standard.set(data, forKey: Self.addressCacheKey)
+                }
             } catch {
                 addresses = []
                 errorMessage = error.localizedDescription

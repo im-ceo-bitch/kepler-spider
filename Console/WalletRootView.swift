@@ -52,8 +52,10 @@ struct WalletRootView: View {
     @ViewBuilder
     private func modalView(_ modal: WalletModal) -> some View {
         switch modal {
-        case .send, .request:
-            WalletTransferView(isRequest: modal == .request, contact: selectedContact)
+        case .send:
+            WalletSendAvailabilityView()
+        case .request:
+            WalletTransferView(isRequest: true, contact: selectedContact)
         case .receive:
             WalletReceiveView()
                 .presentationDetents([.medium, .large])
@@ -105,5 +107,40 @@ struct WalletRootView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+// Mainnet transfer signing and broadcasting must not be represented as enabled
+// until chain-specific fee/nonce handling and safety tests are complete.
+private struct WalletSendAvailabilityView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("Отправить")
+                    .font(.system(size: 30, weight: .bold))
+                Spacer()
+                SpyderNavigationButton(symbol: "xmark", label: "Закрыть") { dismiss() }
+            }
+            Spacer(minLength: 24)
+            Image(systemName: "lock.shield")
+                .font(.system(size: 38))
+                .frame(width: 76, height: 76)
+                .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 24))
+            Text("Отправка пока недоступна")
+                .font(.system(size: 23, weight: .bold))
+            Text("BTC, ETH и SOL уже можно получать и проверять в блокчейне. Отправка реальных средств будет доступна после проверки транзакционной подписи, комиссий и восстановления кошелька. Мы не будем предлагать непроверенный перевод.")
+                .font(.system(size: 15))
+                .foregroundStyle(WalletTheme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button("Понятно") { dismiss() }
+                .spyderPrimaryButton()
+                .buttonStyle(.plain)
+        }
+        .foregroundStyle(WalletTheme.ink)
+        .padding(24)
+        .background(WalletTheme.canvas.ignoresSafeArea())
     }
 }

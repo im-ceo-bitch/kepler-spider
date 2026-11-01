@@ -6,7 +6,10 @@ struct WalletSettingsView: View {
     @State private var backupWords: [String] = []
     @State private var showBackup = false
     @State private var showDevnetSettings = false
+    @State private var showChatSettings = false
+    @State private var showDeveloperOptions = false
     @State private var vaultError: String?
+    @EnvironmentObject private var chat: SpyderChatStore
 
     var body: some View {
         NavigationStack {
@@ -71,19 +74,26 @@ struct WalletSettingsView: View {
                         .foregroundStyle(WalletTheme.ink)
                     }
                     WalletCard {
-                        Button { showDevnetSettings = true } label: {
-                            HStack(spacing: 13) {
-                                Image(systemName: "network").font(.system(size: 24))
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Spider Chain · Devnet").font(.system(size: 16, weight: .semibold))
-                                    Text("HTTPS gateway, genesis, токен, состояние сети")
-                                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                        DisclosureGroup(isExpanded: $showDeveloperOptions) {
+                            VStack(alignment: .leading, spacing: 16) {
+                                Button { showChatSettings = true } label: {
+                                    Label("Диагностика подключения чата", systemImage: "message.badge")
+                                        .font(.system(size: 14))
                                 }
-                                Spacer()
-                                Image(systemName: "chevron.right")
+                                Button { showDevnetSettings = true } label: {
+                                    Label("Spider Chain · Test Devnet", systemImage: "network")
+                                        .font(.system(size: 14))
+                                }
+                                Text("Для тестирования собственной инфраструктуры. Не требуется для обычного использования кошелька.")
+                                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                             }
+                            .padding(.top, 14)
                             .foregroundStyle(WalletTheme.ink)
-                        }.buttonStyle(.plain)
+                        } label: {
+                            Label("Для разработчиков", systemImage: "wrench.and.screwdriver")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(WalletTheme.secondary)
+                        }
                     }
                     Text("Храни фразу офлайн. Даже Spyder не сможет восстановить её при потере телефона без твоей резервной копии.")
                         .font(.system(size: 12))
@@ -96,6 +106,11 @@ struct WalletSettingsView: View {
         }
         .sheet(isPresented: $showDevnetSettings) {
             SpiderDevnetSettingsView()
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(30)
+        }
+        .sheet(isPresented: $showChatSettings) {
+            SpyderChatConnectionSettingsView()
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(30)
         }

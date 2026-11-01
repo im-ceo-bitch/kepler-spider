@@ -39,15 +39,14 @@ struct WalletHomeView: View {
                 HStack(alignment: .top, spacing: 11) {
                     actionTile("Отправить", symbol: "arrow.up.right", dark: false) { onAction(.send) }
                     actionTile("Получить", symbol: "arrow.down.left", dark: false) { onAction(.receive) }
-                    actionTile("Touch", symbol: "viewfinder", dark: true) { onAction(.touch) }
+                    actionTile("Обновить", symbol: "arrow.clockwise", dark: true) {
+                        Task { await publicAssets.refresh(addresses: chains.addresses) }
+                    }
                 }
                 .spyderReveal(0.13)
 
                 assetSection
                     .spyderReveal(0.17)
-
-                spiderSection
-                    .spyderReveal(0.18)
 
                 VStack(alignment: .leading, spacing: 17) {
                     HStack {
@@ -82,18 +81,26 @@ struct WalletHomeView: View {
                     }
                 }
                 .spyderReveal(0.19)
-                WalletDemoLabel()
+                Text("Spyder Wallet · твои ключи остаются на устройстве")
+                    .font(.system(size: 11))
+                    .foregroundStyle(WalletTheme.secondary)
                     .frame(maxWidth: .infinity)
-                    .spyderReveal(0.23)
+                    .padding(.vertical, 8)
             }
             .padding(.horizontal, 20)
             .padding(.top, 13)
-            .padding(.bottom, 25)
+            .padding(.bottom, 32)
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
         .refreshable { await publicAssets.refresh(addresses: chains.addresses) }
         .task(id: chains.addresses) {
-            if !chains.addresses.isEmpty { await publicAssets.refresh(addresses: chains.addresses) }
+            if chains.addresses.isEmpty && !chains.isLoading {
+                // Address derivation requires iOS authentication once. Afterwards
+                // ONLY public addresses are cached, so returning users see assets.
+                chains.activate()
+            } else if !chains.addresses.isEmpty {
+                await publicAssets.refresh(addresses: chains.addresses)
+            }
         }
     }
 
@@ -197,14 +204,14 @@ struct WalletHomeView: View {
                         Label("Создать адреса кошелька", systemImage: "key.horizontal")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(WalletTheme.ink)
-                        Text("Ethereum, Solana и Bitcoin. Адреса будут вычислены локально из защищённой фразы после подтверждения Face ID.")
+                        Text("Адреса создаются только на этом устройстве. Подтверди Face ID, чтобы открыть кошелёк для получения активов.")
                             .font(.system(size: 13))
                             .foregroundStyle(WalletTheme.secondary)
                         Button { chains.activate() } label: {
                             HStack(spacing: 8) {
                                 if chains.isLoading { ProgressView().tint(WalletTheme.contrast) }
                                 else { Image(systemName: "shield.lefthalf.filled") }
-                                Text(chains.isLoading ? "Проверяем кошелёк…" : "Активировать адреса")
+                                Text(chains.isLoading ? "Открываем адреса…" : "Открыть адреса")
                             }
                             .spyderPrimaryButton()
                         }
@@ -282,7 +289,7 @@ struct WalletHomeView: View {
                                 .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
                         }
                     }
-                    Text("USDT / USDC: только сеть Ethereum. Для переводов требуется ETH на газ. Токены пока только для просмотра и получения.")
+                    Text("USDT и USDC · только Ethereum ERC-20. Для будущих отправок нужен ETH на комиссию. Текущая версия поддерживает получение и проверку балансов.")
                         .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
                 }
                 HStack {
@@ -331,13 +338,13 @@ struct WalletHomeView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(Color.white.opacity(0.85))
                 Spacer()
-                Text("READ ONLY")
+                Text("MAINNET · VIEW")
                     .font(.system(size: 10, weight: .semibold))
                     .tracking(0.6)
                     .foregroundStyle(Color.white.opacity(0.52))
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text(publicAssets.totalUSD == nil ? "Стоимость портфеля" : "Публичные сети · BTC / ETH / SOL")
+                Text("Стоимость портфеля")
                     .font(.system(size: 14))
                     .foregroundStyle(Color.white.opacity(0.58))
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -351,12 +358,13 @@ struct WalletHomeView: View {
                         .font(.system(size: 21, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.76))
                 }
-                Text(publicAssets.totalUSD == nil ? "Оценка появится, когда все сети и курсы ответят" : "Оценка BTC / ETH / SOL без USDT и USDC")
+                Text(publicAssets.totalUSD == nil ? "Обновляем балансы и курсы" :
+                     (publicAssets.isPartialEstimate ? "Предварительная оценка · часть сетей недоступна" : "BTC · ETH · SOL · USDT · USDC"))
                     .font(.system(size: 12))
                     .foregroundStyle(Color.white.opacity(0.55))
             }
             HStack {
-                Text("Адреса ETH / SOL / BTC — ниже")
+                Text("Твои адреса · BTC / ETH / SOL")
                     .font(.system(size: 11))
                     .foregroundStyle(Color.white.opacity(0.65))
                 Spacer()

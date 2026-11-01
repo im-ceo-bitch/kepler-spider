@@ -1,38 +1,34 @@
-# Spyder Chat Devnet v0.5
+# Spyder Chat — Cloudflare Worker / Durable Objects
 
-An independent Cloudflare Workers + SQLite-backed Durable Object **test messenger**.
-This is *not* a money-transfer system, has NO end-to-end encryption, and is NOT audited.
-All chat content can be read by the operator of the Worker. Do NOT share mnemonic phrases or secrets.
+This is a device-identity 1:1 chat backend, separate from wallet private keys. The server persists messages **without end-to-end encryption**. It is not audited, and must not be used for mnemonics, passwords or private keys.
 
-## Deploy from the existing Console repository
+## Deployment for the Spyder Wallet TestFlight release
 
-This folder **replaces** the former `server/` folder from Console. The old `Console — Deploy Realtime Server` GitHub Actions workflow, if it remains in your GitHub repository, is already configured with `working-directory: server` and `npm install`, `npm run check`, `npx wrangler deploy`.
+The provided `spyder-wallet-testflight-cloud-live.yml` workflow performs deployment on each release before building iOS. Required repository secrets:
 
-1. Upload the cumulative `console-update-spyder-wallet-livechat-v05.zip` into the **root of the wallet GitHub repository** and let the `Console — Auto Unpack Update` bot finish.
-2. In **Actions**, manually run `Console — Deploy Realtime Server` (GitHub Actions `GITHUB_TOKEN` push from the unpacker does not trigger other workflows).
-3. The deploy job requires `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` existing in repository Secrets with permission to deploy Workers / Durable Objects.
-4. Copy the `https://spyder-chat-devnet.<account-subdomain>.workers.dev` URL from the deploy log and paste it into the **Chats** tab on both iPhones.
-5. Both iPhones register different chat profiles. A copies their invitation code -> B invites A -> A accepts in Chats. Then send messages between devices.
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_API_TOKEN` (Workers Scripts Write and permission to deploy Durable Objects)
+- Existing App Store Connect API key secrets and `APPLE_TEAM_ID`
 
-If the old Console deploy workflow was deleted, create `.github/workflows/spyder-chat-deploy.yml` from the file `SPYDER_CHAT_DEPLOY.yml.txt` in the repo root. It cannot be installed by the old ZIP unpacker because that bot intentionally protects `.github/workflows/`.
+Flow: `npm install` -> `npm run check` -> `npx wrangler deploy` -> `GET Cloudflare Workers subdomain` -> probe `/health` -> embed exact HTTPS URL in app Info.plist -> Xcode archive -> cloud-sign -> TestFlight upload.
 
-## API (all data JSON; protected calls use Authorization: Bearer <id>.<64-hex-token>)
+The iOS Chats tab does not prompt normal users to enter a server URL. Advanced diagnostic override is in Profile > Developer options. If Cloudflare deployment or `/health` fails, the release workflow **fails before compiling**.
 
-- `GET /health`
-- `POST /v1/register` `{id, secret, invite_code, name}`
-- `GET /v1/me`
+The Worker uses the existing `spyder-chat-devnet` name and a SQLite-backed `ChatHub` Durable Object. Keep the same Cloudflare account and Worker name across releases to preserve chat history. Changing accounts or worker names does not migrate data.
+
+## HTTP API
+
+- `GET /health` (anonymous)
+- `POST /v1/register` with random id/secret + public username/name (anonymous)
+- `GET /v1/me` (bearer authenticated)
+- `POST /v1/profile/username`
+- `GET /v1/users/search?q=`
 - `GET /v1/contacts`
-- `POST /v1/invites` `{code}`
-- `POST /v1/invites/accept` `{from_id}`
-- `GET /v1/messages?peer=<32hex>`
-- `POST /v1/messages` `{recipient_id, client_id, text}`
+- `POST /v1/invites` and `POST /v1/invites/accept`
+- `GET /v1/messages?peer=` and `POST /v1/messages`
 
-Calls are authenticated with a randomly generated chat secret, **never a wallet private key**. Identities are device-local in iOS Keychain; currently there is no multi-device chat account recovery. The list of contacts is established only after an explicit invite acceptance. Messages are polled every ~3 seconds while a conversation is open; no background APNs, WebSocket, media, calls, or E2EE in v0.5.
+Invitations require acceptance before either user can read or send messages. Username is unique case-insensitively and is not an authentication secret. Credentials belong in the device's Keychain. No multi-device migration, notification service, E2EE, or message retention SLA are provided.
 
-This prototype keeps only the last 300 messages per pair in a single Durable Object; it is not production storage architecture.
+## Local validation
 
-## Test before deployment
-
-`npm install && npm run check`
-
-`npm run check` checks JavaScript syntax and tests authorization, explicit consent, actual storage/retrieval, idempotent message handling and unauthorized access.
+Run `npm install && npm run check` inside `server/`.

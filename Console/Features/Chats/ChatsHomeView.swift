@@ -48,6 +48,23 @@ struct SpyderDevnetChatsHomeView: View {
                         }.accessibilityLabel("Обновить чаты")
                     }.spyderReveal(0.08)
 
+                    if !chat.connected {
+                        HStack(alignment: .top, spacing: 11) {
+                            Image(systemName: "wifi.exclamationmark")
+                                .font(.system(size: 19))
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Нет связи со Spyder Chat").font(.system(size: 15, weight: .semibold))
+                                Text("Проверь интернет и повтори подключение. Сообщения на устройстве не затронуты.")
+                                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                Button("Повторить") { Task { await chat.refresh() } }
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                        }
+                        .padding(15)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+                    }
+
                     if chat.myUsername.isEmpty {
                         WalletCard {
                             VStack(alignment: .leading, spacing: 9) {
@@ -120,7 +137,7 @@ struct SpyderDevnetChatsHomeView: View {
                             }
                         }
                     }
-                    Label("Тестовый чат. Сообщения пока не имеют сквозного шифрования.", systemImage: "info.circle")
+                    Label("Приватность: сообщения пока не имеют сквозного шифрования.", systemImage: "info.circle")
                         .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -129,7 +146,10 @@ struct SpyderDevnetChatsHomeView: View {
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
         .task {
-            guard chat.hasIdentity else { return }
+            guard chat.hasIdentity else {
+                if chat.hasConfiguredServer { await chat.probeServer() }
+                return
+            }
             await chat.refresh()
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
@@ -151,18 +171,22 @@ struct SpyderDevnetChatsHomeView: View {
 
     private var setup: some View {
         VStack(alignment: .leading, spacing: 17) {
-            Text("Общение без адресов кошельков")
-                .font(.system(size: 23, weight: .bold)).foregroundStyle(WalletTheme.ink)
-            Text("Создай профиль с уникальным username и найди друзей по @имени. Оба устройства должны быть подключены к одному серверу. Сид-фраза не используется.")
+            Text("Твоя сеть. Твои контакты.")
+                .font(.system(size: 25, weight: .bold)).foregroundStyle(WalletTheme.ink)
+            Text("Выбери имя и уникальный @username. Найди друзей и общайся напрямую — адрес кошелька не нужен.")
                 .font(.system(size: 14)).foregroundStyle(WalletTheme.secondary)
+            if !chat.hasConfiguredServer {
+                WalletCard {
+                    VStack(alignment: .leading, spacing: 9) {
+                        Label("Сервис сообщений пока не подключён", systemImage: "wifi.exclamationmark")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Spyder Chat станет доступен после активации сервера сети. Кошелёк и ключи работают независимо от чата.")
+                            .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
+                    }.foregroundStyle(WalletTheme.ink)
+                }
+            }
             WalletCard {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Адрес сервера (HTTPS)").font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                    TextField("https://spyder-chat-devnet…workers.dev", text: $chat.serverAddress)
-                        .font(.system(size: 14)).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .keyboardType(.URL)
-                        .foregroundStyle(WalletTheme.ink)
-                    Divider()
                     Text("Имя для чата").font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                     TextField("Как тебя зовут?", text: $name).font(.system(size: 16))
                         .foregroundStyle(WalletTheme.ink)
@@ -175,33 +199,16 @@ struct SpyderDevnetChatsHomeView: View {
                         .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
                 }
             }
-            Button {
-                Task { await chat.probeServer() }
-            } label: {
-                HStack(spacing: 8) {
-                    if chat.checkingServer { ProgressView() }
-                    Text(chat.checkingServer ? "Проверяем сервер…" : "Проверить подключение")
-                }
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(WalletTheme.ink)
-                .frame(maxWidth: .infinity)
-                .frame(height: 46)
-                .overlay(Capsule().stroke(WalletTheme.divider, lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .disabled(chat.checkingServer || chat.serverAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            if let status = chat.serverStatus {
-                Text(status)
-                    .font(.system(size: 12))
-                    .foregroundStyle(WalletTheme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            if let status = chat.serverStatus, chat.hasConfiguredServer {
+                Label(status, systemImage: "network")
+                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
             }
             Button {
                 Task { await chat.register(name: name, username: username) }
             } label: {
                 Text(chat.working ? "Подключаем…" : "Начать общение").spyderPrimaryButton()
-            }.buttonStyle(.plain).disabled(chat.working || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || username.count < 3)
-            Text("Нужен развёрнутый Cloudflare Worker из server/. Если адрес сервера не задан в сборке, введи HTTPS URL вручную. Сообщения пока без E2EE.")
+            }.buttonStyle(.plain).disabled(!chat.hasConfiguredServer || chat.working || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || username.count < 3)
+            Text("Сообщения пока без сквозного шифрования. Не отправляй сид-фразы, пароли или приватные ключи.")
                 .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
         }.spyderReveal(0.08)
     }

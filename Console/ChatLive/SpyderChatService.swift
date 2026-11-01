@@ -10,6 +10,7 @@ private struct SpyderChatIdentity: Codable {
     var inviteCode: String
     var name: String
     var username: String?
+    var server: String?  // Optional to decode older Keychain identities.
     var token: String { "\(id).\(secret)" }
 }
 
@@ -108,13 +109,19 @@ final class SpyderChatStore: ObservableObject {
     @Published private(set) var checkingServer = false
     @Published private(set) var serverStatus: String?
 
+    var hasConfiguredServer: Bool {
+        guard let url = URL(string: serverAddress), url.scheme == "https", url.host != nil else { return false }
+        return true
+    }
+
     private var identity: SpyderChatIdentity?
     private static let serverKey = "spyder.chat.server.url.v1"
 
     init() {
         let bundled = Bundle.main.object(forInfoDictionaryKey: "SpyderChatServerURL") as? String ?? ""
         let configured = bundled.hasPrefix("https://") ? bundled : ""
-        serverAddress = UserDefaults.standard.string(forKey: Self.serverKey) ?? configured
+        // A bundled production endpoint takes priority over a stale diagnostic override.
+        serverAddress = configured.isEmpty ? (UserDefaults.standard.string(forKey: Self.serverKey) ?? "") : configured
         if let data = SpyderChatKeychain.load(), let saved = try? JSONDecoder().decode(SpyderChatIdentity.self, from: data) {
             identity = saved
             hasIdentity = true
@@ -163,6 +170,9 @@ final class SpyderChatStore: ObservableObject {
         }
         if !anonymous {
             guard let identity else { throw SpyderChatNetworkError.missingAccount }
+            if let bound = identity.server, bound != serverAddress {
+                throw SpyderChatNetworkError.invalidServer
+            }
             request.setValue("Bearer \(identity.token)", forHTTPHeaderField: "Authorization")
         }
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -175,6 +185,18 @@ final class SpyderChatStore: ObservableObject {
         return decoded
     }
 
+    private func verifyExpectedServer() async throws {
+        struct Health: Decodable {
+            let status: String
+            let service: String
+            let version: Int
+        }
+        let health: Health = try await perform("/health", anonymous: true)
+        guard health.status == "ok", health.service == "spyder-chat-devnet", health.version == 1 else {
+            throw SpyderChatNetworkError.invalidResponse
+        }
+    }
+
     /// Check the deployed Spyder Chat devnet endpoint before registration.
     /// A valid response must identify the expected service and protocol version.
     func probeServer() async {
@@ -183,17 +205,7 @@ final class SpyderChatStore: ObservableObject {
         defer { checkingServer = false }
         do {
             try configureServer()
-            struct Health: Decodable {
-                let status: String
-                let service: String
-                let version: Int
-            }
-            let health: Health = try await perform("/health", anonymous: true)
-            guard health.status == "ok",
-                  health.service == "spyder-chat-devnet",
-                  health.version == 1 else {
-                throw SpyderChatNetworkError.invalidResponse
-            }
+            try await verifyExpectedServer()
             serverStatus = "Сервер Spyder Chat доступен"
         } catch {
             serverStatus = "Не удалось подключиться к серверу: " + error.localizedDescription
@@ -206,6 +218,7 @@ final class SpyderChatStore: ObservableObject {
         defer { working = false }
         do {
             try configureServer()
+            try await verifyExpectedServer()
             let cleaned = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(36))
             guard !cleaned.isEmpty else { errorMessage = "Введите имя для чата."; return }
             let handle = username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().replacingOccurrences(of: "@", with: "")
@@ -213,7 +226,7 @@ final class SpyderChatStore: ObservableObject {
                 errorMessage = "Username: 3–20 символов, латинские буквы, цифры и _. Начни с буквы."
                 return
             }
-            let candidate = SpyderChatIdentity(id: try randomHex(16), secret: try randomHex(32), inviteCode: try randomHex(12).uppercased(), name: cleaned, username: handle)
+            let candidate = SpyderChatIdentity(id: try randomHex(16), secret: try randomHex(32), inviteCode: try randomHex(12).uppercased(), name: cleaned, username: handle, server: serverAddress)
             struct Register: Encodable { let id: String; let secret: String; let invite_code: String; let name: String; let username: String }
             struct Ack: Decodable { let id: String; let name: String; let username: String?; let invite_code: String }
             let body = try JSONEncoder().encode(Register(id: candidate.id, secret: candidate.secret, invite_code: candidate.inviteCode, name: candidate.name, username: handle))
@@ -238,7 +251,10 @@ final class SpyderChatStore: ObservableObject {
             requests = result.requests
             inviteCode = result.invite_code
             connected = true
-        } catch { connected = false }
+        } catch {
+            connected = false
+            serverStatus = "Сервер сообщений недоступен. Проверь подключение."
+        }
     }
 
     func claimUsername(_ value: String) async -> Bool {
