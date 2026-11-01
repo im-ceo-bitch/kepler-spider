@@ -408,9 +408,11 @@ struct WalletHomeView: View {
                         .monospacedDigit()
                         .minimumScaleFactor(0.7)
                         .lineLimit(1)
-                    if !privacyHidden { Text("USD") }
-                        .font(.system(size: 21, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.76))
+                    if !privacyHidden {
+                        Text("USD")
+                            .font(.system(size: 21, weight: .medium))
+                            .foregroundStyle(Color.white.opacity(0.76))
+                    }
                 }
                 Text(publicAssets.totalUSD == nil ? "Обновляем балансы и курсы" :
                      (publicAssets.isPartialEstimate ? "Предварительная оценка · часть сетей недоступна" : "BTC · ETH · SOL · USDT · USDC"))

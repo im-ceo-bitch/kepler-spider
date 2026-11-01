@@ -92,7 +92,9 @@ private enum WalletActivityClient {
             guard item.hash.range(of: "^0x[a-fA-F0-9]{64}$", options: .regularExpression) != nil,
                   let url = URL(string: "https://etherscan.io/tx/\(item.hash)") else { return nil }
             let outgoing = item.from?.hash?.lowercased() == address.lowercased()
-            let amount = item.value.flatMap(Decimal.init(string:)).map { $0 / Decimal(string: "1000000000000000000")! }
+            let amount = item.value
+                .flatMap { Decimal(string: $0, locale: Locale(identifier: "en_US_POSIX")) }
+                .map { $0 / Decimal(string: "1000000000000000000", locale: Locale(identifier: "en_US_POSIX"))! }
             let status = (item.status ?? "").lowercased()
             let state: WalletChainActivity.State = status == "error" ? .failed :
                 (status == "ok" || status == "success" ? .confirmed : .pending)
@@ -138,7 +140,11 @@ private enum WalletActivityClient {
             signature = try container.decode(String.self, forKey: .signature)
             blockTime = try container.decodeIfPresent(TimeInterval.self, forKey: .blockTime)
             // Solana `err` is a JSON object OR null, not a string.
-            err = container.contains(.err) && !(try container.decodeNil(forKey: .err)) ? "error" : nil
+            if container.contains(.err) {
+                err = try container.decodeNil(forKey: .err) ? nil : "error"
+            } else {
+                err = nil
+            }
             confirmationStatus = try container.decodeIfPresent(String.self, forKey: .confirmationStatus)
         }
     }
