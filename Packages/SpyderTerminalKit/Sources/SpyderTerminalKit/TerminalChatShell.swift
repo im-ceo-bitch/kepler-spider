@@ -5,7 +5,6 @@ public enum SpyderChatDisplayMode: String, CaseIterable, Identifiable {
     case chat, terminal
     public var id: String { rawValue }
 }
-
 /// Drop-in view for an existing conversation screen. The original Chat content is
 /// passed through unchanged; no application chat files are replaced by the package.
 @available(iOS 17.0, macOS 13.0, *)
@@ -22,7 +21,6 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
     @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage("spyder.wallet.language") private var appLanguage = "ru"
     @State private var showSettings = false
-
     public init(context: TerminalActionContext, host: any TerminalActionHost,
                 showsChatSwitch: Bool = true,
                 @ViewBuilder chatContent: @escaping () -> ChatContent) {
@@ -33,7 +31,6 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
         _selection = State(initialValue: showsChatSwitch ? .chat : .terminal)
         _controller = StateObject(wrappedValue: Session(host: host))
     }
-
     private var english: Bool {
         settings.language == .en || (settings.language == .auto && appLanguage == "en")
     }
@@ -41,7 +38,6 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
         settings.accent == .signalRed ? Color(red: 0.93, green: 0.22, blue: 0.25) :
             Color(red: 0.20, green: 0.53, blue: 1.00)
     }
-
     private var palette: TerminalThemePalette {
         TerminalThemePalette(appearance: settings.appearance,
                              systemScheme: systemColorScheme, accent: settings.accent)
@@ -49,7 +45,6 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
     private var terminalScheme: ColorScheme {
         settings.appearance == .system ? systemColorScheme : (settings.appearance == .light ? .light : .dark)
     }
-
     public var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
@@ -76,7 +71,6 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .environment(\.colorScheme, selection == .terminal ? terminalScheme : systemColorScheme)
-
             // Keep the existing chat subtree mounted while the terminal is visible.
             // This preserves local scroll/input state when toggling between modes.
             ZStack {
@@ -113,15 +107,15 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
         }
         .onChange(of: context) { _, _ in controller.changeConversation() }
     }
-
     private func supportedCommands() -> Set<String> {
-        let local: Set<String> = ["terminal.settings.open", "terminal.help", "terminal.history.open",
-                                  "terminal.mode.set", "terminal.clear", "terminal.capabilities"]
-        .union(TerminalPreferenceCommands.actionIDs)
+        // A Set must be constructed before calling union. An array literal followed
+        // directly by `.union` can be inferred as [String] by the Swift compiler.
+        let base: Set<String> = ["terminal.settings.open", "terminal.help", "terminal.history.open",
+                                 "terminal.mode.set", "terminal.clear", "terminal.capabilities"]
+        let local = base.union(TerminalPreferenceCommands.actionIDs)
         let registered = (actionHost as? TerminalActionRegistryHost)?.availableCommandIDs ?? []
         return local.union(registered)
     }
-
     private var terminalContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -134,7 +128,6 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
             }
             .foregroundStyle(.secondary)
             .padding(16)
-
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
@@ -163,7 +156,6 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
                     }
                 }
             }
-
             if let approval = controller.approval {
                 approvalView(approval)
             }
@@ -177,7 +169,6 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
         .background(palette.background)
         .accessibilityIdentifier("spyder.chat.terminal")
     }
-
     private func approvalView(_ approval: TerminalApproval) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(approval.preview.title).font(.headline)
@@ -201,7 +192,6 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
         .padding(.horizontal, 12)
         .accessibilityIdentifier("spyder.terminal.approval")
     }
-
     private func run(_ input: String, _ interpretation: TerminalInterpretation) {
         // Internal commands are never forwarded to a financial/network host.
         if case .matched(let match) = interpretation {
@@ -246,7 +236,6 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
                                         context: context, retainHistory: settings.historyEnabled, english: english) }
     }
 }
-
 @MainActor
 @available(iOS 17.0, macOS 13.0, *)
 private final class Session: ObservableObject {
@@ -257,7 +246,6 @@ private final class Session: ObservableObject {
     private let gate: TerminalExecutionGate
     private var activeCommand: String = ""
     private var conversationGeneration = UUID()
-
     init(host: any TerminalActionHost) { gate = TerminalExecutionGate(host: host) }
 
     func append(command: String, output: String, retainHistory: Bool) {
@@ -268,7 +256,6 @@ private final class Session: ObservableObject {
             entries = [Entry(command: command, output: output)]
         }
     }
-
     func handle(input: String, interpretation: TerminalInterpretation,
                 context: TerminalActionContext, retainHistory: Bool, english: Bool) async {
         guard !isRunning else { return }
@@ -294,7 +281,6 @@ private final class Session: ObservableObject {
         guard callGeneration == conversationGeneration else { return }
         render(result, command: displayedCommand, retainHistory: retainHistory, english: english)
     }
-
     func confirm(_ id: UUID, retainHistory: Bool, english: Bool) async {
         guard !isRunning else { return }
         isRunning = true
@@ -307,7 +293,6 @@ private final class Session: ObservableObject {
         approval = nil
         render(result, command: command, retainHistory: retainHistory, english: english)
     }
-
     func cancel() { gate.cancelApproval(); approval = nil }
     func clearHistory() { entries.removeAll() }
     func changeConversation() {
@@ -315,7 +300,6 @@ private final class Session: ObservableObject {
         cancel()
         clearHistory()
     }
-
     private func render(_ result: TerminalDispatchOutcome, command: String, retainHistory: Bool, english: Bool) {
         switch result {
         case .completed(let value): append(command: command, output: value.message, retainHistory: retainHistory)
