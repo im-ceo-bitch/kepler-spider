@@ -22,8 +22,8 @@ struct WalletChatMessage: Identifiable {
 }
 
 enum WalletTab: Hashable { case wallet, chats }
-enum WalletRoute: Hashable { case chat(WalletContact), activity }
+enum WalletRoute: Hashable { case chat(WalletContact), activity, asset(SpyderChain) }
 enum WalletModal: String, Identifiable {
-    case send, receive, touch, profile, request
+    case send, receive, touch, profile, request, accounts
     var id: String { rawValue }
 }

@@ -3,13 +3,18 @@ import SwiftUI
 struct WalletSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("spyder.wallet.appearance") private var appearance = WalletAppearance.system.rawValue
+    @AppStorage("spyder.wallet.language") private var language = "ru"
     @State private var backupWords: [String] = []
     @State private var showBackup = false
+    @State private var showAccounts = false
+    @State private var backupCloudSuccess = false
+    @State private var backupCloudBusy = false
     @State private var showDevnetSettings = false
     @State private var showChatSettings = false
     @State private var showDeveloperOptions = false
     @State private var vaultError: String?
     @EnvironmentObject private var chat: SpyderChatStore
+    @EnvironmentObject private var access: WalletAccess
 
     var body: some View {
         NavigationStack {
@@ -43,15 +48,33 @@ struct WalletSettingsView: View {
                             .font(.system(size: 21, weight: .bold))
                         Picker("Тема", selection: $appearance) {
                             ForEach(WalletAppearance.allCases) { option in
-                                Text(option.title).tag(option.rawValue)
+                                Text(LocalizedStringKey(option.title)).tag(option.rawValue)
                             }
                         }
                         .pickerStyle(.segmented)
                     }
                     .foregroundStyle(WalletTheme.ink)
                     .spyderReveal(0.13)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Язык интерфейса").font(.system(size: 21, weight: .bold))
+                        Picker("Язык интерфейса", selection: $language) {
+                            Text("Русский").tag("ru")
+                            Text("English").tag("en")
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .foregroundStyle(WalletTheme.ink)
                     WalletCard {
                         VStack(alignment: .leading, spacing: 17) {
+                            Button { showAccounts = true } label: {
+                                HStack {
+                                    Label("Управление кошельками", systemImage: "wallet.bifold")
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            Divider()
                             Label("Защита Face ID / код-пароль устройства", systemImage: "faceid")
                                 .font(.system(size: 14, weight: .medium))
                             Divider()
@@ -66,6 +89,23 @@ struct WalletSettingsView: View {
                                 .frame(minHeight: 45)
                             }
                             .buttonStyle(.plain)
+                            Divider()
+                            Button {
+                                backupCloudBusy = true
+                                let selectedID = access.activeWalletID
+                                Task.detached(priority: .userInitiated) {
+                                    do {
+                                        let words = try WalletVault.revealForBackup(id: selectedID)
+                                        try WalletICloudRecovery.saveWithConsent(words.joined(separator: " "))
+                                        await MainActor.run { backupCloudBusy = false; backupCloudSuccess = true }
+                                    } catch {
+                                        await MainActor.run { backupCloudBusy = false; vaultError = error.localizedDescription }
+                                    }
+                                }
+                            } label: {
+                                Label(backupCloudSuccess ? "Копия в iCloud Keychain добавлена" : "Сохранить в iCloud Keychain (необязательно)", systemImage: "icloud.and.arrow.up")
+                            }
+                            .disabled(backupCloudBusy || backupCloudSuccess)
                             Divider()
                             Label("Ethereum · Solana · Bitcoin: адреса в разделе Wallet", systemImage: "network")
                                 .font(.system(size: 14))
@@ -104,6 +144,10 @@ struct WalletSettingsView: View {
             .background(WalletTheme.canvas.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
         }
+        .sheet(isPresented: $showAccounts) {
+            WalletAccountsView()
+                .presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $showDevnetSettings) {
             SpiderDevnetSettingsView()
                 .presentationDragIndicator(.visible)
@@ -128,9 +172,10 @@ struct WalletSettingsView: View {
     }
 
     private func revealRecovery() {
+        let selectedID = access.activeWalletID
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let words = try WalletVault.revealForBackup()
+                let words = try WalletVault.revealForBackup(id: selectedID)
                 DispatchQueue.main.async {
                     backupWords = words
                     showBackup = true

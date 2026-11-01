@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct ConsoleApp: App {
     @AppStorage("spyder.wallet.appearance") private var appearance = WalletAppearance.system.rawValue
+    @AppStorage("spyder.wallet.language") private var language = "ru"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingBrand = true
     @StateObject private var walletAccess = WalletAccess()
@@ -39,6 +40,7 @@ struct ConsoleApp: App {
                 }
             }
             .preferredColorScheme(preferredScheme)
+            .environment(\.locale, Locale(identifier: language))
             .tint(WalletTheme.ink)
             .onChange(of: scenePhase) { _, phase in
                 if phase == .background {

@@ -1,10 +1,19 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 private enum SetupStep { case start, backup, verify, importWallet, complete }
 
 struct WalletOnboardingView: View {
     @EnvironmentObject private var access: WalletAccess
+    @Environment(\.dismiss) private var dismiss
+    private let isAddingAccount: Bool
+    private let onComplete: (() -> Void)?
+
+    init(isAddingAccount: Bool = false, onComplete: (() -> Void)? = nil) {
+        self.isAddingAccount = isAddingAccount
+        self.onComplete = onComplete
+    }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var step: SetupStep = .start
@@ -14,6 +23,12 @@ struct WalletOnboardingView: View {
     @State private var confirmOffline = false
     @State private var reveal = false
     @State private var testPhraseOnly = false
+    @State private var showCopyWarning = false
+    @State private var cloudSaved = false
+    @State private var cloudBusy = false
+    @State private var cloudInfo: String?
+    @State private var cloudFailure: String?
+
     @FocusState private var focusedImport: Bool
     private let positions = [1, 5, 10] // 1-based; never the whole secret in an alert or log
 
@@ -29,6 +44,8 @@ struct WalletOnboardingView: View {
             HStack {
                 if step != .start && step != .complete {
                     SpyderNavigationButton(symbol: "chevron.left", label: "Назад") { goBack() }
+                } else if step == .start && isAddingAccount {
+                    SpyderNavigationButton(symbol: "xmark", label: "Закрыть") { dismiss() }
                 }
                 Spacer()
                 Text("SPYDER WALLET")
@@ -66,6 +83,19 @@ struct WalletOnboardingView: View {
         )) {
             Button("Понятно", role: .cancel) { access.errorMessage = nil }
         } message: { Text(access.errorMessage ?? "") }
+        .confirmationDialog("Копирование секретной фразы", isPresented: $showCopyWarning, titleVisibility: .visible) {
+            Button("Скопировать на 45 секунд") {
+                UIPasteboard.general.setItems([[UTType.utf8PlainText.identifier: phrase]], options: [
+                    .expirationDate: Date().addingTimeInterval(45), .localOnly: true
+                ])
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            }
+        } message: {
+            Text("Другие приложения могут прочитать буфер обмена. Предпочтительнее записать слова офлайн.")
+        }
+        .alert("iCloud Keychain", isPresented: Binding(get: { cloudFailure != nil }, set: { if !$0 { cloudFailure = nil } })) {
+            Button("Понятно", role: .cancel) { cloudFailure = nil }
+        } message: { Text(cloudFailure ?? "") }
         .overlay {
             if scenePhase != .active && (step == .backup || step == .verify || step == .importWallet) {
                 WalletTheme.canvas.ignoresSafeArea()
@@ -81,7 +111,7 @@ struct WalletOnboardingView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 23)
                 .spyderReveal(0.01)
-            Text("Your wallet.\nYour keys.")
+            Text("Ваш кошелёк.\nВаши ключи.")
                 .font(.system(size: 38, weight: .bold))
                 .foregroundStyle(WalletTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
@@ -104,7 +134,7 @@ struct WalletOnboardingView: View {
             }
             .buttonStyle(.plain)
             .spyderReveal(0.22)
-            Label("Self-custody · ключи хранятся на iPhone", systemImage: "lock.shield")
+            Label("Ключи хранятся в защищённом хранилище iPhone", systemImage: "lock.shield")
                 .font(.system(size: 12))
                 .foregroundStyle(WalletTheme.secondary)
                 .frame(maxWidth: .infinity)
@@ -148,7 +178,15 @@ struct WalletOnboardingView: View {
                     .frame(maxWidth: .infinity, minHeight: 44)
                 }
             }
-            Label("Никому не отправляй фразу и не сохраняй её в скриншотах, заметках или облаке.", systemImage: "exclamationmark.shield")
+            if reveal {
+                Button { showCopyWarning = true } label: {
+                    Label("Копировать слова (45 секунд)", systemImage: "doc.on.doc")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+            }
+            Label("Никому не отправляй фразу. Скриншоты и обычные заметки не защищают твои средства.", systemImage: "exclamationmark.shield")
                 .font(.system(size: 13))
                 .foregroundStyle(WalletTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -206,6 +244,18 @@ struct WalletOnboardingView: View {
         VStack(alignment: .leading, spacing: 20) {
             stepLabel("RESTORE")
             heading("Восстановить кошелёк", subtitle: "Вставь 12 или 24 английских слова BIP-39 в исходном порядке.")
+            Button { restoreFromICloud() } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "icloud.and.arrow.down")
+                        .symbolEffect(.pulse, isActive: cloudBusy)
+                    Text(LocalizedStringKey(cloudBusy ? "Проверяем iCloud Keychain…" : "Восстановить из iCloud Keychain"))
+                }
+                .spyderPrimaryButton()
+            }
+            .buttonStyle(.plain)
+            .disabled(cloudBusy)
+            Text("Требуется тот же Apple Account и включённый iCloud Keychain. Если резервной копии нет, используй свои 12/24 слова.")
+                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
             WalletCard {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Secret Recovery Phrase")
@@ -221,6 +271,14 @@ struct WalletOnboardingView: View {
                         .privacySensitive()
                 }
             }
+            Button {
+                // Explicit user action: Apple controls whether pasteboard access is allowed.
+                if let text = UIPasteboard.general.string { importText = text }
+            } label: {
+                Label("Вставить из буфера обмена", systemImage: "doc.on.clipboard")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .buttonStyle(.plain)
             Label("Если в предыдущем кошельке использовалась дополнительная BIP-39 passphrase, сейчас импортировать его нельзя.", systemImage: "info.circle")
                 .font(.system(size: 13))
                 .foregroundStyle(WalletTheme.secondary)
@@ -256,11 +314,45 @@ struct WalletOnboardingView: View {
             Text("Кошелёк защищён")
                 .font(.system(size: 29, weight: .bold))
                 .foregroundStyle(WalletTheme.ink)
-            Text("Фраза сохранена в Keychain и защищена Face ID или код-паролем iPhone. Далее ты сможешь локально создать публичные адреса Ethereum, Solana и Bitcoin с дополнительным подтверждением.")
+            Text("Фраза сохранена локально в защищённом Keychain iPhone. Face ID или код устройства защищает доступ. Для восстановления после потери телефона сохрани резервную копию отдельно.")
                 .font(.system(size: 15))
                 .foregroundStyle(WalletTheme.secondary)
                 .multilineTextAlignment(.center)
-            Button { access.finishSetup() } label: {
+            WalletCard {
+                VStack(alignment: .leading, spacing: 11) {
+                    Label("Резервная копия в iCloud Keychain", systemImage: "icloud.and.arrow.up")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("Необязательно. Фраза синхронизируется только через iCloud Keychain Apple, если он включён. Это отличается от локальной защиты и позволяет восстановить кошелёк на другом iPhone. Никогда не заменяй этим офлайн-копию.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(WalletTheme.secondary)
+                    if cloudSaved {
+                        Label("Копия добавлена в iCloud Keychain", systemImage: "checkmark.shield.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Button {
+                            cloudBusy = true
+                            let selectedID = access.activeWalletID
+                            Task.detached(priority: .userInitiated) {
+                                do {
+                                    let words = try WalletVault.revealForBackup(id: selectedID)
+                                    try WalletICloudRecovery.saveWithConsent(words.joined(separator: " "))
+                                    await MainActor.run { cloudSaved = true; cloudBusy = false }
+                                } catch {
+                                    await MainActor.run { cloudFailure = error.localizedDescription; cloudBusy = false }
+                                }
+                            }
+                        } label: {
+                            Label(LocalizedStringKey(cloudBusy ? "Сохраняем…" : "Сохранить по моему согласию"), systemImage: "icloud")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .disabled(cloudBusy)
+                    }
+                }
+            }
+            Button {
+                access.finishSetup()
+                onComplete?()
+            } label: {
                 Text("Открыть Spyder Wallet").spyderPrimaryButton()
             }
             .buttonStyle(.plain)
@@ -272,8 +364,8 @@ struct WalletOnboardingView: View {
 
     @ViewBuilder private func heading(_ title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 32, weight: .bold)).foregroundStyle(WalletTheme.ink)
-            Text(subtitle).font(.system(size: 15)).foregroundStyle(WalletTheme.secondary)
+            Text(LocalizedStringKey(title)).font(.system(size: 32, weight: .bold)).foregroundStyle(WalletTheme.ink)
+            Text(LocalizedStringKey(subtitle)).font(.system(size: 15)).foregroundStyle(WalletTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -297,6 +389,26 @@ struct WalletOnboardingView: View {
                 }
                 .padding(.horizontal, 11).padding(.vertical, 12)
                 .background(WalletTheme.canvas, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    private func restoreFromICloud() {
+        guard !cloudBusy else { return }
+        cloudBusy = true
+        Task.detached(priority: .userInitiated) {
+            do {
+                let recovered = try WalletICloudRecovery.restore()
+                await MainActor.run {
+                    cloudBusy = false
+                    if access.savePhrase(recovered) {
+                        importText = ""
+                        step = .complete
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    }
+                }
+            } catch {
+                await MainActor.run { cloudBusy = false; cloudFailure = error.localizedDescription }
             }
         }
     }

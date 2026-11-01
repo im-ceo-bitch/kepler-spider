@@ -174,6 +174,10 @@ struct WalletReceiveView: View {
     @EnvironmentObject private var chains: WalletChainStore
     @EnvironmentObject private var spider: SpiderDevnetStore
     @State private var selected: SpyderChain? = nil
+
+    init(preselected: SpyderChain? = nil) {
+        _selected = State(initialValue: preselected)
+    }
     @State private var acknowledge = false
     @State private var copied = false
 

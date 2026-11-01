@@ -139,10 +139,15 @@ final class WalletChainStore: ObservableObject {
     // Addresses are public. Cache ONLY these values, never mnemonic words or keys.
     // Prevent an extra Face ID prompt on every visit to the Wallet tab.
     private static let addressCacheKey = "spyder.wallet.publicAddresses.v1"
+    private var activeID = UserDefaults.standard.string(forKey: "spyder.wallet.selectedAccount.v2") ?? WalletVault.legacyID
+    private var derivationGeneration = UUID()
+    private static func cacheKey(_ id: String) -> String {
+        id == WalletVault.legacyID ? addressCacheKey : "spyder.wallet.publicAddresses.v2." + id
+    }
 
     init() {
-        guard WalletVault.exists(),
-              let data = UserDefaults.standard.data(forKey: Self.addressCacheKey),
+        guard WalletVault.exists(id: activeID),
+              let data = UserDefaults.standard.data(forKey: Self.cacheKey(activeID)),
               let saved = try? JSONDecoder().decode([SpyderAddress].self, from: data),
               Set(saved.map(\.chain)) == Set(SpyderChain.allCases),
               saved.count == SpyderChain.allCases.count,
@@ -167,33 +172,51 @@ final class WalletChainStore: ObservableObject {
     }
 
     func clear() {
-        // Public receive addresses are safe to keep between lock/unlock cycles.
-        // Neither the seed nor a private key is retained by this store.
+        // A background lock invalidates pending derivations; caches contain ONLY public addresses.
+        derivationGeneration = UUID()
         isLoading = false
+    }
+
+    func selectAccount(_ id: String) {
+        guard activeID != id else { return }
+        activeID = id
+        derivationGeneration = UUID()
+        isLoading = false
+        addresses = []
+        errorMessage = nil
+        if let data = UserDefaults.standard.data(forKey: Self.cacheKey(id)),
+           let saved = try? JSONDecoder().decode([SpyderAddress].self, from: data),
+           saved.count == SpyderChain.allCases.count,
+           saved.allSatisfy({ Self.isPlausiblePublicAddress($0) }) { addresses = saved }
     }
 
     func activate() {
         guard !isLoading else { return }
+        let id = activeID
+        let generation = derivationGeneration
         isLoading = true
         errorMessage = nil
         Task {
             do {
                 let resolved = try await Task.detached(priority: .userInitiated) {
                     // Keychain triggers an independent system authentication prompt.
-                    var words = try WalletVault.revealForBackup()
+                    var words = try WalletVault.revealForBackup(id: id)
                     defer { words.removeAll(keepingCapacity: false) }
                     let phrase = words.joined(separator: " ")
                     return try SpyderAddressDeriver.addresses(phrase: phrase)
                 }.value
+                guard id == activeID, generation == derivationGeneration else { return }
                 addresses = resolved
                 if let data = try? JSONEncoder().encode(resolved) {
-                    UserDefaults.standard.set(data, forKey: Self.addressCacheKey)
+                    UserDefaults.standard.set(data, forKey: Self.cacheKey(id))
                 }
             } catch {
-                addresses = []
-                errorMessage = error.localizedDescription
+                if id == activeID && generation == derivationGeneration {
+                    addresses = []
+                    errorMessage = error.localizedDescription
+                }
             }
-            isLoading = false
+            if generation == derivationGeneration { isLoading = false }
         }
     }
 }

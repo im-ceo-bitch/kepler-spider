@@ -2,11 +2,15 @@ import SwiftUI
 import UIKit
 
 struct WalletHomeView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var chains: WalletChainStore
+    @EnvironmentObject private var access: WalletAccess
     @EnvironmentObject private var publicAssets: WalletPublicAssetsStore
     @EnvironmentObject private var spider: SpiderDevnetStore
+    @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
     let onAction: (WalletModal) -> Void
     let onActivity: () -> Void
+    let onAsset: (SpyderChain) -> Void
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -17,11 +21,38 @@ struct WalletHomeView: View {
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                             .tracking(2)
                             .foregroundStyle(WalletTheme.secondary)
-                        Text("Wallet")
-                            .font(.system(size: 34, weight: .bold))
+                        Button {
+                            onAction(.accounts)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(access.activeAccountName)
+                                    .font(.system(size: 26, weight: .bold))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 13, weight: .bold))
+                            }
                             .foregroundStyle(WalletTheme.ink)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Выбрать кошелёк")
+                        Text("Bitcoin · Ethereum · Solana")
+                            .font(.system(size: 12))
+                            .foregroundStyle(WalletTheme.secondary)
                     }
                     Spacer()
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                            privacyHidden.toggle()
+                        }
+                        UISelectionFeedbackGenerator().selectionChanged()
+                    } label: {
+                        Image(systemName: privacyHidden ? "eye.slash" : "eye")
+                            .font(.system(size: 19))
+                            .frame(width: 45, height: 45)
+                            .background(WalletTheme.surface, in: Circle())
+                    }
+                    .accessibilityLabel(privacyHidden ? "Показать баланс" : "Скрыть баланс")
                     Button { onAction(.profile) } label: {
                         Image(systemName: "person.crop.circle")
                             .font(.system(size: 24, weight: .light))
@@ -93,6 +124,9 @@ struct WalletHomeView: View {
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
         .refreshable { await publicAssets.refresh(addresses: chains.addresses) }
+        .task(id: access.activeWalletID) {
+            chains.selectAccount(access.activeWalletID)
+        }
         .task(id: chains.addresses) {
             if chains.addresses.isEmpty && !chains.isLoading {
                 // Address derivation requires iOS authentication once. Afterwards
@@ -222,6 +256,7 @@ struct WalletHomeView: View {
             } else {
                 VStack(spacing: 1) {
                     ForEach(SpyderChain.allCases) { chain in
+                        Button { onAsset(chain) } label: {
                         HStack(spacing: 13) {
                             Image(systemName: chain.symbol)
                                 .font(.system(size: 22, weight: .regular))
@@ -236,10 +271,10 @@ struct WalletHomeView: View {
                             Spacer()
                             VStack(alignment: .trailing, spacing: 4) {
                                 if let balance = publicAssets.balances[chain] {
-                                    Text(WalletPublicAssetsStore.formatted(balance) + " " + chain.ticker)
+                                    Text(privacyHidden ? "••••••" : WalletPublicAssetsStore.formatted(balance) + " " + chain.ticker)
                                         .font(.system(size: 15, weight: .medium)).monospacedDigit()
                                     if let price = publicAssets.prices[chain] {
-                                        Text("≈ $" + WalletPublicAssetsStore.formatted(balance * price, fractionDigits: 2))
+                                        Text(privacyHidden ? "••••" : "≈ $" + WalletPublicAssetsStore.formatted(balance * price, fractionDigits: 2))
                                             .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                                     }
                                 } else {
@@ -248,16 +283,13 @@ struct WalletHomeView: View {
                                         .foregroundStyle(WalletTheme.secondary)
                                 }
                             }
-                            if let value = chains.address(for: chain),
-                               let explorer = explorerURL(for: chain, address: value) {
-                                Link(destination: explorer) {
-                                    Image(systemName: "arrow.up.right.square")
-                                        .font(.system(size: 17))
-                                        .foregroundStyle(WalletTheme.secondary)
-                                }.accessibilityLabel("Открыть адрес в блокчейн-обозревателе")
-                            }
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(WalletTheme.secondary)
                         }
                         .padding(.vertical, 13)
+                        }
+                        .buttonStyle(.plain)
                         if chain != SpyderChain.allCases.last { Divider().overlay(WalletTheme.divider) }
                     }
                 }
@@ -273,9 +305,9 @@ struct WalletHomeView: View {
                                     Text("Ethereum · ERC-20").font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
                                 }
                                 Spacer()
-                                Text(publicAssets.stablecoins[ticker].map {
+                                Text(privacyHidden ? "••••••" : (publicAssets.stablecoins[ticker].map {
                                     WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + ticker
-                                } ?? "— " + ticker)
+                                } ?? "— " + ticker))
                                 .font(.system(size: 14)).monospacedDigit()
                             }
                         }
@@ -334,7 +366,7 @@ struct WalletHomeView: View {
     private var balanceCard: some View {
         VStack(alignment: .leading, spacing: 30) {
             HStack {
-                Label("Основной кошелёк", systemImage: "wallet.pass")
+                Label(access.activeAccountName, systemImage: "wallet.pass")
                     .font(.system(size: 14))
                     .foregroundStyle(Color.white.opacity(0.85))
                 Spacer()
@@ -348,13 +380,13 @@ struct WalletHomeView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(Color.white.opacity(0.58))
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(publicAssets.totalUSD.map { WalletPublicAssetsStore.formatted($0, fractionDigits: 2) } ?? "—")
+                    Text(privacyHidden ? "••••••" : (publicAssets.totalUSD.map { WalletPublicAssetsStore.formatted($0, fractionDigits: 2) } ?? "—"))
                         .font(.system(size: 36, weight: .semibold, design: .rounded))
                         .foregroundStyle(Color.white)
                         .monospacedDigit()
                         .minimumScaleFactor(0.7)
                         .lineLimit(1)
-                    Text("USD")
+                    if !privacyHidden { Text("USD") }
                         .font(.system(size: 21, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.76))
                 }
@@ -389,7 +421,7 @@ struct WalletHomeView: View {
                     .frame(height: 70)
                     .background(dark ? Color(red: 0.11, green: 0.11, blue: 0.12) : WalletTheme.surface,
                                 in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(WalletTheme.ink)
                     .lineLimit(1)

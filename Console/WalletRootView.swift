@@ -6,6 +6,7 @@ struct WalletRootView: View {
     @State private var selectedTab: WalletTab = .wallet
     @State private var path = NavigationPath()
     @State private var presented: WalletModal?
+    @State private var sendChain: SpyderChain?
     @State private var selectedContact: WalletContact = WalletContact(id: "", name: "Не выбран", handle: "", letter: "", preview: "", time: "")
 
     var body: some View {
@@ -13,8 +14,13 @@ struct WalletRootView: View {
             Group {
                 switch selectedTab {
                 case .wallet:
-                    WalletHomeView { action in presented = action } onActivity: {
+                    WalletHomeView { action in
+                        sendChain = nil
+                        presented = action
+                    } onActivity: {
                         path.append(WalletRoute.activity)
+                    } onAsset: { chain in
+                        path.append(WalletRoute.asset(chain))
                     }
                 case .chats:
                     ChatsHomeView(onOpen: { contact in
@@ -33,6 +39,14 @@ struct WalletRootView: View {
                     })
                 case .activity:
                     WalletActivityView(onBack: { if !path.isEmpty { path.removeLast() } })
+                case .asset(let chain):
+                    WalletAssetDetailView(chain: chain, onSend: { target in
+                        sendChain = target
+                        presented = .send
+                    }, onReceive: {
+                        sendChain = chain
+                        presented = .receive
+                    })
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
@@ -53,11 +67,11 @@ struct WalletRootView: View {
     private func modalView(_ modal: WalletModal) -> some View {
         switch modal {
         case .send:
-            WalletSendAvailabilityView()
+            WalletSendFlowView(preselected: sendChain)
         case .request:
             WalletTransferView(isRequest: true, contact: selectedContact)
         case .receive:
-            WalletReceiveView()
+            WalletReceiveView(preselected: sendChain)
                 .presentationDetents([.medium, .large])
         case .touch:
             WalletTouchView(onConnect: { contact in
@@ -68,13 +82,15 @@ struct WalletRootView: View {
             })
         case .profile:
             WalletSettingsView()
+        case .accounts:
+            WalletAccountsView()
         }
     }
 
     private var bottomBar: some View {
         HStack(spacing: 5) {
-            tabButton(.wallet, title: "Wallet", symbol: "wallet.pass")
-            tabButton(.chats, title: "Chats", symbol: "message")
+            tabButton(.wallet, title: "Кошелёк", symbol: "wallet.pass")
+            tabButton(.chats, title: "Сеть", symbol: "message")
         }
         .padding(5)
         .background(WalletTheme.surface, in: Capsule())
@@ -97,7 +113,7 @@ struct WalletRootView: View {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
                     .font(.system(size: 19, weight: .medium))
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.system(size: 16, weight: .medium))
             }
             .frame(maxWidth: .infinity)
@@ -110,37 +126,3 @@ struct WalletRootView: View {
     }
 }
 
-// Mainnet transfer signing and broadcasting must not be represented as enabled
-// until chain-specific fee/nonce handling and safety tests are complete.
-private struct WalletSendAvailabilityView: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Text("Отправить")
-                    .font(.system(size: 30, weight: .bold))
-                Spacer()
-                SpyderNavigationButton(symbol: "xmark", label: "Закрыть") { dismiss() }
-            }
-            Spacer(minLength: 24)
-            Image(systemName: "lock.shield")
-                .font(.system(size: 38))
-                .frame(width: 76, height: 76)
-                .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 24))
-            Text("Отправка пока недоступна")
-                .font(.system(size: 23, weight: .bold))
-            Text("BTC, ETH и SOL уже можно получать и проверять в блокчейне. Отправка реальных средств будет доступна после проверки транзакционной подписи, комиссий и восстановления кошелька. Мы не будем предлагать непроверенный перевод.")
-                .font(.system(size: 15))
-                .foregroundStyle(WalletTheme.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer()
-            Button("Понятно") { dismiss() }
-                .spyderPrimaryButton()
-                .buttonStyle(.plain)
-        }
-        .foregroundStyle(WalletTheme.ink)
-        .padding(24)
-        .background(WalletTheme.canvas.ignoresSafeArea())
-    }
-}

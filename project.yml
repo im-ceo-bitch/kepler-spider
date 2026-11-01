@@ -1,6 +1,7 @@
 name: Console
 options:
   createIntermediateGroups: true
+  developmentLanguage: ru
 
 packages:
   BIP39MnemonicKit:

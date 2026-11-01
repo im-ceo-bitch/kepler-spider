@@ -128,6 +128,20 @@ final class WalletPublicAssetsStore: ObservableObject {
     @Published private(set) var updatedAt: Date?
     @Published private(set) var loading = false
     @Published private(set) var priceError: String?
+    private var refreshGeneration = UUID()
+
+    func resetForAccountChange() {
+        refreshGeneration = UUID()
+        balances = [:]
+        prices = [:]
+        failures = [:]
+        stablecoins = [:]
+        stablecoinPrices = [:]
+        stablecoinFailures = [:]
+        updatedAt = nil
+        priceError = nil
+        loading = false
+    }
 
     // Use only the amounts actually retrieved. Failures never become fake zeroes.
     // Label the displayed estimate as partial when any network or price is missing.
@@ -159,8 +173,9 @@ final class WalletPublicAssetsStore: ObservableObject {
 
     func refresh(addresses: [SpyderAddress]) async {
         guard !loading, !addresses.isEmpty else { return }
+        let generation = refreshGeneration
         loading = true
-        defer { loading = false }
+        defer { if generation == refreshGeneration { loading = false } }
         var read: [SpyderChain: Decimal] = [:]
         var errors: [SpyderChain: String] = [:]
         await withTaskGroup(of: (SpyderChain, Result<Decimal, Error>).self) { group in
@@ -177,6 +192,7 @@ final class WalletPublicAssetsStore: ObservableObject {
                 }
             }
         }
+        guard generation == refreshGeneration else { return }
         // An API error must not leave a stale displayed amount from an earlier refresh.
         balances = read
         failures = errors
@@ -201,6 +217,7 @@ final class WalletPublicAssetsStore: ObservableObject {
                     }
                 }
             }
+            guard generation == refreshGeneration else { return }
             stablecoins = amounts
             stablecoinFailures = problems
         } else {
@@ -209,14 +226,16 @@ final class WalletPublicAssetsStore: ObservableObject {
         }
         do {
             let market = try await WalletPublicAssetClient.prices()
+            guard generation == refreshGeneration else { return }
             prices = market.native
             stablecoinPrices = market.stable
             priceError = nil
         } catch {
+            guard generation == refreshGeneration else { return }
             prices = [:]
             stablecoinPrices = [:]
             priceError = "USD-курсы недоступны: " + error.localizedDescription
         }
-        updatedAt = Date()
+        if generation == refreshGeneration { updatedAt = Date() }
     }
 }
