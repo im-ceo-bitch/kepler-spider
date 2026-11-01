@@ -3,7 +3,8 @@ import Security
 import SwiftUI
 
 // Spyder Chat Devnet identity is separate from the BIP-39 wallet. Never upload recovery words.
-// Devnet messages are persisted in plaintext on the user's own Worker. E2EE is NOT available yet.
+// Chat v2 stores only encrypted envelopes. Legacy v1 server may have historic plaintext;
+// do not fetch historic plaintext through v2 and do not silently fall back to insecure delivery.
 private struct SpyderChatIdentity: Codable {
     var id: String
     var secret: String
@@ -35,7 +36,9 @@ private struct SpyderChatList: Decodable {
     let invite_code: String
 }
 private struct SpyderChatSearchResult: Decodable { let users: [SpyderChatPerson] }
-private struct SpyderChatHistory: Decodable { let messages: [SpyderServerMessage] }
+private struct SpyderChatHistory: Decodable { let messages: [SpyderEncryptedMessage] }
+private struct SpyderChatPeerKeyResponse: Decodable { let keys: SpyderPeerKeys }
+private struct SpyderChatKeysAck: Decodable { let status: String }
 private struct SpyderChatErrorResponse: Decodable { let error: String }
 
 private enum SpyderChatKeychain {
@@ -107,6 +110,9 @@ final class SpyderChatStore: ObservableObject {
     @Published private(set) var working = false
     @Published private(set) var connected = false
     @Published private(set) var checkingServer = false
+    @Published private(set) var peerFingerprints: [String: String] = [:]
+    @Published private(set) var encryptionReady = false
+    @Published private(set) var discoverable = false
     @Published private(set) var serverStatus: String?
 
     var hasConfiguredServer: Bool {
@@ -190,9 +196,10 @@ final class SpyderChatStore: ObservableObject {
             let status: String
             let service: String
             let version: Int
+            let e2ee: Bool
         }
         let health: Health = try await perform("/health", anonymous: true)
-        guard health.status == "ok", health.service == "spyder-chat-devnet", health.version == 1 else {
+        guard health.status == "ok", health.service == "spyder-chat-devnet", health.version == 2, health.e2ee else {
             throw SpyderChatNetworkError.invalidResponse
         }
     }
@@ -226,10 +233,12 @@ final class SpyderChatStore: ObservableObject {
                 errorMessage = "Username: 3–20 символов, латинские буквы, цифры и _. Начни с буквы."
                 return
             }
+            // Local device-specific chat keys are unrelated to the wallet recovery phrase.
+            let publicKeys = try SpyderMessageCrypto.localKeys()
             let candidate = SpyderChatIdentity(id: try randomHex(16), secret: try randomHex(32), inviteCode: try randomHex(12).uppercased(), name: cleaned, username: handle, server: serverAddress)
-            struct Register: Encodable { let id: String; let secret: String; let invite_code: String; let name: String; let username: String }
+            struct Register: Encodable { let id: String; let secret: String; let invite_code: String; let name: String; let username: String; let keys: SpyderPeerKeys }
             struct Ack: Decodable { let id: String; let name: String; let username: String?; let invite_code: String }
-            let body = try JSONEncoder().encode(Register(id: candidate.id, secret: candidate.secret, invite_code: candidate.inviteCode, name: candidate.name, username: handle))
+            let body = try JSONEncoder().encode(Register(id: candidate.id, secret: candidate.secret, invite_code: candidate.inviteCode, name: candidate.name, username: handle, keys: publicKeys))
             let response: Ack = try await perform("/v1/register", method: "POST", payload: body, anonymous: true)
             guard response.id == candidate.id, response.invite_code == candidate.inviteCode else { throw SpyderChatNetworkError.invalidResponse }
             try SpyderChatKeychain.save(JSONEncoder().encode(candidate))
@@ -239,22 +248,74 @@ final class SpyderChatStore: ObservableObject {
             myUsername = handle
             inviteCode = candidate.inviteCode
             connected = true
+            encryptionReady = true
             await refresh()
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// Activate immutable encryption keys for older chat profiles after server upgrade.
+    private func activateEncryption() async throws {
+        try await verifyExpectedServer()
+        let keys = try SpyderMessageCrypto.localKeys()
+        let ack: SpyderChatKeysAck = try await perform("/v2/keys/activate", method: "POST", payload: JSONEncoder().encode(keys))
+        guard ack.status == "active" || ack.status == "already_active" else {
+            throw SpyderChatNetworkError.invalidResponse
+        }
+        encryptionReady = true
+    }
+
+    private func fetchPeerKeys(_ peer: String) async throws -> SpyderPeerKeys {
+        guard peer.count == 32, peer.allSatisfy({ $0.isHexDigit }) else { throw SpyderChatNetworkError.invalidResponse }
+        let response: SpyderChatPeerKeyResponse = try await perform("/v2/keys?peer=\(peer)")
+        try SpyderMessageCrypto.verifyAndPin(response.keys, server: serverAddress, peer: peer)
+        peerFingerprints[peer] = SpyderMessageCrypto.fingerprint(response.keys)
+        return response.keys
+    }
+
+    /// Removal revokes the contact link server-side. Locally cached plaintext is forgotten.
+    func block(_ peer: String) async -> Bool {
+        do {
+            struct Payload: Encodable { let peer_id: String }
+            let _: SpyderChatKeysAck = try await perform("/v2/contacts/block", method: "POST",
+                payload: JSONEncoder().encode(Payload(peer_id: peer)))
+            messageByPeer.removeValue(forKey: peer)
+            peerFingerprints.removeValue(forKey: peer)
+            await refresh()
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
     }
 
     func refresh() async {
         guard hasIdentity else { return }
         do {
+            try await activateEncryption()
             let result: SpyderChatList = try await perform("/v1/contacts")
             contacts = result.contacts.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             requests = result.requests
             inviteCode = result.invite_code
+            struct Privacy: Decodable { let discoverable: Bool }
+            let privacy: Privacy = try await perform("/v2/profile/privacy")
+            discoverable = privacy.discoverable
             connected = true
         } catch {
             connected = false
-            serverStatus = "Сервер сообщений недоступен. Проверь подключение."
+            encryptionReady = false
+            serverStatus = "Защищённый сервер сообщений недоступен: " + error.localizedDescription
         }
+    }
+
+    func updateDiscovery(_ enabled: Bool) async {
+        do {
+            struct Privacy: Codable { let discoverable: Bool }
+            let response: Privacy = try await perform("/v2/profile/privacy", method: "POST",
+                payload: JSONEncoder().encode(Privacy(discoverable: enabled)))
+            discoverable = response.discoverable
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func clearDecryptedCache() {
+        messageByPeer = [:]
+        searchResults = []
     }
 
     func claimUsername(_ value: String) async -> Bool {
@@ -315,24 +376,43 @@ final class SpyderChatStore: ObservableObject {
     }
 
     func loadMessages(peer: String) async {
-        guard hasIdentity else { return }
+        guard hasIdentity, let own = identity else { return }
         do {
-            guard peer.count == 32, peer.unicodeScalars.allSatisfy({ (48...57).contains($0.value) || (97...102).contains($0.value) }) else {
-                throw SpyderChatNetworkError.invalidResponse
+            try await activateEncryption()
+            let keys = try await fetchPeerKeys(peer)
+            let result: SpyderChatHistory = try await perform("/v2/messages?peer=\(peer)")
+            var displayed: [SpyderServerMessage] = []
+            for item in result.messages {
+                guard (item.sender_id == peer && item.recipient_id == own.id) ||
+                      (item.sender_id == own.id && item.recipient_id == peer) else { continue }
+                let plaintext: String
+                do { plaintext = try SpyderMessageCrypto.open(item, myID: own.id, peerKeys: keys) }
+                catch { plaintext = "🔒 Невозможно подтвердить или расшифровать сообщение" }
+                displayed.append(SpyderServerMessage(id: item.id, client_id: item.client_id,
+                    sender_id: item.sender_id, recipient_id: item.recipient_id,
+                    text: plaintext, created_at: item.created_at))
             }
-            let result: SpyderChatHistory = try await perform("/v1/messages?peer=\(peer)")
-            messageByPeer[peer] = result.messages
+            messageByPeer[peer] = displayed
             connected = true
-        } catch { connected = false }
+            encryptionReady = true
+        } catch {
+            connected = false
+            errorMessage = error.localizedDescription
+        }
     }
 
     func sendMessage(to peer: String, text: String) async -> Bool {
         let clean = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2000))
-        guard !clean.isEmpty else { return false }
+        guard !clean.isEmpty, let own = identity else { return false }
         do {
-            struct Payload: Encodable { let recipient_id: String; let client_id: String; let text: String }
+            try await activateEncryption()
+            let keys = try await fetchPeerKeys(peer)
+            let clientID = UUID().uuidString.lowercased()
+            let cipher = try SpyderMessageCrypto.seal(clean, sender: own.id, recipient: peer,
+                                                       peerKeys: keys, clientID: clientID)
             struct Ack: Decodable { let status: String }
-            let _: Ack = try await perform("/v1/messages", method: "POST", payload: JSONEncoder().encode(Payload(recipient_id: peer, client_id: UUID().uuidString.lowercased(), text: clean)))
+            let result: Ack = try await perform("/v2/messages", method: "POST", payload: JSONEncoder().encode(cipher))
+            guard result.status == "sent" || result.status == "already_sent" else { throw SpyderChatNetworkError.invalidResponse }
             await loadMessages(peer: peer)
             return true
         } catch { errorMessage = error.localizedDescription; return false }

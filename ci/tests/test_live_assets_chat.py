@@ -8,9 +8,12 @@ class LiveAssetsChatChecks(unittest.TestCase):
     def test_real_asset_reads_public_only(self):
         source = (ROOT / 'Console/WalletCore/WalletPublicAssets.swift').read_text()
         for value in ('eth_getBalance', 'getBalance', 'blockstream.info/api/address',
-                      'simple/price', '0xdac17f958d2ee523a2206206994597c13d831ec7',
-                      '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'):
+                      'simple/price', 'WalletTokenCatalog.ethereumERC20'):
             self.assertIn(value, source)
+        tokens = (ROOT / 'Console/WalletCore/WalletTokenCatalog.swift').read_text()
+        for contract in ('0xdAC17F958D2ee523a2206206994597C13D831ec7',
+                         '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'):
+            self.assertIn(contract, tokens)
         self.assertNotIn('WalletVault', source)
         self.assertNotIn('eth_sendRawTransaction', source)
 
@@ -19,7 +22,7 @@ class LiveAssetsChatChecks(unittest.TestCase):
         self.assertIn('SpyderDevnetChatsHomeView', source)
         self.assertNotIn('LegacyConsoleChatsView()', source)
         client = (ROOT / 'Console/ChatLive/SpyderChatService.swift').read_text()
-        for route in ('/v1/profile/username', '/v1/users/search', '/v1/invites', '/v1/messages'):
+        for route in ('/v1/profile/username', '/v1/users/search', '/v1/invites', '/v2/messages'):
             self.assertIn(route, client)
 
     def test_wallet_version_does_not_change(self):

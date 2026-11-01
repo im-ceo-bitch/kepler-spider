@@ -9,6 +9,7 @@ struct WalletAccountsView: View {
     @EnvironmentObject private var access: WalletAccess
     @EnvironmentObject private var chains: WalletChainStore
     @EnvironmentObject private var assets: WalletPublicAssetsStore
+    @EnvironmentObject private var history: WalletActivityStore
     @State private var rename = ""
     @State private var showingRename = false
     @State private var showingNew = false
@@ -29,6 +30,7 @@ struct WalletAccountsView: View {
                                         access.switchAccount(account.id)
                                         chains.selectAccount(account.id)
                                         assets.resetForAccountChange()
+                                        history.clear()
                                     }
                                     dismiss()
                                 } label: {
@@ -84,6 +86,7 @@ struct WalletAccountsView: View {
                 showingNew = false
                 chains.selectAccount(access.activeWalletID)
                 assets.resetForAccountChange()
+                history.clear()
                 dismiss()
             })
             .environmentObject(access)
@@ -92,6 +95,7 @@ struct WalletAccountsView: View {
 }
 
 struct WalletAssetDetailView: View {
+    @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
     let chain: SpyderChain
     let onSend: (SpyderChain) -> Void
     let onReceive: () -> Void
@@ -99,6 +103,7 @@ struct WalletAssetDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var chains: WalletChainStore
     @EnvironmentObject private var assets: WalletPublicAssetsStore
+    @EnvironmentObject private var history: WalletActivityStore
 
     private var address: String { chains.address(for: chain) ?? "" }
     private var balance: Decimal? { assets.balances[chain] }
@@ -130,13 +135,22 @@ struct WalletAssetDetailView: View {
                 .padding(.top, 10)
                 WalletCard {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Доступный баланс").foregroundStyle(WalletTheme.secondary)
-                        Text(balance.map { WalletPublicAssetsStore.formatted($0) + " " + chain.ticker } ?? "— " + chain.ticker)
+                        Text(chain == .bitcoin ? "Баланс сети · с ожидающими транзакциями" : "Баланс сети")
+                            .foregroundStyle(WalletTheme.secondary)
+                        Text(privacyHidden ? "••••" : (balance.map { WalletPublicAssetsStore.formatted($0) + " " + chain.ticker } ?? "— " + chain.ticker))
                             .font(.system(size: 30, weight: .semibold, design: .rounded))
                             .monospacedDigit()
                             .contentTransition(.numericText())
+                        if chain == .bitcoin, let confirmed = assets.bitcoinConfirmed {
+                            Text(privacyHidden ? "Подтверждено: ••••" : "Подтверждено: " + WalletPublicAssetsStore.formatted(confirmed) + " BTC")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                            if let pending = assets.bitcoinPendingDelta, pending != .zero {
+                                Text(privacyHidden ? "Изменение в mempool: ••••" : "Изменение в mempool: " + WalletPublicAssetsStore.formatted(pending) + " BTC")
+                                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                            }
+                        }
                         if let balance, let price = assets.prices[chain] {
-                            Text("≈ $" + WalletPublicAssetsStore.formatted(balance * price, fractionDigits: 2))
+                            Text(privacyHidden ? "••••" : "≈ $" + WalletPublicAssetsStore.formatted(balance * price, fractionDigits: 2))
                                 .foregroundStyle(WalletTheme.secondary)
                         }
                         if assets.failures[chain] != nil {
@@ -169,8 +183,37 @@ struct WalletAssetDetailView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("Активность", systemImage: "clock.arrow.circlepath")
                             .font(.system(size: 17, weight: .semibold))
-                        Text("Полная история Mainnet для этой сети ещё не подключена. Данные операций доступны в обозревателе блокчейна.")
-                            .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        if let error = history.errors[chain] {
+                            Label("Ошибка обновления: " + error, systemImage: "wifi.exclamationmark")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        }
+                        if let updated = history.updatedAt[chain] {
+                            Text("Последняя проверка: " + updated.formatted(date: .abbreviated, time: .shortened))
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        }
+                        if history.loading.contains(chain) { ProgressView("Получаем операции…") }
+                        else if (history.activity[chain] ?? []).isEmpty {
+                            Text(history.errors[chain] == nil ? "Нет операций в загруженной истории." : "История недоступна. Проверьте сеть.")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        }
+                        ForEach(Array((history.activity[chain] ?? []).prefix(12))) { item in
+                            Link(destination: item.explorerURL) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: item.state == .failed ? "xmark.circle" : item.state == .pending ? "clock" : "checkmark.circle")
+                                        .symbolRenderingMode(.hierarchical)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(item.direction + " · " + item.symbol).font(.subheadline.weight(.medium))
+                                        Text(item.state == .confirmed ? "Подтверждено" : item.state == .pending ? "Ожидает подтверждения" : "Ошибка")
+                                            .font(.caption).foregroundStyle(WalletTheme.secondary)
+                                    }
+                                    Spacer()
+                                    Text(privacyHidden ? "••••" : (item.amount.map { WalletPublicAssetsStore.formatted($0, fractionDigits: 7) } ?? "—"))
+                                        .font(.caption.monospacedDigit())
+                                    Image(systemName: "arrow.up.right.square").font(.caption)
+                                }
+                            }
+                            Divider()
+                        }
                         if let explorer {
                             Link(destination: explorer) {
                                 Label("Открыть в обозревателе", systemImage: "arrow.up.right.square")
@@ -184,6 +227,10 @@ struct WalletAssetDetailView: View {
             }
             .foregroundStyle(WalletTheme.ink)
             .padding(20)
+        }
+        .task(id: address) {
+            guard !address.isEmpty else { return }
+            await history.refresh(addresses: [SpyderAddress(chain: chain, value: address)])
         }
         .navigationTitle(chain.name)
         .navigationBarTitleDisplayMode(.inline)

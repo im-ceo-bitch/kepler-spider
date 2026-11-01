@@ -9,6 +9,7 @@ struct ConsoleApp: App {
     @StateObject private var walletAccess = WalletAccess()
     @StateObject private var walletChains = WalletChainStore()
     @StateObject private var publicAssets = WalletPublicAssetsStore()
+    @StateObject private var walletHistory = WalletActivityStore()
     @StateObject private var spyderChat = SpyderChatStore()
     @StateObject private var legacyChat = LegacyConsoleChatStore()
     @StateObject private var spiderDevnet = SpiderDevnetStore()
@@ -29,6 +30,7 @@ struct ConsoleApp: App {
                 .environmentObject(walletAccess)
                 .environmentObject(walletChains)
                 .environmentObject(publicAssets)
+                .environmentObject(walletHistory)
                 .environmentObject(spyderChat)
                 .environmentObject(legacyChat)
                 .environmentObject(spiderDevnet)
@@ -46,6 +48,8 @@ struct ConsoleApp: App {
                 if phase == .background {
                     walletAccess.lock()
                     walletChains.clear()
+                    walletHistory.clear()
+                    spyderChat.clearDecryptedCache()
                     spiderDevnet.clear()
                 }
             }

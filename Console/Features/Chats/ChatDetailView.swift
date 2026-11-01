@@ -7,6 +7,7 @@ struct ChatDetailView: View {
     let onAction: (WalletModal) -> Void
     @State private var draft = ""
     @State private var sending = false
+    @State private var confirmBlock = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var messages: [SpyderServerMessage] { chat.messageByPeer[contact.id] ?? [] }
@@ -22,9 +23,15 @@ struct ChatDetailView: View {
                     Text(contact.handle.isEmpty ? "Spyder Chat" : contact.handle).font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                 }
                 Spacer()
-                Button { Task { await chat.loadMessages(peer: contact.id) } } label: {
-                    Image(systemName: "arrow.clockwise").frame(width: 40, height: 40)
-                }.accessibilityLabel("Обновить сообщения")
+                Menu {
+                    Button { Task { await chat.loadMessages(peer: contact.id) } } label: {
+                        Label("Обновить", systemImage: "arrow.clockwise")
+                    }
+                    Button(role: .destructive) { confirmBlock = true } label: {
+                        Label("Заблокировать контакт", systemImage: "hand.raised")
+                    }
+                } label: { Image(systemName: "ellipsis.circle").frame(width: 40, height: 40) }
+                    .accessibilityLabel("Действия с контактом")
             }
             .foregroundStyle(WalletTheme.ink).padding(.horizontal, 15).frame(height: 66)
             Divider().overlay(WalletTheme.divider)
@@ -32,9 +39,19 @@ struct ChatDetailView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 14) {
-                        Text("DEVNET · сообщения без E2EE")
+                        Label(chat.encryptionReady ? "E2EE · одно устройство · доверие при первом контакте" : "Защищённый сервер не подключён", systemImage: "lock.shield")
                             .font(.system(size: 10, weight: .semibold)).tracking(0.7)
                             .foregroundStyle(WalletTheme.secondary).padding(.vertical, 12)
+                        if let code = chat.peerFingerprints[contact.id] {
+                            VStack(spacing: 4) {
+                                Text("Отпечаток ключей контакта (сверьте лично):")
+                                Text(code).font(.caption.monospaced()).textSelection(.enabled)
+                                Text("Первое подключение не защищено от подмены сервером. Проверяйте отпечаток вне чата.")
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(WalletTheme.secondary)
+                            .multilineTextAlignment(.center)
+                        }
                         if messages.isEmpty {
                             Text("Начало переписки с \(contact.name)")
                                 .font(.system(size: 14)).foregroundStyle(WalletTheme.secondary).padding(.top, 50)
@@ -55,13 +72,13 @@ struct ChatDetailView: View {
             }
             Spacer(minLength: 0)
             HStack(spacing: 10) {
-                Button { onAction(.send) } label: {
+                Button { onAction(.devnetTransfer) } label: {
                     Label("SPD · Devnet", systemImage: "arrow.up.right")
                         .font(.system(size: 13, weight: .semibold))
                         .padding(.horizontal, 16).frame(height: 40)
                         .foregroundStyle(WalletTheme.contrast).background(WalletTheme.accent, in: Capsule())
                 }
-                Text("Переводы после запуска RPC")
+                Text("Только тестовые SPD · адрес вводится вручную")
                     .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
                 Spacer()
             }.padding(.horizontal, 16).padding(.bottom, 10)
@@ -77,7 +94,7 @@ struct ChatDetailView: View {
                         .foregroundStyle(WalletTheme.contrast).frame(width: 42, height: 42) }
                 }
                 .background(WalletTheme.accent, in: Circle())
-                .disabled(sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(!chat.encryptionReady || sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }.padding(.horizontal, 16).padding(.bottom, 12)
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
@@ -89,6 +106,13 @@ struct ChatDetailView: View {
                 guard !Task.isCancelled else { break }
                 await chat.loadMessages(peer: contact.id)
             }
+        }
+        .confirmationDialog("Заблокировать контакт?", isPresented: $confirmBlock) {
+            Button("Заблокировать", role: .destructive) {
+                Task { if await chat.block(contact.id) { onBack() } }
+            }
+        } message: {
+            Text("Контакт больше не сможет отправлять Вам приглашения и сообщения. Текущая переписка удалится из списка на этом устройстве.")
         }
         .alert("Spyder Chat", isPresented: Binding(get: { chat.errorMessage != nil }, set: { if !$0 { chat.errorMessage = nil } })) {
             Button("Закрыть", role: .cancel) { chat.errorMessage = nil }

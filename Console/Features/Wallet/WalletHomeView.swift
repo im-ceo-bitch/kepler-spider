@@ -6,6 +6,7 @@ struct WalletHomeView: View {
     @EnvironmentObject private var chains: WalletChainStore
     @EnvironmentObject private var access: WalletAccess
     @EnvironmentObject private var publicAssets: WalletPublicAssetsStore
+    @EnvironmentObject private var history: WalletActivityStore
     @EnvironmentObject private var spider: SpiderDevnetStore
     @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
     let onAction: (WalletModal) -> Void
@@ -71,13 +72,18 @@ struct WalletHomeView: View {
                     actionTile("Отправить", symbol: "arrow.up.right", dark: false) { onAction(.send) }
                     actionTile("Получить", symbol: "arrow.down.left", dark: false) { onAction(.receive) }
                     actionTile("Обновить", symbol: "arrow.clockwise", dark: true) {
-                        Task { await publicAssets.refresh(addresses: chains.addresses) }
+                        Task { await refreshWallet() }
                     }
                 }
                 .spyderReveal(0.13)
 
                 assetSection
                     .spyderReveal(0.17)
+
+                if spider.hasConfiguration {
+                    spiderSection
+                        .spyderReveal(0.18)
+                }
 
                 VStack(alignment: .leading, spacing: 17) {
                     HStack {
@@ -90,21 +96,28 @@ struct WalletHomeView: View {
                             .foregroundStyle(WalletTheme.secondary)
                     }
                     WalletCard {
-                        if spider.activities.isEmpty {
+                        if history.recent.isEmpty && spider.activities.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Нет сертифицированных операций SPD")
+                                Text("Операций пока нет")
                                     .font(.system(size: 15, weight: .semibold))
-                                Text("После подключения Devnet здесь появятся финализированные переводы.")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(WalletTheme.secondary)
+                                Text("История Mainnet загружается отдельно. При ошибке обновления данные не заменяются вымышленными операциями.")
+                                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                             }.foregroundStyle(WalletTheme.ink)
                         } else {
                             VStack(spacing: 13) {
-                                ForEach(Array(spider.activities.prefix(3))) { entry in
+                                ForEach(Array(history.recent.prefix(3))) { item in
+                                    Link(destination: item.explorerURL) {
+                                        transactionRow(item.direction + " · " + item.symbol,
+                                                       caption: item.state == .confirmed ? "Подтверждено" : item.state == .pending ? "Ожидает подтверждения" : "Ошибка",
+                                                       amount: privacyHidden ? "••••" : (item.amount.map { WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + item.symbol } ?? "—"),
+                                                       icon: "arrow.up.right.square")
+                                    }
+                                }
+                                ForEach(Array(spider.activities.prefix(history.recent.isEmpty ? 3 : 0))) { entry in
                                     let outgoing = entry.transaction.payload.sender == spider.address
                                     transactionRow(outgoing ? "Отправлено · SPD" : "Получено · SPD",
                                                    caption: "Блок \(entry.height) · \(entry.id.prefix(12))…",
-                                                   amount: (outgoing ? "−" : "+") + SpiderDevnetStore.displayAmount(entry.transaction.payload.amount),
+                                                   amount: privacyHidden ? "••••" : ((outgoing ? "−" : "+") + SpiderDevnetStore.displayAmount(entry.transaction.payload.amount)),
                                                    icon: outgoing ? "arrow.up.right" : "arrow.down.left")
                                 }
                             }
@@ -123,19 +136,28 @@ struct WalletHomeView: View {
             .padding(.bottom, 32)
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
-        .refreshable { await publicAssets.refresh(addresses: chains.addresses) }
+        .refreshable { await refreshWallet() }
         .task(id: access.activeWalletID) {
             chains.selectAccount(access.activeWalletID)
         }
+        .onChange(of: access.activeWalletID) { _, _ in history.clear() }
         .task(id: chains.addresses) {
             if chains.addresses.isEmpty && !chains.isLoading {
                 // Address derivation requires iOS authentication once. Afterwards
                 // ONLY public addresses are cached, so returning users see assets.
                 chains.activate()
             } else if !chains.addresses.isEmpty {
-                await publicAssets.refresh(addresses: chains.addresses)
+                async let balances: Void = publicAssets.refresh(addresses: chains.addresses)
+                async let operations: Void = history.refresh(addresses: chains.addresses)
+                _ = await (balances, operations)
             }
         }
+    }
+
+    private func refreshWallet() async {
+        async let balances: Void = publicAssets.refresh(addresses: chains.addresses)
+        async let activity: Void = history.refresh(addresses: chains.addresses)
+        _ = await (balances, activity)
     }
 
     private var spiderSection: some View {
@@ -183,7 +205,7 @@ struct WalletHomeView: View {
                         }
                         .font(.system(size: 13, weight: .medium))
                         if spider.connected {
-                            Text("Баланс: \(spider.balanceText) тестовых SPD")
+                            Text(privacyHidden ? "Баланс: •••• SPD" : "Баланс: \(spider.balanceText) тестовых SPD")
                                 .font(.system(size: 18, weight: .semibold, design: .rounded))
                                 .monospacedDigit()
                         }
@@ -192,7 +214,7 @@ struct WalletHomeView: View {
                             Label(pending.queued ? "Ожидает финализации SpiderBFT" : "Отправка не подтверждена — проверить статус",
                                   systemImage: "clock.arrow.circlepath")
                                 .font(.system(size: 13, weight: .semibold))
-                            Text("Tx \(pending.id.prefix(14))… · \(SpiderDevnetStore.displayAmount(pending.amountAtomic)) SPD")
+                            Text(privacyHidden ? "Tx \(pending.id.prefix(14))… · •••• SPD" : "Tx \(pending.id.prefix(14))… · \(SpiderDevnetStore.displayAmount(pending.amountAtomic)) SPD")
                                 .font(.system(size: 12, design: .monospaced))
                                 .textSelection(.enabled)
                             Text("Не отправляйте повторно, пока транзакция не будет подтверждена или безопасно разрешена.")
@@ -298,7 +320,7 @@ struct WalletHomeView: View {
                 .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 24))
                 if chains.address(for: .ethereum) != nil {
                     VStack(spacing: 12) {
-                        ForEach(["USDT", "USDC"], id: \.self) { ticker in
+                        ForEach(WalletTokenCatalog.ethereumERC20.map(\.ticker), id: \.self) { ticker in
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(ticker).font(.system(size: 15, weight: .semibold))
@@ -315,7 +337,7 @@ struct WalletHomeView: View {
                     .foregroundStyle(WalletTheme.ink)
                     .padding(16)
                     .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 20))
-                    ForEach(["USDT", "USDC"], id: \.self) { ticker in
+                    ForEach(WalletTokenCatalog.ethereumERC20.map(\.ticker), id: \.self) { ticker in
                         if let detail = publicAssets.stablecoinFailures[ticker] {
                             Text(ticker + ": " + detail)
                                 .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
@@ -459,57 +481,76 @@ struct WalletHomeView: View {
 }
 
 struct WalletActivityView: View {
+    @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
+    @EnvironmentObject private var history: WalletActivityStore
+    @EnvironmentObject private var chains: WalletChainStore
     @EnvironmentObject private var spider: SpiderDevnetStore
     let onBack: () -> Void
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 18) {
                 HStack {
                     SpyderNavigationButton(symbol: "chevron.left", label: "Назад", action: onBack)
                     Spacer()
+                    Button { Task { await history.refresh(addresses: chains.addresses) } } label: {
+                        Label("Обновить", systemImage: "arrow.clockwise")
+                    }.disabled(!history.loading.isEmpty)
                 }
-                .spyderReveal(0.01)
-                Text("Операции")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(WalletTheme.ink)
-                Text("Только финализированные операции тестовой Spider Chain (последние 20 блоков).")
-                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                Button("Обновить операции") { Task { await spider.refresh() } }
-                    .disabled(spider.refreshing || !spider.connected)
-                WalletCard {
-                    if spider.activities.isEmpty {
-                        Label("Сертифицированных операций пока нет", systemImage: "clock")
-                            .font(.system(size: 14))
-                    } else {
-                        VStack(alignment: .leading, spacing: 16) {
-                            ForEach(spider.activities) { entry in
-                                let isOutgoing = entry.transaction.payload.sender == spider.address
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack {
-                                        Label(isOutgoing ? "Отправлено" : "Получено",
-                                              systemImage: isOutgoing ? "arrow.up.right" : "arrow.down.left")
+                Text("История операций").font(.system(size: 30, weight: .bold))
+                Text("Mainnet: последние транзакции для текущих адресов. История может быть неполной: публичные API ограничивают глубину просмотра. Для SOL показываются подписи без расчёта сумм.")
+                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                ForEach(SpyderChain.allCases) { chain in
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(chain.name).font(.headline)
+                            if let error = history.errors[chain] {
+                                Label("Провайдер недоступен: " + error, systemImage: "wifi.exclamationmark")
+                                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                            }
+                            if history.loading.contains(chain) { ProgressView("Загрузка…") }
+                            let entries = history.activity[chain] ?? []
+                            if entries.isEmpty && !history.loading.contains(chain) {
+                                Text(history.errors[chain] == nil ? "Нет записей в доступном диапазоне" : "Данные могут быть устаревшими")
+                                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                            }
+                            ForEach(entries) { item in
+                                Link(destination: item.explorerURL) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: item.state == .confirmed ? "checkmark.circle" : item.state == .pending ? "clock" : "exclamationmark.circle")
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(item.direction).font(.subheadline.weight(.semibold))
+                                            Text(item.timestamp?.formatted(date: .abbreviated, time: .shortened) ?? "Дата неизвестна")
+                                                .font(.caption).foregroundStyle(WalletTheme.secondary)
+                                        }
                                         Spacer()
-                                        Text((isOutgoing ? "−" : "+") + SpiderDevnetStore.displayAmount(entry.transaction.payload.amount) + " SPD")
-                                            .monospacedDigit()
+                                        Text(privacyHidden ? "••••" : (item.amount.map { WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + item.symbol } ?? "—"))
+                                            .font(.caption.monospacedDigit())
+                                        Image(systemName: "arrow.up.right.square").font(.caption)
                                     }
-                                    .font(.system(size: 14, weight: .semibold))
-                                    Text("Подтверждено · блок \(entry.height)")
-                                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                                    Text(entry.id)
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .textSelection(.enabled)
-                                    Divider()
                                 }
+                                Divider()
+                            }
+                            if let date = history.updatedAt[chain] {
+                                Text("Обновлено: " + date.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption).foregroundStyle(WalletTheme.secondary)
                             }
                         }
                     }
                 }
-                .foregroundStyle(WalletTheme.ink)
+                Text("Spider Chain · Devnet").font(.headline)
+                WalletCard {
+                    if spider.activities.isEmpty { Text("Тестовые подтверждённые операции отсутствуют.") }
+                    ForEach(spider.activities) { entry in
+                        Text("SPD · Блок \(entry.height) · \(entry.id.prefix(14))…")
+                            .font(.caption.monospaced())
+                    }
+                }
             }
-            .padding(20)
+            .foregroundStyle(WalletTheme.ink).padding(20)
         }
         .navigationBarBackButtonHidden(true)
         .background(WalletTheme.canvas.ignoresSafeArea())
+        .task(id: chains.addresses) { await history.refresh(addresses: chains.addresses) }
     }
 }

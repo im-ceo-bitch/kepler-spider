@@ -70,6 +70,8 @@ struct WalletRootView: View {
             WalletSendFlowView(preselected: sendChain)
         case .request:
             WalletTransferView(isRequest: true, contact: selectedContact)
+        case .devnetTransfer:
+            WalletTransferView(isRequest: false, contact: selectedContact)
         case .receive:
             WalletReceiveView(preselected: sendChain)
                 .presentationDetents([.medium, .large])

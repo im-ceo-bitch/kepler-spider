@@ -21,16 +21,19 @@ class LiveReleaseChecks(unittest.TestCase):
         self.assertIn('JSONEncoder().encode(resolved)',chains)
         self.assertNotIn('UserDefaults.standard.set(phrase',chains)
 
-    def test_devnet_removed_from_wallet_home(self):
-        home=source('Console/Features/Wallet/WalletHomeView.swift')
-        body=home.split('var body: some View {',1)[1].split('private var spiderSection:',1)[0]
-        self.assertNotIn('spiderSection',body)
-        self.assertNotIn('WalletDemoLabel()',body)
+    def test_devnet_only_shown_when_explicitly_configured(self):
+        home = source('Console/Features/Wallet/WalletHomeView.swift')
+        self.assertIn('if spider.hasConfiguration {\n                    spiderSection', home)
+        self.assertNotIn('WalletDemoLabel()', home)
 
-    def test_mainnet_transfer_is_not_falsely_enabled(self):
-        root=source('Console/WalletRootView.swift')
-        self.assertIn('case .send:\n            WalletSendAvailabilityView()',root)
-        self.assertIn('Отправка пока недоступна',root)
+    def test_mainnet_transfer_stays_non_broadcasting(self):
+        root = source('Console/WalletRootView.swift')
+        flow = source('Console/Features/Wallet/WalletSendFlowView.swift')
+        self.assertIn('case .send:\n            WalletSendFlowView(preselected: sendChain)', root)
+        self.assertIn('case .devnetTransfer:', root)
+        self.assertIn('Mainnet', flow)
+        self.assertNotIn('eth_sendRawTransaction', flow)
+        self.assertNotIn('sendTransaction', flow)
 
     def test_market_prices_include_tokens_and_partial_banner(self):
         market=source('Console/WalletCore/WalletPublicAssets.swift')

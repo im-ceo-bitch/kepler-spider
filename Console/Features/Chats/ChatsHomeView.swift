@@ -13,6 +13,7 @@ struct SpyderDevnetChatsHomeView: View {
     @State private var invitation = ""
     @State private var adding = false
     @State private var inviteSent = false
+    @State private var showingPrivacy = false
 
     private var filtered: [SpyderChatPerson] {
         search.isEmpty ? chat.contacts : chat.contacts.filter { $0.name.localizedCaseInsensitiveContains(search) }
@@ -22,9 +23,17 @@ struct SpyderDevnetChatsHomeView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 21) {
                 HStack {
-                    Text("Chats").font(.system(size: 34, weight: .bold)).foregroundStyle(WalletTheme.ink)
+                    Text("Сеть").font(.system(size: 34, weight: .bold)).foregroundStyle(WalletTheme.ink)
                     Spacer()
                     if chat.hasIdentity {
+                        Button { showingPrivacy = true } label: {
+                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 19))
+                                .foregroundStyle(WalletTheme.ink)
+                                .frame(width: 44, height: 44)
+                                .background(WalletTheme.surface, in: Circle())
+                        }
+                        .accessibilityLabel("Публичный профиль и приватность")
                         Button { adding = true } label: {
                             Image(systemName: "plus")
                                 .font(.system(size: 18, weight: .medium))
@@ -137,7 +146,7 @@ struct SpyderDevnetChatsHomeView: View {
                             }
                         }
                     }
-                    Label("Приватность: сообщения пока не имеют сквозного шифрования.", systemImage: "info.circle")
+                    Label("E2EE v2 · CryptoKit · одно устройство. Проверяйте отпечатки ключей вручную. Нет мультиустройств и Double Ratchet.", systemImage: "lock.shield")
                         .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -158,9 +167,45 @@ struct SpyderDevnetChatsHomeView: View {
             }
         }
         .sheet(isPresented: $adding) { inviteSheet }
+        .sheet(isPresented: $showingPrivacy) { privacySheet }
         .alert("Spyder Chat", isPresented: Binding(get: { chat.errorMessage != nil }, set: { if !$0 { chat.errorMessage = nil } })) {
             Button("Понятно", role: .cancel) { chat.errorMessage = nil }
         } message: { Text(chat.errorMessage ?? "") }
+    }
+
+    private var privacySheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Label("Spyder Identity", systemImage: "person.crop.circle")
+                        .font(.system(size: 28, weight: .semibold))
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 11) {
+                            Text(chat.myName).font(.title3.weight(.semibold))
+                            Text(chat.myUsername.isEmpty ? "Без публичного username" : "@" + chat.myUsername)
+                                .foregroundStyle(WalletTheme.secondary)
+                            Label("Ключи чата не связаны с фразой восстановления кошелька", systemImage: "lock.shield")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Toggle(isOn: Binding(get: { chat.discoverable }, set: { value in
+                                Task { await chat.updateDiscovery(value) }
+                            })) {
+                                Label("Показывать профиль в поиске", systemImage: "magnifyingglass")
+                            }
+                            Text("По умолчанию профиль скрыт. Даже при выключенном поиске Вы можете приглашать контакты по личному коду.")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    Text("E2EE v2: сквозное шифрование при проверке ключей. Это предварительный криптографический протокол для одного устройства; он не имеет аудита и не поддерживает восстановление чатов через seed-фразу. Серверу видны участники, время и длина сообщений.")
+                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                }.padding(20)
+            }
+            .background(WalletTheme.canvas.ignoresSafeArea())
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { showingPrivacy = false } } }
+        }
     }
 
     private func avatar(_ name: String) -> some View {
@@ -208,7 +253,7 @@ struct SpyderDevnetChatsHomeView: View {
             } label: {
                 Text(chat.working ? "Подключаем…" : "Начать общение").spyderPrimaryButton()
             }.buttonStyle(.plain).disabled(!chat.hasConfiguredServer || chat.working || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || username.count < 3)
-            Text("Сообщения пока без сквозного шифрования. Не отправляй сид-фразы, пароли или приватные ключи.")
+            Text("Сообщения требуют сервер Chat v2 и проверки ключей контактов. Никогда не отправляйте сид-фразы, пароли или приватные ключи.")
                 .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
         }.spyderReveal(0.08)
     }
