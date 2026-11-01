@@ -3,6 +3,12 @@ import UIKit
 
 /// Wallet-only presentation. All financial values come from verified store responses;
 /// absent balances and prices are never replaced with plausible sample numbers.
+private enum WalletHomeSection: String, CaseIterable, Identifiable {
+    case assets, cryptocurrencies
+    var id: String { rawValue }
+    var title: String { self == .assets ? NSLocalizedString("Активы", comment: "") : NSLocalizedString("Криптовалюты", comment: "") }
+}
+
 private struct WalletMarketSelection: Identifiable {
     let ticker: String
     var id: String { ticker }
@@ -19,6 +25,8 @@ struct WalletHomeView: View {
     @EnvironmentObject private var history: WalletActivityStore
     @EnvironmentObject private var spider: SpiderDevnetStore
     @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
+    @StateObject private var catalog = WalletCatalogStore()
+    @AppStorage("spyder.wallet.home.section") private var selectedSection = WalletHomeSection.assets.rawValue
     @State private var selectedToken: WalletVerifiedToken?
     @State private var expandedMarket: WalletMarketSelection?
     @State private var showDevnet = false
@@ -40,11 +48,18 @@ struct WalletHomeView: View {
                         .spyderReveal(0.03)
                     quickActions
                         .spyderReveal(0.08)
-                    marketStrip
-                    assetsSection
-                        .spyderReveal(0.12)
-                    recentSection
-                        .spyderReveal(0.16)
+                    walletSectionPicker
+                    if selectedSection == WalletHomeSection.cryptocurrencies.rawValue {
+                        WalletCatalogSection(catalog: catalog)
+                            .environmentObject(market)
+                            .environmentObject(live)
+                    } else {
+                        marketStrip
+                        assetsSection
+                            .spyderReveal(0.12)
+                        recentSection
+                            .spyderReveal(0.16)
+                    }
                     if spider.hasConfiguration {
                         DisclosureGroup(isExpanded: $showDevnet) {
                             spiderSection
@@ -77,7 +92,13 @@ struct WalletHomeView: View {
                 .frame(maxWidth: 700)
                 .frame(maxWidth: .infinity)
             }
-            .refreshable { await refreshWallet() }
+            .refreshable {
+                if selectedSection == WalletHomeSection.cryptocurrencies.rawValue {
+                    await catalog.refresh(force: true)
+                } else {
+                    await refreshWallet()
+                }
+            }
         }
         // Keep scrolling content below the actual iOS status-bar safe area.
         // The header is a sibling of ScrollView, not its first scrolling row.
@@ -243,6 +264,32 @@ struct WalletHomeView: View {
         .padding(23)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(red: 0.065, green: 0.07, blue: 0.078), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var walletSectionPicker: some View {
+        HStack(spacing: 5) {
+            ForEach(WalletHomeSection.allCases) { section in
+                let active = selectedSection == section.rawValue
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                        selectedSection = section.rawValue
+                    }
+                    UISelectionFeedbackGenerator().selectionChanged()
+                } label: {
+                    Text(section.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 43)
+                        .foregroundStyle(active ? WalletTheme.contrast : WalletTheme.secondary)
+                        .background(active ? WalletTheme.accent : Color.clear, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(active ? .isSelected : [])
+            }
+        }
+        .padding(5)
+        .background(WalletTheme.surface, in: Capsule())
         .accessibilityElement(children: .contain)
     }
 
