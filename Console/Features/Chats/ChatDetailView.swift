@@ -28,7 +28,11 @@ struct ChatDetailView: View {
     let contact: WalletContact
     let onBack: () -> Void
     let onAction: (WalletModal) -> Void
+    let onOpenActivity: () -> Void
 
+    @AppStorage("spyder.wallet.language") private var uiLanguage = "ru"
+    @State private var terminalActive = false
+    @State private var terminalEntries: [SpyderTerminalEntry] = []
     @State private var draft = ""
     @State private var sending = false
     @State private var confirmBlock = false
@@ -45,6 +49,25 @@ struct ChatDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            Picker("Режим переписки", selection: $terminalActive) {
+                Text(uiLanguage == "en" ? "Chat" : "Чат").tag(false)
+                Text(uiLanguage == "en" ? "Terminal" : "Терминал").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(WalletTheme.surface)
+            .accessibilityIdentifier("spyder.chat.terminalSwitcher")
+            if terminalActive {
+                SpyderChatTerminalView(contact: contact, entries: $terminalEntries,
+                    onWallpaper: { wallpaper in
+                        appearance.wallpaper = wallpaper
+                        SpyderChatAppearanceStore.save(appearance, peer: contact.id)
+                    },
+                    onBackgroundPicker: { showingAppearance = true },
+                    onAction: onAction,
+                    onOpenActivity: onOpenActivity)
+            } else {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 12) {
@@ -92,6 +115,7 @@ struct ChatDetailView: View {
                     .ignoresSafeArea(edges: .horizontal)
             }
             composer
+            }
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)

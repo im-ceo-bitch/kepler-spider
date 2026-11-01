@@ -18,6 +18,7 @@ struct ConsoleApp: App {
     @StateObject private var marketData = WalletMarketStore()
     @StateObject private var liveMarket = WalletLiveMarketStore()
     @StateObject private var walletHistory = WalletActivityStore()
+    @StateObject private var addressBook = WalletAddressBookStore()
     @StateObject private var spyderChat = SpyderChatStore()
     @StateObject private var legacyChat = LegacyConsoleChatStore()
     @StateObject private var spiderDevnet = SpiderDevnetStore()
@@ -41,6 +42,7 @@ struct ConsoleApp: App {
                 .environmentObject(marketData)
                 .environmentObject(liveMarket)
                 .environmentObject(walletHistory)
+                .environmentObject(addressBook)
                 .environmentObject(spyderChat)
                 .environmentObject(legacyChat)
                 .environmentObject(spiderDevnet)
@@ -57,7 +59,11 @@ struct ConsoleApp: App {
             }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
+                addressBook.selectWallet(walletAccess.activeWalletID)
                 await liveMarket.run()
+            }
+            .onChange(of: walletAccess.activeWalletID) { _, id in
+                addressBook.selectWallet(id)
             }
             .onReceive(marketData.$quotes) { quotes in
                 publicAssets.applyMarketQuotes(quotes)
