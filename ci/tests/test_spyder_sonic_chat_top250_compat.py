@@ -26,7 +26,10 @@ class SpyderIntegrationCompat(unittest.TestCase):
     def test_chat_experience_and_sonic_integrated(self):
         details = source('Console/Features/Chats/ChatDetailView.swift')
         identity = source('Console/Features/Settings/SpyderIdentityHubView.swift')
-        self.assertIn('SpyderChatWallpaperView(', details)
+        self.assertIn('SpyderLayeredChatBackdrop(', details)
+        layered = source('Console/Features/Chats/SpyderNativeSpiderIntegration.swift')
+        self.assertIn('SpyderChatWallpaperView(', layered)
+        self.assertIn('SpyderSpiderLayer(', layered)
         self.assertTrue('SpyderSonicPlayer.shared.playSent()' in details or 'UINotificationFeedbackGenerator().notificationOccurred(.success)' in details)
         self.assertTrue((ROOT / 'Console/ChatLive/SpyderSonicPlayer.swift').exists())
         self.assertIn('SpyderChatAppearanceSettingsView(peerID: nil)', identity)

@@ -34,6 +34,7 @@ struct ChatDetailView: View {
     var onOpenContact: () -> Void = {}
     var isVisible = true
 
+    @State private var spiderEntryConsumed = false
     @State private var pageVisible = false
     @State private var choosingPersona = false
     @State private var nextPersonaID: String?
@@ -56,7 +57,7 @@ struct ChatDetailView: View {
     private var visiblePersonaName: String { nextPersonaID.flatMap { chat.personaSummary($0)?.name } ?? chat.myName }
     private var messages: [SpyderServerMessage] { chat.messageByPeer[contact.id] ?? [] }
     private var peerAvatar: SpyderPersonaAvatar? { chat.contacts.first(where: { $0.id == contact.id })?.avatar }
-    private var accent: Color { (chat.personaStyle.bubbleAccent ?? chat.myAvatar?.color ?? .red).color }
+    private var accent: Color { (appearance.accent ?? chat.personaStyle.bubbleAccent ?? chat.myAvatar?.color ?? .red).color }
     private var shouldAnimate: Bool { appearance.animateMessages && motionEnabled && !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled }
     private var canSend: Bool { chat.encryptionReady && !sending && !changingPersona && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -111,6 +112,7 @@ struct ChatDetailView: View {
         } message: { Text(chat.errorMessage ?? "") }
         .task(id: "\(chat.activePersonaID ?? "")-\(scenePhase == .active)-\(isVisible)-\(terminalActive)-\(pageVisible)-\(sectionActive)") {
             reloadAppearance()
+            if !appearance.spider.enabled { spiderEntryConsumed = true }
             reactions = SpyderLocalChatReactions.load(peer: contact.id, persona: chat.activePersonaID)
             guard sectionActive, pageVisible, scenePhase == .active, isVisible, !terminalActive else { return }
             chat.resumeDecryption()
@@ -206,8 +208,11 @@ struct ChatDetailView: View {
                 }
             }
             .background {
-                SpyderChatWallpaperView(wallpaper: appearance.wallpaper,
-                                       accent: accent, glowEnabled: appearance.ambientGlow)
+                SpyderLayeredChatBackdrop(appearance: appearance, fallbackAccent: accent,
+                    isActive: sectionActive && pageVisible && scenePhase == .active && isVisible &&
+                        !terminalActive && !showingAppearance && !choosingPersona,
+                    animateOnAppear: !spiderEntryConsumed,
+                    onEntryHandled: { spiderEntryConsumed = true })
                     .ignoresSafeArea(edges: .horizontal)
             }
             VStack(alignment: .leading, spacing: 5) {
@@ -238,8 +243,12 @@ struct ChatDetailView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(contact.name).font(.system(size: 16, weight: .semibold)).lineLimit(1)
                     if let summary {
+                        HStack(spacing: 4) {
+                        if summary.typing { SpyderTypingIndicator(style: appearance.typingStyle, accent: accent,
+                            animate: isVisible && sectionActive) }
                         Text(summary.typing ? "печатает…" : (summary.online ? "в сети" : "не в сети"))
                             .font(.system(size: 10)).foregroundStyle(summary.typing ? accent : WalletTheme.secondary)
+                        }
                     }
                 }.foregroundStyle(WalletTheme.ink)
             }
@@ -296,13 +305,7 @@ struct ChatDetailView: View {
                     .font(.system(size: 15))
                     .foregroundStyle(WalletTheme.ink)
                     .textSelection(.enabled)
-                    .padding(.horizontal, 15).padding(.vertical, 11)
-                    .background(outgoing ? accent.opacity(0.20) : WalletTheme.surface,
-                                in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 19, style: .continuous)
-                            .stroke(outgoing ? accent.opacity(0.22) : WalletTheme.divider, lineWidth: 0.65)
-                    }
+                    .modifier(SpyderBubbleSurface(appearance: appearance, outgoing: outgoing, accent: accent))
                     .contextMenu {
                         Button {
                             UIPasteboard.general.string = message.text
@@ -342,7 +345,7 @@ struct ChatDetailView: View {
     }
 
     private func receiptView(_ state: SpyderMessageReceipt) -> some View {
-        SpyderReceiptMark(state: state, accent: accent)
+        SpyderReceiptMark(state: state, accent: appearance.receiptAccent?.color ?? accent)
     }
 
     private func acknowledgeVisible() {

@@ -1,24 +1,58 @@
 import SwiftUI
 import UIKit
+import SpyderNativeCollection
 
 // All chat appearance preferences are local-only: no contact identifiers, private keys,
 // message text or other content is sent to Cloudflare for styling.
 enum SpyderChatWallpaper: String, CaseIterable, Identifiable, Codable {
     case void, web, orbit, cyber, constellation, chrome, thunder
+    case phantomWeb, nativeVoid, cyberGrid, deepNebula, neuralCircuit, signalWaves
+    case codeRain, signalGrid, neuralFlow, radar, dust, aurora
+    case matte, carbon, graphite, metallic, geometry, silk, amberWeb, neonGrid, photo
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .phantomWeb: return "Phantom Web"
+        case .nativeVoid: return "Pure Void"
+        case .cyberGrid: return "Cyber Grid"
+        case .deepNebula: return "Deep Nebula"
+        case .neuralCircuit: return "Neural Circuit"
+        case .signalWaves: return "Signal Waves"
+        case .codeRain: return "Code Rain"
+        case .signalGrid: return "Signal Grid"
+        case .neuralFlow: return "Neural Flow"
+        case .radar: return "Dark Radar"
+        case .dust: return "Quantum Dust"
+        case .aurora: return "Black Aurora"
+        case .matte: return "Matte Black"
+        case .carbon: return "Carbon"
+        case .graphite: return "Graphite Haze"
+        case .metallic: return "Metallic Lines"
+        case .geometry: return "Spider Geometry"
+        case .silk: return "Black Silk"
+        case .amberWeb: return "Amber Chrome Web"
+        case .neonGrid: return "Neon Grid"
+        case .photo: return "Моё фото"
         case .void: return "Void"
-        case .web: return "Web"
-        case .orbit: return "Orbit"
+        case .web: return "Web Pulse"
+        case .orbit: return "Orbit Nodes"
         case .cyber: return "Cyberpunk"
         case .constellation: return "Constellation"
-        case .chrome: return "Chrome"
+        case .chrome: return "Chrome Mesh"
         case .thunder: return "Thunder"
         }
     }
     var subtitle: String {
         switch self {
+        case .phantomWeb, .nativeVoid, .cyberGrid, .deepNebula, .neuralCircuit, .signalWaves: return "Нативный фон коллекции · отдельный слой"
+        case .codeRain: return "Потоки символов"
+        case .signalGrid: return "Пульсирующая сетка"
+        case .neuralFlow: return "Потоки данных"
+        case .radar: return "Круговые сигналы"
+        case .dust: return "Светящиеся частицы"
+        case .aurora: return "Мягкие световые волны"
+        case .matte, .carbon, .graphite, .metallic, .geometry, .silk, .amberWeb, .neonGrid: return "Статичный фирменный фон"
+        case .photo: return "Фото с твоего устройства"
         case .void: return "Чистый фон"
         case .web: return "Тонкая паутина"
         case .orbit: return "Орбитальные линии"
@@ -28,13 +62,6 @@ enum SpyderChatWallpaper: String, CaseIterable, Identifiable, Codable {
         case .thunder: return "Электрические разряды"
         }
     }
-}
-
-struct SpyderChatAppearance: Codable, Equatable {
-    var wallpaper: SpyderChatWallpaper = .void
-    var animateMessages = true
-    var ambientGlow = true
-    var showTime = true
 }
 
 enum SpyderChatAppearanceStore {
@@ -74,12 +101,12 @@ enum SpyderChatAppearanceStore {
         let globalKey = scoped(Self.globalKey, persona: persona)
         let peerKey = scoped(Self.peerKey, persona: persona)
         guard let peer else {
-            if let data = try? JSONEncoder().encode(value) { defaults.set(data, forKey: globalKey) }
+            if let data = try? JSONEncoder().encode(value.normalized) { defaults.set(data, forKey: globalKey) }
             return
         }
         var entries = (defaults.data(forKey: peerKey)
             .flatMap { try? JSONDecoder().decode([String: SpyderChatAppearance].self, from: $0) }) ?? [:]
-        entries[peer] = value
+        entries[peer] = value.normalized
         if let data = try? JSONEncoder().encode(entries) { defaults.set(data, forKey: peerKey) }
     }
 
@@ -128,7 +155,7 @@ enum SpyderLocalChatReactions {
 // Keep the coordinate arithmetic outside the SwiftUI Canvas renderer.
 // A complex generic map expression here exceeded the Xcode Swift type-checker budget.
 private enum SpyderConstellationLayout {
-    static func nodes(in size: CGSize) -> [CGPoint] {
+    static func nodes(in size: CGSize, time: Double = 0) -> [CGPoint] {
         var result: [CGPoint] = []
         result.reserveCapacity(52)
 
@@ -137,7 +164,7 @@ private enum SpyderConstellationLayout {
             let gridY: Int = (index * 311 + 59) % 991
             let normalizedX: CGFloat = CGFloat(gridX) / 997.0
             let normalizedY: CGFloat = CGFloat(gridY) / 991.0
-            let pointX: CGFloat = normalizedX * size.width
+            let pointX: CGFloat = normalizedX * size.width + CGFloat(sin(time * 0.3 + Double(index))) * 5
             let pointY: CGFloat = normalizedY * size.height
             result.append(CGPoint(x: pointX, y: pointY))
         }
@@ -149,15 +176,15 @@ private enum SpyderConstellationLayout {
 // Keep procedural path construction outside SwiftUI's ViewBuilder and Canvas closure.
 // The previous 52-point expression was repeatedly timing out the Xcode type-checker.
 private enum SpyderWallpaperRenderer {
-    static func render(context: GraphicsContext, size: CGSize, wallpaper: SpyderChatWallpaper, accent: Color, thin: Double) {
-        let center = CGPoint(x: size.width * 0.5, y: size.height * 0.47)
+    static func render(context: GraphicsContext, size: CGSize, wallpaper: SpyderChatWallpaper, accent: Color, thin: Double, time: Double = 0) {
+        let center = CGPoint(x: size.width * 0.5 + CGFloat(sin(time * 0.15)) * 5, y: size.height * 0.47)
                 switch wallpaper {
                 case .void: break
                 case .web:
                     let spokes = 10
                     let radius = max(size.width, size.height) * 0.85
                     for step in 0..<spokes {
-                        let theta = CGFloat(step) * 2 * .pi / CGFloat(spokes)
+                        let theta = CGFloat(step) * 2 * .pi / CGFloat(spokes) + CGFloat(sin(time * 0.18) * 0.06)
                         var spoke = Path()
                         spoke.move(to: center)
                         spoke.addLine(to: CGPoint(x: center.x + cos(theta) * radius,
@@ -167,7 +194,7 @@ private enum SpyderWallpaperRenderer {
                     for ring in 1...8 {
                         var polygon = Path()
                         for step in 0...spokes {
-                            let theta = CGFloat(step % spokes) * 2 * .pi / CGFloat(spokes)
+                            let theta = CGFloat(step % spokes) * 2 * .pi / CGFloat(spokes) + CGFloat(sin(time * 0.18) * 0.06)
                             let r = CGFloat(ring) * 48
                             let point = CGPoint(x: center.x + cos(theta) * r,
                                                 y: center.y + sin(theta) * r)
@@ -191,7 +218,7 @@ private enum SpyderWallpaperRenderer {
                         context.stroke(line, with: .color(accent.opacity(thin * 0.8)), lineWidth: 0.65)
                     }
                     for index in 0..<12 {
-                        let y = CGFloat(index) * 70
+                        let y = CGFloat(index) * 70 + CGFloat(sin(time * 0.25)) * 5
                         var line = Path()
                         line.move(to: CGPoint(x: 0, y: y))
                         line.addLine(to: CGPoint(x: size.width, y: y))
@@ -199,7 +226,7 @@ private enum SpyderWallpaperRenderer {
                     }
                 case .chrome:
                     for index in 0..<22 {
-                        let y = CGFloat(index) * 38
+                        let y = CGFloat(index) * 38 + CGFloat(sin(time * 0.18)) * 6
                         var line = Path()
                         line.move(to: CGPoint(x: 0, y: y))
                         line.addLine(to: CGPoint(x: size.width, y: y - 24))
@@ -221,10 +248,10 @@ private enum SpyderWallpaperRenderer {
                         bolt.addLine(to: CGPoint(x: anchor + 20, y: size.height * 0.40))
                         bolt.addLine(to: CGPoint(x: anchor + 90, y: size.height * 0.68))
                         bolt.addLine(to: CGPoint(x: anchor + 55, y: size.height))
-                        context.stroke(bolt, with: .color(accent.opacity(thin * 1.4)), style: StrokeStyle(lineWidth: 1.0, lineCap: .round, lineJoin: .round))
+                        context.stroke(bolt, with: .color(accent.opacity(thin * (1.15 + 0.25 * sin(time * 0.7)))), style: StrokeStyle(lineWidth: 1.0, lineCap: .round, lineJoin: .round))
                     }
                 case .constellation:
-                    let nodes = SpyderConstellationLayout.nodes(in: size)
+                    let nodes = SpyderConstellationLayout.nodes(in: size, time: time)
                     for index in 1..<nodes.count where index % 3 != 0 {
                         var edge = Path()
                         edge.move(to: nodes[index - 1])
@@ -236,6 +263,10 @@ private enum SpyderWallpaperRenderer {
                         let path = Path(ellipseIn: dot)
                         context.fill(path, with: .color(accent.opacity(thin * 2.0)))
                     }
+                default:
+                    SpyderExtendedWallpaperRenderer.render(context: context, size: size, wallpaper: wallpaper,
+                        accent: accent, intensity: thin, time: time)
+
                 }
     }
 }
@@ -244,129 +275,50 @@ struct SpyderChatWallpaperView: View {
     var wallpaper: SpyderChatWallpaper
     var accent: Color
     var glowEnabled: Bool
+    var motionIntensity: Double = 0.5
+    var signalIntensity: Double = 0.5
+    var blurRadius: Double = 0
+    var photoID: String? = nil
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var glowing = false
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.spyderChatSectionActive) private var sectionActive
+    @State private var visible = false
+    @State private var photo: UIImage?
     @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-
-    private var activeGlow: Bool { glowEnabled && !reduceMotion && !lowPower && wallpaper != .void }
+    private var moving: Bool { sectionActive && visible && glowEnabled && wallpaper.isAnimated && motionIntensity > 0 && !reduceMotion && !lowPower && scenePhase == .active }
 
     var body: some View {
-        ZStack {
-            (colorScheme == .dark ? Color(red: 0.045, green: 0.052, blue: 0.065) : Color(red: 0.965, green: 0.965, blue: 0.979))
-            Canvas(opaque: false) { context, size in
-                guard wallpaper != .void else { return }
-                let thin: Double = colorScheme == .dark ? 0.15 : 0.11
-                SpyderWallpaperRenderer.render(context: context, size: size, wallpaper: wallpaper, accent: accent, thin: thin)
-            }
-            if wallpaper != .void {
-                Circle()
-                    .fill(accent.opacity(colorScheme == .dark ? 0.065 : 0.035))
-                    .frame(width: 300, height: 300)
-                    .blur(radius: 65)
-                    .offset(x: 130, y: -150)
-                    .opacity(activeGlow ? (glowing ? 1 : 0.40) : 0.6)
-                    .allowsHitTesting(false)
+        GeometryReader { geometry in
+            TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !moving)) { timeline in
+                let time = moving ? timeline.date.timeIntervalSinceReferenceDate * motionIntensity : 0
+                ZStack {
+                    ((colorScheme == .dark || wallpaper.prefersDarkBase) ? Color(red: 0.035, green: 0.04, blue: 0.052) : Color(white: 0.96))
+                    if wallpaper == .photo, let photo {
+                        Image(uiImage: photo).resizable().scaledToFill()
+                            .frame(width: geometry.size.width, height: geometry.size.height).clipped()
+                    } else if let backdrop = wallpaper.collectionBackdrop {
+                        SpyderNativeBackdropView(style: backdrop, accent: accent)
+                    } else {
+                        Canvas(opaque: false, rendersAsynchronously: true) { context, size in
+                            let thin = ((colorScheme == .dark || wallpaper.prefersDarkBase) ? 0.30 : 0.17) * (0.35 + signalIntensity)
+                            SpyderWallpaperRenderer.render(context: context, size: size, wallpaper: wallpaper,
+                                accent: accent, thin: thin, time: time)
+                        }
+                    }
+                }.blur(radius: CGFloat(blurRadius)).clipped()
             }
         }
-        .accessibilityHidden(true)
-        .allowsHitTesting(false)
-        .onAppear { restartGlow() }
-        .onChange(of: wallpaper) { _, _ in restartGlow() }
-        .onChange(of: glowEnabled) { _, _ in restartGlow() }
+        .accessibilityHidden(true).allowsHitTesting(false)
+        .onAppear { visible = true }
+        .onDisappear { visible = false; photo = nil }
+        .task(id: "\(photoID ?? "")-\(visible)-\(scenePhase == .active)-\(sectionActive)-\(wallpaper.rawValue)") {
+            guard sectionActive, visible, scenePhase == .active, wallpaper == .photo, let photoID else { photo = nil; return }
+            photo = SpyderWallpaperPhotoStore.load(photoID)
+        }
+        .onChange(of: scenePhase) { _, phase in if phase != .active { photo = nil } }
         .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
             lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-            restartGlow()
         }
-    }
-
-    private func restartGlow() {
-        glowing = false
-        if activeGlow {
-            withAnimation(.easeInOut(duration: 7).repeatForever(autoreverses: true)) { glowing = true }
-        }
-    }
-}
-
-struct SpyderChatAppearanceSettingsView: View {
-    @EnvironmentObject private var chat: SpyderChatStore
-    let peerID: String?
-    @Environment(\.dismiss) private var dismiss
-    @AppStorage(SpyderMotionKeys.accent) private var accentRaw = SpyderSignalAccent.red.rawValue
-    @State private var appearance = SpyderChatAppearance()
-    @State private var loaded = false
-
-    private var accent: Color { (chat.personaStyle.bubbleAccent ?? chat.myAvatar?.color ?? .red).color }
-
-    var body: some View {
-        ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 22) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(peerID == nil ? "Твои чаты" : "Этот чат")
-                            .font(.system(size: 23, weight: .bold))
-                        Text("Фон подстраивается под выбранный неоновый акцент Spyder.")
-                            .font(.subheadline).foregroundStyle(WalletTheme.secondary)
-                    }
-                    Text("Фоны").font(.headline)
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        ForEach(SpyderChatWallpaper.allCases) { option in
-                            Button {
-                                appearance.wallpaper = option
-                                save()
-                                UISelectionFeedbackGenerator().selectionChanged()
-                            } label: {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    SpyderChatWallpaperView(wallpaper: option, accent: accent, glowEnabled: false)
-                                        .frame(height: 105)
-                                        .clipShape(RoundedRectangle(cornerRadius: 17))
-                                        .overlay(alignment: .topTrailing) {
-                                            if appearance.wallpaper == option {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .font(.system(size: 22)).foregroundStyle(accent)
-                                                    .padding(9)
-                                            }
-                                        }
-                                    Text(option.title).font(.system(size: 15, weight: .semibold))
-                                    Text(option.subtitle).font(.caption).foregroundStyle(WalletTheme.secondary)
-                                }
-                            }.buttonStyle(.plain)
-                                .accessibilityAddTraits(appearance.wallpaper == option ? .isSelected : [])
-                        }
-                    }
-                    WalletCard {
-                        VStack(spacing: 14) {
-                            Toggle("Анимация сообщений", isOn: $appearance.animateMessages)
-                            Divider()
-                            Toggle("Живое свечение фона", isOn: $appearance.ambientGlow)
-                            Divider()
-                            Toggle("Время под сообщениями", isOn: $appearance.showTime)
-                        }
-                        .onChange(of: appearance) { _, _ in if loaded { save() } }
-                    }
-                    Text("Анимации автоматически сокращаются, если на iPhone включено «Уменьшение движения» или режим энергосбережения. Все настройки оформления хранятся только на этом устройстве.")
-                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                    if let peerID {
-                        Button("Вернуть общее оформление", role: .destructive) {
-                            SpyderChatAppearanceStore.reset(peer: peerID, persona: chat.activePersonaID)
-                            appearance = SpyderChatAppearanceStore.load(persona: chat.activePersonaID)
-                            loaded = false
-                            dismiss()
-                        }
-                        .font(.subheadline)
-                    }
-                }
-                .padding(20)
-            }
-            .background(WalletTheme.canvas.ignoresSafeArea())
-            .navigationTitle("Оформление чатов")
-            .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            appearance = SpyderChatAppearanceStore.load(peer: peerID, persona: chat.activePersonaID)
-            loaded = true
-        }
-    }
-
-    private func save() {
-        if loaded { SpyderChatAppearanceStore.save(appearance, peer: peerID, persona: chat.activePersonaID) }
     }
 }

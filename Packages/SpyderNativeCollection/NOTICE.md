@@ -1,0 +1,3 @@
+# Artwork rights notice
+
+The 12 vector designs are offline traces/variations derived from the user's supplied spider emblem references. Some of those emblems visually resemble well-known Spider-Man/Marvel marks and may be protected by third-party copyright or trademark rights. Their inclusion in this development package does not constitute a license or authorization for commercial branding. Before publishing a commercial wallet or messenger, clear the necessary rights or replace the designs with distinct, original Spyder Network emblems. The native rendering and customization code is independent of the particular silhouettes.

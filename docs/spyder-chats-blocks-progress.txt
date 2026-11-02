@@ -1,90 +1,96 @@
-SPYDER — cumulative blocks 1–4 (source update)
-Base: user-provided kepler-spider-main.zip, archive commit b8a17aae9db1ca4c467075f3c5af7961df58f90b.
-Current GitHub main has NOT been verified. Retrieval was unavailable during this work.
-Compare against newer independent changes before overwriting files.
+SPYDER — BLOCK 5 + NATIVE SPIDER COLLECTION INTEGRATION
+Non-cumulative relative to the already installed cumulative BLOCK 4.
+Also overlays the previous block-5-only ZIP safely; do not upload that old block-5 ZIP afterward.
+Package name: console-update-block5-native-spiders.zip
 
-BLOCKS 1–3 INCLUDED:
-Two tabs Wallet/Chats; terminal inside chats; real separate personas and carousel;
-instant contacts by username/code/QR app link, QR photo import, connection history,
-unknown-contact filter/block/hide/mute; message preview/time/unread, pin/archive/delete,
-recipient delivery/read acknowledgements, recent online/typing, scoped chat persona and
-next-message persona selection. Each identity pair retains separate keys and history.
-No NFC, Nearby, camera scanner, HTTPS universal links or unlimited archival storage yet.
-Existing retention is up to 300 encrypted messages per pair. Foreground polling is about
-3 seconds in chat / 10 seconds on home. APNs is not proof of decryption or delivery.
-Receipts are authenticated application acknowledgements, not signed proof against the relay.
-Existing TOFU single-device E2EE trust model is unchanged; this is not a security audit.
+BASE AND SCOPE:
+The user confirmed cumulative block 4 was installed. This source patch contains block 5 plus the
+attached SpyderNativeCollection-v1.zip integration. Blocks 1–4 are not repeated.
+Both a block-4 baseline and block-5 baseline are checked during artifact replay.
+Current GitHub main could not be retrieved: repository connector returned Unknown tool.
+It is not claimed that unrelated current-main changes have been merged.
+Backend/workflows/credentials are unchanged by this patch.
 
-BLOCK 4 — IMPLEMENTED IN SOURCE:
-1. Spyder ID pull-down: circular avatar grows toward a nearly full-width square with 8 pt corners.
-   A stronger pull (260 pt threshold) opens a fullscreen native identity viewer on release.
-   Avatar tap provides an alternative. Fullscreen can close by button, downward swipe or accessibility escape.
-   The drag morph is not a scaling screenshot: the native avatar canvas, size and clipping radius change.
-   Fullscreen presentation uses a native cover; no cross-window matched-geometry transition is claimed.
-2. Reduced Motion keeps the header avatar at its circular resting size; viewer remains accessible by tap.
-3. Hero carousel: enlarged card, animated side signal sweep, actual privacy badge, active-chat count,
-   native avatar/ring, chosen badge icon, quick QR/invite/style actions. Decorative glow is not presence.
-4. Curated persona palette: Signal Gold, Electric Blue, Neon Violet, Emerald, Ice Cyan, Crimson Red,
-   Magenta, Chrome Silver, Amber, Copper and Mono White. Five legacy colors remain decodable/supported.
-   The server validates all supported raw color values; older profiles are not forcibly recolored.
-5. Per-persona Style page: avatar motion, ring (thin/double/dotted/none), badge,
-   glow intensity, optional independent bubble accent and existing wallpaper family.
-   Avatar/main accent are shared through the existing profile protocol. Ring/glow/badge/bubble/default
-   wallpaper preferences are local to this device. Contact avatars retain protocol-compatible defaults.
-6. Per-persona chat defaults and per-peer overrides. Appearance save/load/reset paths, including terminal
-   handlers, all carry the actual active persona. Old unscoped settings migrate ONCE to the original persona,
-   never automatically to new personas, and do not overwrite an existing scoped value.
-   Local reaction metadata is also scoped; invalid input cannot fall back to another persona's metadata.
-7. Loading another persona no longer rewrites device-wide motion accent/avatar settings.
-   Local profile metadata reloads so edits by a scoped chat store reach the home carousel on refresh.
-8. Server privacy modes:
-   Public: searchable username, new connections allowed subject to existing block/unknown filters.
-   Private: no username search; new contacts require a capability code/QR/app link.
-   Hidden: no username search; NEW INCOMING connections denied even by capability code.
-           Existing contacts remain and the owner may explicitly initiate an outgoing connection.
-   Public requires an actual valid username. Reserving a username alone does not publish the profile.
-   Legacy privacy toggles cannot silently undo Hidden. Pending legacy invitations to Hidden are discarded.
-   Hidden is not anonymity from the server; profile privacy does not erase existing contacts or conversations.
-9. Profile/name/username/key-activation writes preserve the latest privacy setting transactionally.
-   A delayed profile request cannot overwrite a newer Hidden selection.
-10. QR on Spyder ID now uses the same validated spyder://invite?code=... payload as the invitation page,
-    rather than a username payload the QR importer cannot consume. Links require installed Spyder.
-11. Timelines honor view visibility, app lifecycle, Reduce Motion and low-power checks.
-    Private-origin secondary personas retain their previous APNs-token restriction, even if made searchable.
+WHERE TO USE:
+Chat > + > Фон и оформление > Коллекция пауков > Паук поверх фона.
+Choose one of the 12 native thumbnails. Choose its color, glow, size, opacity and assembly mode.
+Choose the rear layer independently under Фон за пауком, or use the gallery/photo import below.
+Use the replay button above the preview to inspect particle assembly.
+The same Appearance page in Spyder ID controls defaults for that persona.
+A chat's explicit appearance override takes precedence over its persona default; reset it from the
+Appearance page to use persona defaults again. All choices are local to this device/account context.
 
-VALIDATION PASS 1:
-- Node server suite: 44 passed, 0 failed (8 new identity/privacy/palette scenarios).
-- Static repository integrity: passed, 89 Swift sources plus assets/plist/server manifest.
-- Repository Python CI: 135 discovered; 119 passed, 16 environment-dependent checks skipped.
-- Three obsolete appearance source assertions updated to require persona-scoped APIs.
-- Swift XCTest cases added for style isolation, corrupt local state, legacy migration,
-  per-persona reaction fallback and expansion bounds/Reduce Motion. NOT RUN here.
-- Reviewed affected Swift types, initializer labels, call sites, persistence paths and server protocol.
+WHAT WAS INTEGRATED:
+- Local SwiftPM product Packages/SpyderNativeCollection linked into Console and ConsoleTests.
+  Its JSON vector resource is processed by SwiftPM for Bundle.module; no manual copying into main
+  bundle and no remote asset loading. Existing XcodeGen workflow picks up project.yml.
+- All 12 original vector artworks, 480 particle targets each, original vector renderer and six native
+  backdrop implementations are preserved byte-for-byte from the attachment.
+- Foreground-only SpyderSpiderLayer separated from the package's opaque two-layer wrapper.
+  Live chat and preview use one app host: rear chosen wallpaper/photo; front transparent spider;
+  real message bubbles stay above both. Neither background nor spider intercepts touches.
+- Original two-layer SpyderChatBackground and standalone editor remain API-compatible for package
+  demos. The actual app uses its existing scoped appearance store, not a new global demo store.
+- Independent choices: rear wallpaper, rear accent, front spider, its 12-color palette, glow on/off,
+  glow strength, visibility and size. Rear blur affects the background, keeping the spider sharp.
+- Six additional gallery backgrounds: Phantom Web, Pure Void, Cyber Grid, Deep Nebula,
+  Neural Circuit, Signal Waves. They work without a spider too. Existing native/animated backgrounds
+  and imported photos also work under any selected spider.
+- Assembly takes about 2.25 seconds using native Canvas particles. Static vector remains after it
+  completes; the spider does not run a permanent TimelineView animation.
+- Entry consumption belongs to the chat screen rather than a disposable background subtree.
+  Incoming messages, typing, keyboard changes and rear-layer changes do not create a new entry.
+  Returning from Chat/Terminal or temporary overlays does not replay an already consumed entry-only
+  effect. Turning a spider on mid-conversation with entry-only mode waits for a new chat entry;
+  the preview replay button remains available while animation is enabled.
+- With entry-only OFF, spider/color/glow changes may replay assembly. Theme preset selection changes
+  the rear/bubbles while preserving the chosen front spider and its color.
+- Inactive scene, hidden chat, terminal mode, settings overlay, Reduce Motion, low power and the
+  app-wide motion setting stop/prevent assembly. System controls take priority over the local toggle.
+- Removed the standalone editor's duplicate theme-change/replay-token trigger; editor/store views
+  have explicit main-actor isolation. Package checksum manifest regenerated for this integration.
+- Existing block-4/5 JSON remains readable. No spider is forced onto old saved appearances.
+  Missing new fields use safe defaults; invalid front-layer settings cannot reset an independent
+  rear background. Unknown artwork/color IDs and invalid numeric ranges are normalized.
+- PNG previews in the package are documentation/golden previews, NOT runtime raster spiders and
+  NOT screenshots of the integrated iOS app. The original artwork NOTICE is preserved.
 
-VALIDATION PASS 2 (PACKAGED ZIP):
-- CRC/path/protected-workflow checks and byte comparison after overlay on a fresh attachment copy.
-- Node suite, integrity check and Python CI rerun from the overlaid copy.
-- No Swift compiler/Xcode/iOS SDK available: no successful iOS build, TestFlight, device visual QA,
-  gesture behavior, animation smoothness, lifecycle or real two-phone end-to-end claim.
-- In particular, iPhone 11 / 13 mini layout and pull-to-viewer threshold behavior still need device testing.
+BLOCK 5 ALSO INCLUDED:
+Live preview/shared bubble renderer, nine presets, native wallpaper categories, user photo import,
+motion/pattern/blur controls, bubble style/radius/transparency, theme/read colors and typing styles.
+A ready-made curated photo pack is still not supplied; own-photo import is available.
+Block 6 (privacy controls/real Touch or Nearby/etc.) remains separate work.
+
+VALIDATION PASS 1 — SOURCE/DATA:
+- Original attached SHA256SUMS verified before changes.
+- Modified package validator passed: 12 styles, 5760 particle targets, 3435 vector vertices.
+- Original artworks.json, vector renderer, backdrop source and NOTICE compared byte-for-byte.
+- Regenerated package checksums verified, including all resource/preview/source files.
+- Repository static integrity and Python CI run after integration (138 discovered; 122 pass,
+  16 environment-dependent checks skipped). New gates validate real package geometry/checksums
+  and product linkage declarations; these are not Swift compilation checks.
+- New app XCTest cases cover legacy defaults, independent front/rear choices, preset preservation,
+  scoped persistence, corrupt options and linked resource availability. NOT EXECUTED here.
+- Swift call-site, initializer-label, model-migration, resource and lifecycle source review performed.
+
+VALIDATION PASS 2 — PACKAGED ARTIFACT:
+- Safe relative paths/CRC/no-workflow/no-server checks.
+- Overlay ZIP onto clean block-4 tree and compare complete eligible source bytes to development tree.
+- Overlay same ZIP onto clean block-5 tree and perform the same comparison.
+- Rerun integrity, Python CI, package validator/checksums from the extracted/overlaid result.
+- Swift compiler/Xcode/iOS SDK are unavailable: no successful iOS compilation, new XCTest execution,
+  real-device rendering, screenshot comparison, gesture/lifecycle verification, measured FPS or
+  TestFlight claim. Verify iPhone 11 and 13 mini before treating this as release-ready.
 
 INSTALL:
-Upload only console-update-block4-identities.zip in repository root for the existing unpacker.
-This package includes blocks 1–4 with relative source paths. No workflows or deletion manifest.
-After unpacking, manually run Actions > Console — Deploy Realtime Server on updated main.
-After server deployment succeeds, run the existing TestFlight build workflow.
-Bot GITHUB_TOKEN unpack commits do not automatically trigger other push workflows.
-The new privacy client requires the updated server's /v4/profile/privacy endpoint.
+Upload only console-update-block5-native-spiders.zip to repository root for the existing unpacker.
+After unpacking, manually run the existing TestFlight build workflow on updated main.
+No new Cloudflare deployment is needed for the appearance integration itself. Earlier block-4
+messaging/privacy server deployment remains a prerequisite for those existing features.
+Do not restore the old separate block-5 ZIP over this integration.
 
-DEVICE CHECKS STILL REQUIRED:
-iPhone 11 / 13 mini: slow pull/release/reverse morph, strong pull, tap/fullscreen/close,
-landscape and Dynamic Type, Reduce Motion/low power, carousel swipes/quick buttons,
-two personas with different rings/colors/bubbles/wallpapers, appearance override/reset/migration,
-all three privacy modes using another account, existing chat continuity and privacy after profile edits.
-
-2 BLOCKS REMAIN:
-5. Appearance overhaul: live chat preview, animated/static/photo wallpaper galleries and categories,
-   all named presets, motion/blur/bubble/radius/transparency/read-receipt/typing-style controls.
-6. Privacy + real device connection: receipt/typing/preview opt-out, silent send, Face ID chat lock,
-   disappearing messages, export/clear/verify keys, actual supported Touch/Nearby transport,
-   real connection animations/haptics and reaction animation; voice animation when voice exists.
+DEVICE CHECKS:
+All 12 native choices and colors, all six new backgrounds and an imported photo, independent colors,
+readable bubbles and touch/scroll, glow-off, size/opacity bounds, preview replay, entry-only on/off,
+no replay on messages/keyboard/rear selection, Chat/Terminal, background/lock, Reduce Motion,
+low power/global motion, persona/per-chat persistence/reset and old appearance migration.
