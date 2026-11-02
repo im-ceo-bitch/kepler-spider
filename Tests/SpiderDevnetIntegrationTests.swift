@@ -42,6 +42,31 @@ final class SpiderDevnetIntegrationTests: XCTestCase {
         XCTAssertEqual(SpiderDevnetStore.displayAmount(1_000_000_001), "1.000000001")
     }
 
+    func testPendingTransferPersistsIdenticalSignedEnvelope() throws {
+        let key = Curve25519.Signing.PrivateKey()
+        let sender = SpiderDevnetSigner.address(for: key.publicKey.rawRepresentation)
+        let recipient = SpiderDevnetSigner.address(for: Curve25519.Signing.PrivateKey().publicKey.rawRepresentation)
+        let payload = try SpiderDevnetSigner.makeSPDTransfer(from: sender, to: recipient,
+                          amountAtomic: 100, nonce: 2, certifiedHeight: 10)
+        let signed = try SpiderDevnetSigner.sign(payload, privateKey: key)
+        let original = SpiderPendingTransfer(id: signed.id(), sender: sender,
+                           recipient: recipient, amountAtomic: 100,
+                           genesisHash: String(repeating: "a", count: 64),
+                           nonce: 2, expiryHeight: payload.expiry_height,
+                           queued: false, signed: signed)
+        let roundTrip = try JSONDecoder().decode(SpiderPendingTransfer.self,
+                                                 from: JSONEncoder().encode(original))
+        XCTAssertEqual(roundTrip.signed?.id(), original.id)
+        XCTAssertEqual(roundTrip.signed?.signature, signed.signature)
+        // Previously installed builds persisted pending without a signed envelope.
+        var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as! [String: Any]
+        legacy.removeValue(forKey: "signed")
+        let migrated = try JSONDecoder().decode(SpiderPendingTransfer.self,
+                                                  from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(migrated.signed)
+        XCTAssertEqual(migrated.id, original.id)
+    }
+
     func testGatewayRejectsPlainHTTPAndUnpinnedGenesis() {
         let token = String(repeating: "a", count: 64)
         let hash = String(repeating: "b", count: 64)

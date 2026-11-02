@@ -641,7 +641,19 @@ struct WalletHomeView: View {
                             Text(privacyHidden ? "Tx \(pending.id.prefix(14))… · •••• SPD" : "Tx \(pending.id.prefix(14))… · \(SpiderDevnetStore.displayAmount(pending.amountAtomic)) SPD")
                                 .font(.system(size: 12, design: .monospaced))
                                 .textSelection(.enabled)
-                            Text("Не отправляйте повторно, пока транзакция не будет подтверждена или безопасно разрешена.")
+                            if pending.signed != nil {
+                                Button {
+                                    Task {
+                                        do { try await spider.retryPending() }
+                                        catch { spider.error = error.localizedDescription }
+                                    }
+                                } label: {
+                                    Label("Повторить доставку той же транзакции", systemImage: "arrow.clockwise.circle")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .disabled(spider.sending || spider.refreshing || !spider.connected)
+                            }
+                            Text("Повтор использует прежнюю подпись и ID, не создаёт новый nonce. До финализации перевод не считается завершённым.")
                                 .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                         }
                         if let confirmed = spider.latestConfirmed {

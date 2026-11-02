@@ -12,6 +12,8 @@ struct SpiderQueuedDevnetTransfer {
     let amountAtomic: UInt64
     let nonce: UInt64
     let expiryHeight: UInt64
+    // Public signed envelope (not a private key) for safe replay of the SAME txid.
+    let signed: SpiderSignedTransfer
     // This is not a BFT commit. Show "Pending (test SPD)" in the UI.
     let finalized: Bool = false
 }
@@ -82,7 +84,8 @@ actor SpiderWalletDevnetBridge {
         let signed = try SpiderDevnetSigner.sign(transfer, privateKey: signingKey)
         let proposed = SpiderQueuedDevnetTransfer(id: signed.id(), from: sender,
                                                    to: recipient, amountAtomic: amountAtomic,
-                                                   nonce: transfer.nonce, expiryHeight: transfer.expiry_height)
+                                                   nonce: transfer.nonce, expiryHeight: transfer.expiry_height,
+                                                   signed: signed)
         pendingBySender[sender] = proposed.id
         // Durable reservation before any potentially accepted network POST.
         try await onPrepared(proposed)

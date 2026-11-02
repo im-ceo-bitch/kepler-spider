@@ -7,6 +7,17 @@ import Foundation
 import FoundationNetworking
 #endif
 
+// An authenticated wallet request must never follow a redirect and expose the
+// gateway bearer token to a different destination. URLSession retains delegate.
+private final class SpiderDevnetNoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}
+
 struct SpiderCertifiedStatus: Decodable {
     let network: String
     let chain_id: String
@@ -90,7 +101,7 @@ struct SpiderCertifiedWalletClient {
 
     init(readBaseURL: URL, submitBaseURL: URL,
          expectedChainID: String, expectedGenesisHash: String,
-         devnetBearerToken: String, session: URLSession = .shared) throws {
+         devnetBearerToken: String, session: URLSession? = nil) throws {
         // Real iPhones require a separately deployed, authenticated TLS proxy;
         // 127.0.0.1 would refer to the iPhone, not the validator server.
         guard readBaseURL.scheme == "https", submitBaseURL.scheme == "https",
@@ -126,7 +137,14 @@ struct SpiderCertifiedWalletClient {
         self.submitBaseURL = submitBaseURL
         self.expectedChainID = expectedChainID
         self.expectedGenesisHash = expectedGenesisHash
-        self.session = session
+        if let session {
+            self.session = session  // injectable for controlled tests
+        } else {
+            let config = URLSessionConfiguration.ephemeral
+            config.timeoutIntervalForRequest = 10
+            config.timeoutIntervalForResource = 30
+            self.session = URLSession(configuration: config, delegate: SpiderDevnetNoRedirect(), delegateQueue: nil)
+        }
     }
 
     private func fetch<T: Decodable>(_ request: URLRequest, expectedStatus: Int = 200) async throws -> T {
@@ -137,8 +155,16 @@ struct SpiderCertifiedWalletClient {
         guard let http = response as? HTTPURLResponse else {
             throw SpiderCertifiedClientError.invalidResponse(-1)
         }
-        guard http.statusCode == expectedStatus else {
+        guard http.statusCode == expectedStatus, data.count <= 2_000_000 else {
             throw SpiderCertifiedClientError.invalidResponse(http.statusCode)
+        }
+        // Redirect responses are never accepted, even when injected tests
+        // supply their own session. 3xx cannot be treated as authenticated data.
+        guard let finalURL = http.url,
+              finalURL.scheme == request.url?.scheme,
+              finalURL.host?.lowercased() == request.url?.host?.lowercased(),
+              finalURL.port == request.url?.port else {
+            throw SpiderCertifiedClientError.incompatibleNetwork
         }
         return try JSONDecoder().decode(T.self, from: data)
     }

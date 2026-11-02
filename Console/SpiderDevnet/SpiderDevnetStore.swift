@@ -60,6 +60,9 @@ struct SpiderPendingTransfer: Codable {
     let nonce: UInt64
     let expiryHeight: UInt64
     var queued: Bool
+    // Optional for compatibility with pending records saved by previous app builds.
+    // This is a signed PUBLIC envelope, never a seed or a private key.
+    let signed: SpiderSignedTransfer?
 }
 
 struct SpiderCompletedTransfer {
@@ -69,7 +72,7 @@ struct SpiderCompletedTransfer {
 }
 
 enum SpiderDevnetStoreError: LocalizedError {
-    case notConfigured, noWalletAddress, pendingTransfer, wrongSigner, invalidRecipient, invalidAmount, wrongConfiguration, pendingPersistence, keychain(OSStatus)
+    case notConfigured, noWalletAddress, pendingTransfer, wrongSigner, invalidRecipient, invalidAmount, wrongConfiguration, pendingPersistence, retryUnavailable, keychain(OSStatus)
 
     var errorDescription: String? {
         switch self {
@@ -81,6 +84,7 @@ enum SpiderDevnetStoreError: LocalizedError {
         case .invalidAmount: "Введите положительную сумму SPD, до 9 цифр после запятой."
         case .wrongConfiguration: "Укажите HTTPS-адрес (без пути), 64-символьный genesis hash и 64-символьный токен."
         case .pendingPersistence: "Не удалось сохранить неподтверждённую транзакцию. Отправка остановлена."
+        case .retryUnavailable: "Старая транзакция без сохранённой подписи. Проверьте её статус, не создавайте новый перевод с тем же nonce."
         case .keychain(let status): "Keychain недоступен (код \(status))."
         }
     }
@@ -149,8 +153,16 @@ final class SpiderDevnetStore: ObservableObject {
         guard pending == nil else { throw SpiderDevnetStoreError.pendingTransfer }
         let trimmedOrigin = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveToken: String
-        if token.isEmpty { effectiveToken = try SpiderDevnetCredentials.load() ?? "" }
-        else { effectiveToken = token }
+        if token.isEmpty {
+            // A token belongs to one gateway and one genesis; never reuse it silently
+            // when the user switches to another host/network.
+            guard let previous = configuration,
+                  previous.origin == trimmedOrigin,
+                  previous.genesisHash == genesis.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                throw SpiderDevnetStoreError.wrongConfiguration
+            }
+            effectiveToken = try SpiderDevnetCredentials.load() ?? ""
+        } else { effectiveToken = token }
         let newConfiguration = try Self.validate(trimmedOrigin, genesis: genesis, token: effectiveToken)
         if !token.isEmpty { try SpiderDevnetCredentials.save(effectiveToken) }
         UserDefaults.standard.set(try JSONEncoder().encode(newConfiguration), forKey: Self.configurationKey)
@@ -293,11 +305,56 @@ final class SpiderDevnetStore: ObservableObject {
         await refresh()
     }
 
+    // On network timeout, replay only the previously signed transaction. Creating
+    // another signature with the same certified nonce is forbidden until resolved.
+    func retryPending() async throws {
+        guard !sending else { throw SpiderDevnetStoreError.pendingTransfer }
+        guard let address, let original = pendingForAddress else {
+            throw SpiderDevnetStoreError.noWalletAddress
+        }
+        guard let signed = original.signed, signed.id() == original.id,
+              signed.payload.sender == address,
+              signed.payload.recipient == original.recipient,
+              signed.payload.amount == original.amountAtomic,
+              signed.payload.nonce == original.nonce,
+              signed.payload.expiry_height == original.expiryHeight,
+              signed.payload.chain_id == SpiderDevnetSigner.chainID else {
+            throw SpiderDevnetStoreError.retryUnavailable
+        }
+        sending = true
+        let epoch = sessionEpoch
+        defer { sending = false }
+        let client = try client()
+        let proof = try await client.confirmation(original.id)
+        guard epoch == sessionEpoch, self.address == address else {
+            throw SpiderDevnetStoreError.noWalletAddress
+        }
+        if proof.finalized { await refresh(); return }
+        let status = try await client.status()
+        let account = try await client.account(address)
+        guard epoch == sessionEpoch, self.address == address else {
+            throw SpiderDevnetStoreError.noWalletAddress
+        }
+        guard status.height <= original.expiryHeight,
+              account.height <= status.height, account.nonce == original.nonce else {
+            await refresh()  // May clear a genuinely expired reservation.
+            throw SpiderDevnetStoreError.pendingTransfer
+        }
+        let accepted = try await client.submit(signed)
+        guard epoch == sessionEpoch, self.address == address, accepted.id == original.id else {
+            throw SpiderWalletBridgeError.invalidFinalityResponse
+        }
+        pending?.queued = true
+        if let pending { UserDefaults.standard.set(try JSONEncoder().encode(pending), forKey: Self.pendingKey) }
+        await refresh()
+    }
+
     private func recordPrepared(_ transfer: SpiderQueuedDevnetTransfer, genesis: String) throws {
         let item = SpiderPendingTransfer(id: transfer.id, sender: transfer.from,
                     recipient: transfer.to, amountAtomic: transfer.amountAtomic,
                     genesisHash: genesis, nonce: transfer.nonce,
-                    expiryHeight: transfer.expiryHeight, queued: false)
+                    expiryHeight: transfer.expiryHeight, queued: false,
+                    signed: transfer.signed)
         pending = item
         let data = try JSONEncoder().encode(item)
         UserDefaults.standard.set(data, forKey: Self.pendingKey)
