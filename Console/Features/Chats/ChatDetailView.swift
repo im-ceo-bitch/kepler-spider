@@ -39,7 +39,6 @@ struct ChatDetailView: View {
     @State private var choosingPersona = false
     @State private var nextPersonaID: String?
     @State private var changingPersona = false
-    @State private var personaNotice: String?
     @State private var messageFrames: [String: CGRect] = [:]
     @State private var viewport = CGRect.zero
     @State private var lastTypingAt = Date.distantPast
@@ -49,9 +48,11 @@ struct ChatDetailView: View {
     @State private var sending = false
     @State private var confirmBlock = false
     @State private var showingAppearance = false
+    @State private var showingOriginals = false
     @State private var showingSecurity = false
     @State private var appearance = SpyderChatAppearance()
     @State private var reactions: [String: String] = [:]
+    @FocusState private var composerFocused: Bool
 
     private var summary: SpyderConversationSummary? { chat.conversations.first(where: { $0.id == contact.id }) }
     private var visiblePersonaName: String { nextPersonaID.flatMap { chat.personaSummary($0)?.name } ?? chat.myName }
@@ -85,6 +86,7 @@ struct ChatDetailView: View {
             }
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
+        .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -92,6 +94,11 @@ struct ChatDetailView: View {
             }
         }
         .sheet(isPresented: $choosingPersona) { personaPicker }
+        .sheet(isPresented: $showingOriginals) {
+            SpyderOriginalsPicker(canSend: chat.encryptionReady && !sending && !changingPersona) { original in
+                sendOriginal(original)
+            }
+        }
         .sheet(isPresented: $showingAppearance, onDismiss: reloadAppearance) {
             NavigationStack { SpyderChatAppearanceSettingsView(peerID: contact.id) }
         }
@@ -159,29 +166,25 @@ struct ChatDetailView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 9) {
+                    LazyVStack(spacing: 7) {
                         Button(action: onOpenContact) {
-                            Label(chat.encryptionReady ? "E2EE · проверить ключи" : "Проверяем защищённое соединение…",
+                            Label(chat.encryptionReady ? "Защищено · E2EE" : "Проверяем защищённое соединение…",
                                   systemImage: "lock.shield")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(WalletTheme.secondary)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 6)
-                                .background(WalletTheme.surface.opacity(0.86), in: Capsule())
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(WalletTheme.surface.opacity(0.72), in: Capsule())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Открыть профиль и проверить ключи контакта")
-                        .padding(.top, 5)
+                        .padding(.top, 6)
                         if showingSecurity { securityCard }
                         if !reactions.isEmpty {
                             Text("Реакции пока видны только тебе на этом устройстве")
                                 .font(.system(size: 11))
                                 .foregroundStyle(WalletTheme.secondary)
-                                .padding(.vertical, 5)
                         }
-                        if messages.isEmpty {
-                            emptyState
-                        }
+                        if messages.isEmpty { emptyState }
                         ForEach(messages) { message in
                             messageRow(message)
                                 .id(message.id)
@@ -192,7 +195,7 @@ struct ChatDetailView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 12)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 12)
                 }
                 .background(GeometryReader { geometry in
                     Color.clear.preference(key: SpyderChatViewportKey.self, value: geometry.frame(in: .global))
@@ -200,6 +203,7 @@ struct ChatDetailView: View {
                 .onPreferenceChange(SpyderChatViewportKey.self) { rect in viewport = rect; acknowledgeVisible() }
                 .onPreferenceChange(SpyderChatMessageFramesKey.self) { frames in messageFrames = frames; acknowledgeVisible() }
                 .scrollDismissesKeyboard(.interactively)
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: messages.last?.id) { _, newID in
                     guard let newID else { return }
                     withAnimation(shouldAnimate ? .easeOut(duration: 0.28) : nil) {
@@ -207,27 +211,44 @@ struct ChatDetailView: View {
                     }
                 }
             }
-            .background {
-                SpyderLayeredChatBackdrop(appearance: appearance, fallbackAccent: accent,
-                    isActive: sectionActive && pageVisible && scenePhase == .active && isVisible &&
-                        !terminalActive && !showingAppearance && !choosingPersona,
-                    animateOnAppear: !spiderEntryConsumed,
-                    onEntryHandled: { spiderEntryConsumed = true })
-                    .ignoresSafeArea(edges: .horizontal)
-            }
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
-                    Button { choosingPersona = true } label: {
-                        Label((nextPersonaID == nil ? "Пишешь как: " : "Следующее сообщение: ") + visiblePersonaName,
-                              systemImage: "person.crop.circle")
-                            .font(.system(size: 12, weight: .medium))
-                    }.disabled(sending || changingPersona)
-                    Spacer()
+            // An alternate sending identity is visible only when overridden.
+            // The active persona can always be changed from the + menu.
+            if nextPersonaID != nil || changingPersona {
+                HStack(spacing: 6) {
+                    Button { composerFocused = false; choosingPersona = true } label: {
+                        Label("Отправка: " + visiblePersonaName, systemImage: "person.crop.circle")
+                            .lineLimit(1)
+                    }
+                    .disabled(sending || changingPersona)
                     if changingPersona { ProgressView().controlSize(.mini) }
+                    Spacer(minLength: 0)
+                    if nextPersonaID != nil {
+                        Button { nextPersonaID = nil } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .accessibilityLabel("Отменить выбор личности")
+                    }
                 }
-                if let personaNotice { Text(personaNotice).font(.caption2).foregroundStyle(WalletTheme.secondary) }
-            }.padding(.horizontal, 16).padding(.top, 8)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(WalletTheme.secondary)
+                .padding(.horizontal, 18).padding(.vertical, 5)
+            }
             composer
+        }
+        .background {
+            SpyderLayeredChatBackdrop(appearance: appearance, fallbackAccent: accent,
+                isActive: sectionActive && pageVisible && scenePhase == .active && isVisible &&
+                    !terminalActive && !showingAppearance && !choosingPersona,
+                animateOnAppear: !spiderEntryConsumed,
+                onEntryHandled: { spiderEntryConsumed = true })
+                // Only the background extends into iOS system safe areas;
+                // interactive content remains within the keyboard/nav insets.
+                .ignoresSafeArea()
+                .overlay(alignment: .top) {
+                    LinearGradient(colors: [WalletTheme.surface.opacity(0.26), .clear],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: 70).allowsHitTesting(false)
+                }
         }
     }
 
@@ -298,50 +319,76 @@ struct ChatDetailView: View {
     private func messageRow(_ message: SpyderServerMessage) -> some View {
         let outgoing = chat.isOutgoing(message)
         let chosen = reactions[message.id]
+        let original = SpyderOriginal.decode(message.text)
         return HStack(alignment: .bottom, spacing: 0) {
-            if outgoing { Spacer(minLength: 55) }
-            VStack(alignment: outgoing ? .trailing : .leading, spacing: 4) {
-                Text(message.text)
-                    .font(.system(size: 15))
-                    .foregroundStyle(WalletTheme.ink)
-                    .textSelection(.enabled)
-                    .modifier(SpyderBubbleSurface(appearance: appearance, outgoing: outgoing, accent: accent))
-                    .contextMenu {
-                        Button {
-                            UIPasteboard.general.string = message.text
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        } label: { Label("Копировать", systemImage: "doc.on.doc") }
-                        ForEach(SpyderLocalChatReactions.choices, id: \.self) { emoji in
-                            Button(emoji) {
-                                reactions = SpyderLocalChatReactions.toggle(
-                                    peer: contact.id, messageID: message.id, emoji: emoji, persona: chat.activePersonaID)
-                                UISelectionFeedbackGenerator().selectionChanged()
-                            }
+            if outgoing { Spacer(minLength: 60) }
+            VStack(alignment: outgoing ? .trailing : .leading, spacing: 3) {
+                Group {
+                    if let original {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            SpyderOriginalView(original: original, size: 142,
+                                animated: shouldAnimate && sectionActive && pageVisible && isVisible)
+                                .padding(.horizontal, 3)
+                            messageMetadata(message, outgoing: outgoing)
+                                .padding(.trailing, 8).padding(.bottom, 5)
+                        }
+                        .background(Color.black.opacity(0.94), in: RoundedRectangle(cornerRadius: 21))
+                    } else {
+                        VStack(alignment: .trailing, spacing: 3) {
+                            Text(message.text)
+                                .font(.system(size: 16))
+                                .foregroundStyle(WalletTheme.ink)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                            messageMetadata(message, outgoing: outgoing)
+                        }
+                        .modifier(SpyderBubbleSurface(appearance: appearance, outgoing: outgoing, accent: accent))
+                    }
+                }
+                .contextMenu {
+                    Button {
+                        UIPasteboard.general.string = original?.title ?? message.text
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    } label: { Label("Копировать", systemImage: "doc.on.doc") }
+                    ForEach(SpyderLocalChatReactions.choices, id: \.self) { emoji in
+                        Button(emoji) {
+                            reactions = SpyderLocalChatReactions.toggle(
+                                peer: contact.id, messageID: message.id, emoji: emoji, persona: chat.activePersonaID)
+                            UISelectionFeedbackGenerator().selectionChanged()
                         }
                     }
-                    .accessibilityHint("Удерживай, чтобы скопировать текст или поставить локальную реакцию")
-                HStack(spacing: 7) {
-                    if let chosen { Text(chosen).font(.system(size: 14))
-                        .padding(.horizontal, 7).padding(.vertical, 3)
-                        .background(WalletTheme.surface, in: Capsule())
+                }
+                .accessibilityHint("Удерживай, чтобы скопировать сообщение или поставить локальную реакцию")
+                if let chosen {
+                    Text(chosen)
+                        .font(.system(size: 14))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(WalletTheme.surface.opacity(0.93), in: Capsule())
                         .accessibilityLabel("Локальная реакция: \(chosen)")
-                    }
-                    if outgoing && message.verified {
-                        receiptView(SpyderMessageReceipt(deliveredAt: message.delivered_at, readAt: message.read_at))
-                    }
-                    if appearance.showTime {
-                        Text(SpyderChatClock.text(message.created_at))
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(WalletTheme.secondary)
-                    }
-                }.padding(.horizontal, 5)
+                }
             }
-            if !outgoing { Spacer(minLength: 55) }
+            if !outgoing { Spacer(minLength: 60) }
         }
         .background(GeometryReader { geometry in
             Color.clear.preference(key: SpyderChatMessageFramesKey.self,
                 value: !outgoing && message.verified ? [message.id: geometry.frame(in: .global)] : [:])
         })
+    }
+
+    @ViewBuilder
+    private func messageMetadata(_ message: SpyderServerMessage, outgoing: Bool) -> some View {
+        HStack(spacing: 5) {
+            if appearance.showTime {
+                Text(SpyderChatClock.text(message.created_at))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(WalletTheme.secondary)
+            }
+            if outgoing && message.verified {
+                receiptView(SpyderMessageReceipt(deliveredAt: message.delivered_at, readAt: message.read_at))
+            }
+        }
+        .frame(height: appearance.showTime || (outgoing && message.verified) ? 13 : 0)
     }
 
     private func receiptView(_ state: SpyderMessageReceipt) -> some View {
@@ -371,7 +418,6 @@ struct ChatDetailView: View {
                                 Task {
                                     if await chat.selectChatPersona(id, peer: contact) {
                                         nextPersonaID = nil; draft = ""; reactions = [:]
-                                        personaNotice = "Открыта отдельная переписка: " + person.name
                                     }
                                     changingPersona = false
                                 }
@@ -379,7 +425,6 @@ struct ChatDetailView: View {
                             Button("Только следующее сообщение") {
                                 nextPersonaID = id
                                 Task { await chat.updateTyping(peer: contact.id, active: false) }
-                                personaNotice = "Сообщение появится в отдельной переписке личности «" + person.name + "»."
                                 choosingPersona = false
                             }.disabled(sending)
                         }
@@ -393,15 +438,22 @@ struct ChatDetailView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 10) {
+        HStack(alignment: .bottom, spacing: 8) {
             Menu {
                 Button {
+                    composerFocused = false
                     UISelectionFeedbackGenerator().selectionChanged()
                     withAnimation(shouldAnimate ? .easeOut(duration: 0.18) : nil) {
                         terminalActive = true
                     }
                 } label: {
                     Label("Открыть терминал", systemImage: "terminal")
+                }
+                Button { composerFocused = false; showingOriginals = true } label: {
+                    Label("Spyder Originals · живые эмодзи", systemImage: "circle.hexagongrid")
+                }
+                Button { composerFocused = false; choosingPersona = true } label: {
+                    Label("Писать как: " + visiblePersonaName, systemImage: "person.crop.circle")
                 }
                 Button(action: onOpenContact) {
                     Label("Профиль собеседника", systemImage: "person.crop.circle")
@@ -417,20 +469,32 @@ struct ChatDetailView: View {
                 }
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: 19, weight: .medium))
                     .foregroundStyle(WalletTheme.ink)
-                    .frame(width: 42, height: 42)
-                    .background(WalletTheme.canvas, in: Circle())
+                    .frame(width: 40, height: 42)
+                    .background(WalletTheme.surface.opacity(0.94), in: Circle())
+                    .overlay(Circle().stroke(WalletTheme.divider, lineWidth: 0.6))
             }
-            .accessibilityLabel("Дополнительные действия")
-            TextField("Сообщение…", text: $draft, axis: .vertical)
-                .font(.system(size: 15))
-                .lineLimit(1...5)
-                .submitLabel(.send)
-                .onSubmit(send)
-                .padding(.horizontal, 15).padding(.vertical, 11)
-                .background(WalletTheme.canvas, in: RoundedRectangle(cornerRadius: 22))
-                .accessibilityLabel("Текст сообщения")
+            .accessibilityLabel("Дополнительные действия и выбор личности")
+            HStack(alignment: .bottom, spacing: 4) {
+                TextField("Сообщение…", text: $draft, axis: .vertical)
+                    .font(.system(size: 16))
+                    .lineLimit(1...5)
+                    .submitLabel(.send)
+                    .onSubmit(send)
+                    .focused($composerFocused)
+                    .padding(.leading, 14).padding(.vertical, 9)
+                    .accessibilityLabel("Текст сообщения")
+                Button { composerFocused = false; showingOriginals = true } label: {
+                    Image(systemName: "circle.hexagongrid")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(WalletTheme.secondary)
+                        .frame(width: 36, height: 40)
+                }
+                .accessibilityLabel("Spyder Originals · анимированные эмодзи")
+            }
+            .background(WalletTheme.surface.opacity(0.95), in: RoundedRectangle(cornerRadius: 23))
+            .overlay(RoundedRectangle(cornerRadius: 23).stroke(WalletTheme.divider, lineWidth: 0.75))
             Button(action: send) {
                 Group {
                     if sending { ProgressView().tint(.white) }
@@ -438,17 +502,21 @@ struct ChatDetailView: View {
                 }
                 .foregroundStyle(.white)
                 .frame(width: 42, height: 42)
-                .background(accent, in: Circle())
+                .background(canSend ? WalletTheme.ink : WalletTheme.secondary.opacity(0.45), in: Circle())
             }
             .disabled(!canSend)
-            .opacity(canSend || sending ? 1 : 0.45)
             .accessibilityLabel("Отправить сообщение")
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 10)
-        .padding(.bottom, 9)
-        .background(WalletTheme.surface)
-        .overlay(alignment: .top) { WalletTheme.divider.frame(height: 0.5) }
+        .padding(.horizontal, 12)
+        .padding(.top, 9)
+        .padding(.bottom, 6)
+        .background {
+            LinearGradient(colors: [WalletTheme.canvas.opacity(0.02),
+                                    WalletTheme.canvas.opacity(0.83),
+                                    WalletTheme.canvas.opacity(0.98)],
+                           startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea(edges: .bottom)
+        }
     }
 
     private func reloadAppearance() {
@@ -458,22 +526,37 @@ struct ChatDetailView: View {
     private func send() {
         let content = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend, !content.isEmpty else { return }
+        transmit(content, clearDraft: true)
+    }
+
+    private func sendOriginal(_ original: SpyderOriginal) {
+        guard chat.encryptionReady, !sending, !changingPersona else { return }
+        transmit(original.payload, clearDraft: false)
+    }
+
+    // Only the small sticker identifier is sent over the existing encrypted
+    // text channel. Do not clear a user's unfinished draft on sticker send.
+    private func transmit(_ content: String, clearDraft: Bool) {
         sending = true
         Task {
             let succeeded: Bool
             if let persona = nextPersonaID, persona != chat.activePersonaID {
                 succeeded = await chat.sendNextMessage(to: contact.id, text: content, personaID: persona)
-            } else { succeeded = await chat.sendMessage(to: contact.id, text: content) }
+            } else {
+                succeeded = await chat.sendMessage(to: contact.id, text: content)
+            }
             if succeeded {
-                // A successful backend ack, not a fake local delivery tick.
-                draft = ""
+                if clearDraft && draft.trimmingCharacters(in: .whitespacesAndNewlines) == content {
+                    draft = ""
+                }
                 nextPersonaID = nil
-                await chat.updateTyping(peer: contact.id, active: false)
+                if draft.isEmpty { await chat.updateTyping(peer: contact.id, active: false) }
                 SpyderSonicPlayer.shared.playSent()
             }
             sending = false
         }
     }
+
 }
 
 private struct SpyderChatMessageFramesKey: PreferenceKey {

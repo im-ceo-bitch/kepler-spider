@@ -5,15 +5,23 @@ struct SpyderBubbleSurface: ViewModifier {
     let outgoing: Bool
     let accent: Color
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: CGFloat(appearance.cornerRadius), style: .continuous)
-        let fill = outgoing ? accent.opacity(appearance.bubbleStyle == .solid ? 0.45 : 0.20) : WalletTheme.surface
-        return content.padding(.horizontal, 15).padding(.vertical, 11)
+        let radius = CGFloat(appearance.cornerRadius)
+        let shape = UnevenRoundedRectangle(
+            topLeadingRadius: radius,
+            bottomLeadingRadius: outgoing ? radius : 7,
+            bottomTrailingRadius: outgoing ? 7 : radius,
+            topTrailingRadius: radius)
+        let fill = outgoing ? accent.opacity(appearance.bubbleStyle == .solid ? 0.28 : 0.12) : WalletTheme.surface
+        return content
+            .padding(.horizontal, 13).padding(.top, 8).padding(.bottom, 6)
             .background {
                 shape.fill(WalletTheme.canvas.opacity(appearance.opacity))
-                if appearance.bubbleStyle != .outline { shape.fill(fill.opacity(appearance.opacity)) }
+                if appearance.bubbleStyle != .outline {
+                    shape.fill(fill.opacity(appearance.opacity))
+                }
             }
-            .overlay(shape.stroke(outgoing ? accent.opacity(0.6) : WalletTheme.divider,
-                                  lineWidth: appearance.bubbleStyle == .outline ? 1.2 : 0.6))
+            .overlay(shape.stroke(outgoing ? accent.opacity(0.22) : WalletTheme.divider,
+                                  lineWidth: appearance.bubbleStyle == .outline ? 1 : 0.5))
     }
 }
 

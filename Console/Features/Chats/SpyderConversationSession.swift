@@ -30,12 +30,6 @@ struct SpyderConversationSession: View {
             onAction: onAction, onOpenActivity: onOpenActivity, onOpenContact: { showingContact = true })
             .id(session.activePersonaID ?? "")
             .environmentObject(session)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingContact = true } label: { Image(systemName: "person.crop.circle") }
-                        .accessibilityLabel("Профиль контакта")
-                }
-            }
             .navigationDestination(isPresented: $showingContact) {
                 SpyderContactProfilePage(contact: contact,
                     onOpenChat: { showingContact = false }, onBlocked: onBack)

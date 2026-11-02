@@ -50,30 +50,19 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
     }
     public var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                if showsChatSwitch {
-                    Picker("Display", selection: $selection) {
-                    Text(english ? "Chat" : "Чат").tag(SpyderChatDisplayMode.chat)
-                    Text(english ? "Terminal" : "Терминал").tag(SpyderChatDisplayMode.terminal)
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("spyder.chat.terminalPicker")
-                } else {
+            if !showsChatSwitch {
+                HStack {
                     Text("SPYDER TERMINAL")
                         .font(.system(.headline, design: .monospaced))
-                }
-                Spacer(minLength: 0)
-                if selection == .terminal {
+                    Spacer()
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape")
                     }
                     .tint(accent)
-                    .accessibilityLabel(english ? "Terminal settings" : "Настройки терминала")
                 }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .environment(\.colorScheme, terminalScheme)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .environment(\.colorScheme, selection == .terminal ? terminalScheme : systemColorScheme)
             // Keep the existing chat subtree mounted while the terminal is visible.
             // This preserves local scroll/input state when toggling between modes.
             ZStack {
@@ -93,6 +82,26 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onChange(of: selection) { mode in onDisplayModeChanged(mode) }
+        .toolbar {
+            if showsChatSwitch {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        selection = selection == .chat ? .terminal : .chat
+                    } label: {
+                        Image(systemName: selection == .chat ? "terminal" : "bubble.left")
+                    }
+                    .accessibilityIdentifier("spyder.chat.terminalToggle")
+                    .accessibilityLabel(selection == .chat ? (english ? "Open Terminal" : "Открыть терминал") :
+                        (english ? "Return to chat" : "Вернуться в чат"))
+                }
+                if selection == .terminal {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                            .accessibilityLabel(english ? "Terminal settings" : "Настройки терминала")
+                    }
+                }
+            }
+        }
         .background(selection == .terminal ? palette.background : .clear)
         .sheet(isPresented: $showSettings) {
             NavigationStack {

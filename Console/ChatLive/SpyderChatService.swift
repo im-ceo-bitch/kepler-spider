@@ -974,7 +974,8 @@ final class SpyderChatStore: ObservableObject {
                     let keys = try await fetchPeerKeys(item.peer.id)
                     guard own.id == identity?.id, cacheEpoch == epoch else { return }
                     let text = try SpyderMessageCrypto.open(message, myID: own.id, peerKeys: keys, personaID: own.id)
-                    preview = (message.sender_id == own.id ? "Ты: " : "") + text
+                    let displayed = SpyderOriginal.decode(text).map { "Spyder Original · " + $0.title } ?? text
+                    preview = (message.sender_id == own.id ? "Ты: " : "") + displayed
                 } catch { preview = "🔒 Зашифрованное сообщение" }
                 guard own.id == identity?.id, cacheEpoch == epoch else { return }
                 conversationPreviews[item.peer.id] = preview
