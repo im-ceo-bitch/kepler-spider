@@ -12,6 +12,7 @@ public enum SpyderChatDisplayMode: String, CaseIterable, Identifiable {
 public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
     private let context: TerminalActionContext
     private let chatContent: () -> ChatContent
+    private let onDisplayModeChanged: (SpyderChatDisplayMode) -> Void
     private let showsChatSwitch: Bool
     private let actionHost: any TerminalActionHost
     private let engine = try? TerminalEngine()
@@ -23,7 +24,9 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
     @State private var showSettings = false
     public init(context: TerminalActionContext, host: any TerminalActionHost,
                 showsChatSwitch: Bool = true,
+                onDisplayModeChanged: @escaping (SpyderChatDisplayMode) -> Void = { _ in },
                 @ViewBuilder chatContent: @escaping () -> ChatContent) {
+        self.onDisplayModeChanged = onDisplayModeChanged
         self.context = context
         self.chatContent = chatContent
         self.showsChatSwitch = showsChatSwitch
@@ -89,6 +92,7 @@ public struct SpyderChatTerminalSwitchView<ChatContent: View>: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onChange(of: selection) { mode in onDisplayModeChanged(mode) }
         .background(selection == .terminal ? palette.background : .clear)
         .sheet(isPresented: $showSettings) {
             NavigationStack {

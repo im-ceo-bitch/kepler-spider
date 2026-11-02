@@ -1,36 +1,81 @@
-SPYDER — Block 1 / Navigation and real persona carousel
-Base: attached kepler-spider-main.zip; archive commit b8a17aae9db1ca4c467075f3c5af7961df58f90b.
-GitHub current main was not available/verified. Apply only if this is still your base.
+SPYDER — cumulative blocks 1 + 2 + 3 (source update)
+Base: user attachment kepler-spider-main.zip, archive commit b8a17aae9db1ca4c467075f3c5af7961df58f90b.
+This is NOT a diff verified against current GitHub main. Retrieval was unavailable in this session.
+Do not overwrite newer independent repository changes without comparing these paths first.
 
-Implemented:
-- Two bottom tabs: Wallet and Chats. Global Terminal removed from root navigation.
-- Terminal inside conversations remains intact.
-- Chats title and Invite pill replace duplicate profile avatar.
-- Swipe carousel uses real Keychain personas, individual stored avatar, bio, status and privacy kind.
-- Selection activates the existing persona account, separate keys and conversation context.
-- Create-persona card opens existing persona management and registration.
-- Accent side edge, active label, reduced-motion support for carousel avatars.
+BLOCK 1: two bottom tabs Wallet / Chats; terminal stays inside conversations; real persona carousel,
+profile fields and independent account/key/history switching; create-persona entry; Invite pill.
+The identity accent side edge remains static; its animation is assigned to block 4.
 
-Validation:
-- Server persona tests: 2 passed.
-- Reviewed Swift call sites for extended personaSummary tuple and WalletTab cases.
-- ZIP overlaid onto pristine attached archive; changed files compared byte-for-byte.
-- No Xcode/Swift compiler available: iOS build, device layout and animation NOT verified.
-- No server or workflow changes. No real NFC/nearby feature added in this block.
+BLOCK 2: instant bilateral contacts with legacy pending migration, idempotent compatibility,
+username and invite-code lookup, own QR, QR import from image, native sharing, strict
+spyder://invite?code=... parser, recent connections, limit-unknown, block/hide/mute.
+Custom app links require installed Spyder. No HTTPS universal links, camera scanner, NFC or Nearby yet.
+Mute acts at the server APNs delivery layer. APNs credentials and device permission remain required.
 
-Remaining ordered blocks (all part of requested scope):
-2. Instant contacts: server/client migration from requests, QR/link/username invites,
-   blocking, hidden/mute/unknown filters; real invite history and notifications.
-3. Conversation model: persona per chat/next-message identity, genuine sent/delivered/read
-   acknowledgements; previews/time/unread/pin/mute/archive/delete/typing/online and swipe actions.
-4. Identity: circle-to-square pull-down and fullscreen viewer; public/private/hidden;
-   accent palette including gold/silver/copper/white, glow/style/badge controls and per-persona themes.
-5. Appearance: live preview, categories, animated/native/static/photo wallpapers,
-   all requested presets and controls (motion, blur, bubble/radius/transparency/receipt/typing styles).
-6. Privacy and connection: read/typing/preview toggles, silent send, Face ID lock,
-   disappearing messages, export/clear/verify keys; actual supported Touch/nearby transport,
-   invitation animation/haptics, reactions. Voice animation when voice is implemented.
+BLOCK 3 — IMPLEMENTED IN SOURCE:
+- Native List chat rows: decrypted-on-device last-message preview, timestamp, unread count,
+  outgoing receipt marks, real recent online/typing state, mute/pin icons and persona label.
+- Native swipe actions: pin/unpin and mute on leading edge; archive/restore and delete on trailing edge.
+  Persona selection is inside the composer; row long-press offers Open and choose persona.
+- Chats/Archive filter; hidden-chat recovery; pinned-first, then newest-first ordering.
+- Per-owner pin/archive/delete state, preserved when changing mute/hide.
+- Delete removes history from this account's view via monotonic clear boundary, not the other person's.
+  Receiving/sending a new message restores the chat with the old clear boundary intact.
+  Explicit reconnect also restores the initiator's conversation.
+- Three statuses: server accepted = one tick; recipient device acknowledged after authenticated
+  decryption = two ticks; visible incoming message acknowledged = two accent ticks.
+  Fetching a preview/history alone does NOT imply read. APNs is NOT a delivery receipt.
+- ACK target validation rejects sender/outsider/unknown-message and partial-invalid batches.
+  Receipts are authenticated application acknowledgements stored by the relay, not signed
+  cryptographic proof against a malicious relay. Existing TOFU E2EE trust model is unchanged.
+- Read viewport checks exclude offscreen rows, terminal mode, Wallet tab, modal overlays,
+  navigation disappearance and inactive/background app state.
+- Ephemeral presence expires after 45 seconds, typing after 7 seconds. Foreground polling:
+  chat about 3 seconds, chat home about 10 seconds; these are not WebSocket instant updates.
+- Scoped conversation store: changing chat persona does not alter home-carousel selection.
+  Selection is remembered for the originating persona/contact. Each identity pair keeps separate history.
+- Composer chip: for this chat / only next message. Public contacts connect under selected persona
+  if allowed. Private or restricted recipients may require explicit invitation for that identity first.
+  Cross-server identity switching/sending is rejected. One-off sending does not load other persona plaintext.
+- Contact/key-verification push page uses the actual scoped account.
+- Terminal session resets on persona change; terminal-hidden chat cannot issue read acknowledgements.
+- Plaintext cache invalidation prevents in-flight requests repopulating it after lock/background.
+- All existing retained messages (up to 300 per pair) are reachable by the new history API;
+  delivery ACKs are chunked at 100. This does not introduce unlimited archival storage or pagination.
 
-Do not describe pending blocks or unsupported transport as implemented.
-Upload console-update-block1-chats-personas.zip to repository root for existing unpacker.
-Workflow files intentionally excluded.
+VALIDATION PASS 1 (after implementation):
+- Node server suite: 36 passed, 0 failed (11 new conversation-protocol scenarios).
+- python3 ci/verify_repo.py: passed, 85 Swift files / assets / plist / server package.
+- Python repository CI: 135 discovered, 119 passed, 16 skipped (environment-dependent checks).
+- Five obsolete source assertions were updated for the requested two-tab navigation,
+  scoped contact push page and renamed row model. Security gates remain in place.
+- New iOS viewport XCTest cases added, NOT EXECUTED here.
+- Swift call-site/model/initializer and terminal package integration source review performed.
+
+VALIDATION PASS 2 (packaged artifact):
+- Archive CRC/path/protected-workflow checks.
+- Overlay onto fresh user attachment; compare source bytes against development tree.
+- Run server tests, static integrity checks and Python CI again from the overlaid tree.
+- No Xcode/Swift compiler/iOS SDK available: iOS build, Simulator/device UI, TestFlight,
+  live two-phone receipts, privacy lifecycle and APNs end-to-end are NOT verified.
+  Do not treat source tests as a successful iOS build or production security audit.
+
+INSTALL:
+1. Upload only console-update-block3-conversations.zip to repository root for the existing unpacker.
+   This archive includes all three blocks. No wrapper directory, deletion manifest or workflow changes.
+2. After successful unpacking, manually run Actions > Console — Deploy Realtime Server on updated main.
+   Bot GITHUB_TOKEN commits do not automatically trigger other push workflows.
+3. After server deployment succeeds, manually run the existing TestFlight build workflow.
+4. On iPhone 11 / 13 mini with two actual accounts: check receipt progression, unread counts,
+   scroll-offscreen/no-read, terminal/wallet/modal no-read, background/lock, typing expiry,
+   archive/pin/delete/new-message recovery, persona-per-chat/one-off sending, private invite restriction.
+
+3 BLOCKS REMAIN:
+4. Identity: pull-down circle-to-square/fullscreen viewer, animated neon edge, full accent palette,
+   public/private/hidden controls and persona-specific visual preferences.
+5. Appearance: live preview, native animated/static/photo wallpaper galleries, categories and presets,
+   motion/blur/bubble/radius/transparency/read-receipt/typing-style controls and custom typing animation.
+6. Privacy + device connection: receipt/typing/preview opt-out, silent send, Face ID chat lock,
+   disappearing messages, export/clear/verify keys, actual supported Touch/Nearby transport,
+   real connection animations/haptics and reaction animation; voice animation when voice is implemented.

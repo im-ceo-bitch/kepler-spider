@@ -42,12 +42,13 @@ const linkKey = (a,b) => 'link:'+ [a,b].sort().join(':');
 export class ChatHub {
   constructor(ctx, env) { this.ctx=ctx; this.env=env; }
   // A push wake-up is best-effort, never proof of message delivery. No plaintext is sent.
-  queuePush(recipient, event) {
-    const job = this.notify(recipient, event);
+  queuePush(recipient, event, sender = null) {
+    const job = this.notify(recipient, event, sender);
     if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(job);
     else void job;
   }
-  async notify(recipient, event) {
+  async notify(recipient, event, sender = null) {
+    if(sender && (await this.ctx.storage.get('contactprefs:'+recipient+':'+sender))?.muted)return;
     const record = await this.ctx.storage.get('push:'+recipient);
     if (!record?.token || !record.enabled) return;
     const status = await sendAPNs(this.env, record.token, event, fetch, record.sound || 'pulse');
@@ -84,6 +85,137 @@ export class ChatHub {
       return JSON.parse(text);
     }catch{return null;}
   }
+  async connectPeople(from,to,source,pendingKey=null) {
+    const apply=async storage=>{
+      const sender=await storage.get('user:'+from),recipient=await storage.get('user:'+to);
+      if(!sender||!recipient||from===to)return {error:'invalid_recipient',code:404};
+      if(await storage.get('blocked:'+from+':'+to)||await storage.get('blocked:'+to+':'+from)) {
+        if(pendingKey)await storage.delete(pendingKey);
+        return {error:'blocked',code:403};
+      }
+      if(source==='username'&&!recipient.discoverable)return {error:'recipient_private',code:404};
+      if(await storage.get(linkKey(from,to))) {
+        const key='contactprefs:'+from+':'+to,prefs=await storage.get(key);
+        if(prefs?.removed){prefs.removed=false;await storage.put(key,prefs);}
+        if(pendingKey)await storage.delete(pendingKey);
+        return {status:'already_connected',peer:publicPerson(recipient)};
+      }
+      const privacy=await storage.get('contactprivacy:'+to);
+      if(privacy?.limit_unknown && source!=='code') {
+        if(pendingKey)await storage.delete(pendingKey);
+        return {error:'unknown_contacts_limited',code:403};
+      }
+      const at=new Date().toISOString();
+      await storage.put(linkKey(from,to),true);
+      await storage.put('contact:'+from+':'+to,{peer:to});
+      await storage.put('contact:'+to+':'+from,{peer:from});
+      await storage.delete('invite:'+from+':'+to);
+      await storage.delete('invite:'+to+':'+from);
+      for(const [owner,peer,direction] of [[from,to,'outgoing'],[to,from,'incoming']]) {
+        const history=await storage.get('invitehistory:'+owner)||[];
+        await storage.put('invitehistory:'+owner,[{peer_id:peer,direction,source,at},...history].slice(0,40));
+      }
+      return {status:'connected',peer:publicPerson(recipient)};
+    };
+    // Cloudflare commits both contact records and history atomically.
+    return typeof this.ctx.storage.transaction==='function'
+      ? this.ctx.storage.transaction(apply) : apply(this.ctx.storage);
+  }
+  async transaction(apply) {
+    return typeof this.ctx.storage.transaction==='function'
+      ? this.ctx.storage.transaction(apply) : apply(this.ctx.storage);
+  }
+  async sequenced(storage,a,b) {
+    const key='encmsgs:'+messageKey(a,b);
+    const messages=await storage.get(key)||[];
+    let counter=await storage.get('seq:'+messageKey(a,b))||0;
+    for(const item of messages) {
+      if(!Number.isSafeInteger(item.seq))item.seq=++counter;
+      else counter=Math.max(counter,item.seq);
+    }
+    await storage.put('seq:'+messageKey(a,b),counter);
+    return {key,messages,counter};
+  }
+  async conversationRoutes(request,me,url) {
+    const path=url.pathname,method=request.method;
+    if(method==='POST'&&path==='/v3/presence') {
+      if(!(await this.permit(me.id,'presence',40,60000)))return bad('rate_limited',429);
+      const b=await this.body(request);
+      if(typeof b?.active!=='boolean')return bad('invalid_presence');
+      await this.ctx.storage.put('presence:'+me.id,b.active?Date.now():0);
+      return json({status:'saved'});
+    }
+    if(method==='GET'&&path==='/v3/conversations') {
+      const links=await this.ctx.storage.list({prefix:'contact:'+me.id+':'}),conversations=[];
+      for(const [,link] of links) {
+        const peer=await this.ctx.storage.get('user:'+link.peer);if(!peer)continue;
+        const prefs=await this.ctx.storage.get('contactprefs:'+me.id+':'+peer.id)||{muted:false,hidden:false};
+        const all=await this.ctx.storage.get('encmsgs:'+messageKey(me.id,peer.id))||[];
+        const visible=all.filter(m=>(m.seq||1)>(prefs.clear_through||0));
+        const latest=visible.at(-1)||null;
+        const incomingNew=latest&&latest.sender_id===peer.id&&latest.seq>(prefs.clear_through||0);
+        if(prefs.removed&&!incomingNew)continue;
+        conversations.push({peer:publicPerson(peer),preferences:{...prefs,removed:false},last_message:latest,
+          unread_count:visible.filter(m=>m.recipient_id===me.id&&!m.read_at).length,
+          online:(await this.ctx.storage.get('presence:'+peer.id)||0)>Date.now()-45000,
+          typing:(await this.ctx.storage.get('typing:'+peer.id+':'+me.id)||0)>Date.now()-7000});
+      }
+      return json({conversations});
+    }
+    if((path==='/v3/messages'||path==='/v3/messages/ack'||path==='/v3/typing'||path==='/v3/conversations/action')) {
+      const b=method==='POST'?await this.body(request):null;
+      const peer=method==='GET'?url.searchParams.get('peer'):b?.peer_id;
+      if(!validId(peer)||!(await this.ctx.storage.get(linkKey(me.id,peer))))return bad('not_contacts',403);
+      if(method==='POST'&&path==='/v3/typing') {
+        if(typeof b.active!=='boolean')return bad('invalid_typing');
+        if(!(await this.permit(me.id,'typing',90,60000)))return bad('rate_limited',429);
+        await this.ctx.storage.put('typing:'+me.id+':'+peer,b.active?Date.now():0);
+        return json({status:'saved'});
+      }
+      if(method==='POST'&&path==='/v3/conversations/action') {
+        if(!['pin','archive','restore','delete','unpin','unarchive'].includes(b.action))return bad('invalid_action');
+        return this.transaction(async storage=>{
+          if(!(await storage.get(linkKey(me.id,peer))))return bad('not_contacts',403);
+          const key='contactprefs:'+me.id+':'+peer;
+          const prefs=await storage.get(key)||{muted:false,hidden:false};
+          if(b.action==='pin')prefs.pinned=true;
+          if(b.action==='unpin')prefs.pinned=false;
+          if(b.action==='archive')prefs.archived=true;
+          if(b.action==='unarchive'||b.action==='restore'){prefs.archived=false;prefs.removed=false;}
+          if(b.action==='delete'){
+            const log=await this.sequenced(storage,me.id,peer);
+            await storage.put(log.key,log.messages);
+            prefs.clear_through=log.counter;prefs.removed=true;prefs.archived=false;prefs.pinned=false;
+          }
+          await storage.put(key,prefs);return json({status:'saved'});
+        });
+      }
+      if(method==='GET'&&path==='/v3/messages') {
+        if(!me.keys)return bad('encryption_not_activated',409);
+        const log=await this.ctx.storage.get('encmsgs:'+messageKey(me.id,peer))||[];
+        const prefs=await this.ctx.storage.get('contactprefs:'+me.id+':'+peer);
+        return json({messages:log.filter(m=>(m.seq||1)>(prefs?.clear_through||0))});
+      }
+      if(method==='POST'&&path==='/v3/messages/ack') {
+        const delivered=b.delivered_ids,read=b.read_ids;
+        if(!Array.isArray(delivered)||!Array.isArray(read)||delivered.length>100||read.length>100||
+          [...delivered,...read].some(id=>typeof id!=='string'||id.length>64))return bad('invalid_ack');
+        return this.transaction(async storage=>{
+          // Recheck authorization inside the transaction, including concurrent block operations.
+          if(!(await storage.get(linkKey(me.id,peer))))return bad('not_contacts',403);
+          const key='encmsgs:'+messageKey(me.id,peer),all=await storage.get(key)||[];
+          const ids=new Set([...delivered,...read]);
+          if([...ids].some(id=>!all.some(m=>m.id===id&&m.recipient_id===me.id)))return bad('invalid_ack_target',403);
+          const readSet=new Set(read),now=new Date().toISOString();
+          for(const m of all)if(ids.has(m.id)){
+            m.delivered_at ||= now;if(readSet.has(m.id))m.read_at ||= now;
+          }
+          await storage.put(key,all);return json({status:'saved'});
+        });
+      }
+    }
+    return null;
+  }
   async fetch(request) {
     const url=new URL(request.url), method=request.method, path=url.pathname;
     if(method==='GET' && path==='/health')return json({status:'ok',service:'spyder-chat-devnet',version:2,e2ee:true});
@@ -107,6 +239,10 @@ export class ChatHub {
     }
     const me=await this.read(request);
     if(!me)return bad('unauthorized',401);
+    if(path.startsWith('/v3/')) {
+      const result=await this.conversationRoutes(request,me,url);
+      if(result)return result;
+    }
     if(method==='GET'&&path==='/v1/me')return json({...publicPerson(me),invite_code:me.invite_code,has_keys:!!me.keys});
     if(method==='GET'&&path==='/v3/profile/me')return json(publicPerson(me));
     if(method==='POST'&&path==='/v3/profile'){
@@ -195,12 +331,14 @@ export class ChatHub {
     if(method==='POST'&&path==='/v2/contacts/block'){
       const b=await this.body(request), peer=b?.peer_id;
       if(!validId(peer)||peer===me.id)return bad('invalid_contact');
-      await this.ctx.storage.put('blocked:'+me.id+':'+peer,true);
-      await this.ctx.storage.delete(linkKey(me.id,peer));
-      await this.ctx.storage.delete('contact:'+me.id+':'+peer);
-      await this.ctx.storage.delete('contact:'+peer+':'+me.id);
-      await this.ctx.storage.delete('invite:'+me.id+':'+peer);
-      await this.ctx.storage.delete('invite:'+peer+':'+me.id);
+      await this.transaction(async storage=>{
+      await storage.put('blocked:'+me.id+':'+peer,true);
+      await storage.delete(linkKey(me.id,peer));
+      await storage.delete('contact:'+me.id+':'+peer);
+      await storage.delete('contact:'+peer+':'+me.id);
+      await storage.delete('invite:'+me.id+':'+peer);
+      await storage.delete('invite:'+peer+':'+me.id);
+      });
       // Historical encrypted/legacy messages remain for retention policy; access is revoked.
       return json({status:'blocked'});
     }
@@ -230,40 +368,59 @@ export class ChatHub {
       }
       return json({users});
     }
-    if(method==='GET'&&path==='/v1/contacts') {
-      const contacts=[],requests=[];
-      const entries=await this.ctx.storage.list({prefix:'invite:'+me.id+':'});
-      for(const [key,invite] of entries) { if(invite.status==='pending') {const peer=await this.ctx.storage.get('user:'+invite.from); if(peer)requests.push(publicPerson(peer));} }
-      const links=await this.ctx.storage.list({prefix:'contact:'+me.id+':'});
-      for(const [key,val] of links) {const peer=await this.ctx.storage.get('user:'+val.peer); if(peer)contacts.push(publicPerson(peer));}
-      return json({contacts,requests,invite_code:me.invite_code});
+    if(method==='POST'&&path==='/v3/contacts/preferences') {
+      const b=await this.body(request),peer=b?.peer_id;
+      if(!validId(peer)||!(await this.ctx.storage.get(linkKey(me.id,peer))))return bad('not_contacts',403);
+      if(typeof b.muted!=='boolean'||typeof b.hidden!=='boolean')return bad('invalid_preferences');
+      const existing=await this.ctx.storage.get('contactprefs:'+me.id+':'+peer)||{};
+      await this.ctx.storage.put('contactprefs:'+me.id+':'+peer,{...existing,muted:b.muted,hidden:b.hidden});
+      return json({status:'saved'});
     }
-    if(method==='POST'&&path==='/v1/invites') {
+    if(path==='/v3/contacts/privacy' && (method==='GET'||method==='POST')) {
+      if(method==='POST') {
+        const b=await this.body(request);
+        if(typeof b?.limit_unknown!=='boolean')return bad('invalid_privacy');
+        await this.ctx.storage.put('contactprivacy:'+me.id,{limit_unknown:b.limit_unknown});
+      }
+      return json(await this.ctx.storage.get('contactprivacy:'+me.id)||{limit_unknown:false});
+    }
+    if(method==='GET'&&path==='/v3/invites/history') {
+      return json({events:await this.ctx.storage.get('invitehistory:'+me.id)||[]});
+    }
+    if(method==='GET'&&path==='/v1/contacts') {
+      // Migrate old pending invitations using the same block/privacy checks as new connections.
+      const entries=await this.ctx.storage.list({prefix:'invite:'+me.id+':'});
+      for(const [key,invite] of entries) {
+        if(invite.status==='pending')await this.connectPeople(invite.from,me.id,'legacy',key);
+      }
+      const contacts=[],preferences={};
+      const links=await this.ctx.storage.list({prefix:'contact:'+me.id+':'});
+      for(const [key,val] of links) {const peer=await this.ctx.storage.get('user:'+val.peer); if(peer){contacts.push(publicPerson(peer));preferences[peer.id]=await this.ctx.storage.get('contactprefs:'+me.id+':'+peer.id)||{muted:false,hidden:false};}}
+      return json({contacts,requests:[],preferences,invite_code:me.invite_code});
+    }
+    if(method==='POST'&&(path==='/v1/invites'||path==='/v3/contacts/connect')) {
       if(!(await this.permit(me.id,'invite',15,3600000)))return bad('rate_limited',429);
       const b=await this.body(request);
       const username=normalizedUsername(b?.username);
       if(!validInvite(b?.code) && !validUsername(username))return bad('invalid_recipient_lookup');
-      const to=validUsername(username) ? await this.ctx.storage.get(usernameKey(username)) : await this.ctx.storage.get('code:'+b.code);
+      const byCode=validInvite(b?.code);
+      const to=byCode ? await this.ctx.storage.get('code:'+b.code) : await this.ctx.storage.get(usernameKey(username));
       if(!to||to===me.id)return bad('invalid_recipient',404);
-      if(validUsername(username) && !(await this.ctx.storage.get('user:'+to))?.discoverable)return bad('recipient_private',404);
-      if(await this.ctx.storage.get('blocked:'+me.id+':'+to)||await this.ctx.storage.get('blocked:'+to+':'+me.id))return bad('blocked',403);
-      if(await this.ctx.storage.get(linkKey(me.id,to)))return json({status:'already_connected'});
-      await this.ctx.storage.put('invite:'+to+':'+me.id,{from:me.id,to,status:'pending'});
-      this.queuePush(to, 'invite');
-      return json({status:'pending'});
+      const result=await this.connectPeople(me.id,to,byCode?'code':'username');
+      if(result.error)return bad(result.error,result.code);
+      if(result.status==='connected')this.queuePush(to,'invite');
+      return json(result);
     }
     if(method==='POST'&&path==='/v1/invites/accept') {
+      // Compatibility for installed old clients; new clients have no accept/reject flow.
       const b=await this.body(request);
       if(!validId(b?.from_id))return bad('invalid_sender');
+      if(await this.ctx.storage.get(linkKey(me.id,b.from_id)))return json({status:'connected'});
       const key='invite:'+me.id+':'+b.from_id;
       const invite=await this.ctx.storage.get(key);
       if(!invite||invite.status!=='pending')return bad('invitation_not_found',404);
-      if(await this.ctx.storage.get('blocked:'+me.id+':'+b.from_id)||await this.ctx.storage.get('blocked:'+b.from_id+':'+me.id))return bad('blocked',403);
-      await this.ctx.storage.put(linkKey(me.id,b.from_id),true);
-      await this.ctx.storage.put('contact:'+me.id+':'+b.from_id,{peer:b.from_id});
-      await this.ctx.storage.put('contact:'+b.from_id+':'+me.id,{peer:me.id});
-      await this.ctx.storage.delete(key);
-      return json({status:'connected'});
+      const result=await this.connectPeople(b.from_id,me.id,'legacy',key);
+      return result.error?bad(result.error,result.code):json(result);
     }
     // Fail closed: never accept a plaintext message, even from obsolete clients.
     if(path==='/v1/messages')return bad('plaintext_protocol_retired',410);
@@ -282,15 +439,27 @@ export class ChatHub {
       if(!(await this.ctx.storage.get(linkKey(me.id,b.recipient_id))))return bad('not_contacts',403);
       const peer=await this.ctx.storage.get('user:'+b.recipient_id);
       if(!peer?.keys)return bad('peer_has_no_encryption_keys',409);
-      const key='encmsgs:'+messageKey(me.id,b.recipient_id), all=(await this.ctx.storage.get(key))||[];
-      if(all.some(m=>m.sender_id===me.id&&m.client_id===b.client_id))return json({status:'already_sent'});
-      const entry={id:crypto.randomUUID(),client_id:b.client_id,sender_id:me.id,recipient_id:b.recipient_id,
-        ephemeral_key:b.ephemeral_key,recipient_box:b.recipient_box,sender_box:b.sender_box,
-        signature:b.signature,created_at:new Date().toISOString()};
-      all.push(entry);
-      await this.ctx.storage.put(key,all.slice(-300));
-      this.queuePush(b.recipient_id, 'message');
-      return json({status:'sent',message:entry},201);
+      const result=await this.transaction(async storage=>{
+        if(!(await storage.get(linkKey(me.id,b.recipient_id))))return {error:'not_contacts'};
+        const log=await this.sequenced(storage,me.id,b.recipient_id),all=log.messages;
+        if(all.some(m=>m.sender_id===me.id&&m.client_id===b.client_id))return {status:'already_sent'};
+        const entry={id:crypto.randomUUID(),client_id:b.client_id,sender_id:me.id,recipient_id:b.recipient_id,
+          ephemeral_key:b.ephemeral_key,recipient_box:b.recipient_box,sender_box:b.sender_box,
+          signature:b.signature,created_at:new Date().toISOString(),seq:log.counter+1};
+        all.push(entry);
+        await storage.put(log.key,all.slice(-300));
+        await storage.put('seq:'+messageKey(me.id,b.recipient_id),entry.seq);
+        // A new message restores a deleted recipient-side conversation, without restoring old history.
+        for(const [owner,other] of [[b.recipient_id,me.id],[me.id,b.recipient_id]]) {
+          const prefKey='contactprefs:'+owner+':'+other,prefs=await storage.get(prefKey);
+          if(prefs?.removed){prefs.removed=false;await storage.put(prefKey,prefs);}
+        }
+        return {status:'sent',message:entry};
+      });
+      if(result.error)return bad(result.error,403);
+      if(result.status==='already_sent')return json(result);
+      this.queuePush(b.recipient_id, 'message', me.id);
+      return json(result,201);
     }
     return bad('not_found',404);
   }

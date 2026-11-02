@@ -35,7 +35,7 @@ export async function sendAPNs(env, deviceToken, event, fetcher = fetch, tone = 
     const sound = tone === 'mute' ? undefined : tone === 'system' ? 'default'
       : event === 'invite' ? 'spyder_connect.caf' : 'spyder_receive.caf';
     const payload = {aps:{alert:{title:'Spyder Network',body:event === 'invite'
-      ? 'Новое приглашение в сеть' : event === 'test' ? 'Проверка уведомлений Spyder'
+      ? 'Новый контакт. Можно начать переписку' : event === 'test' ? 'Проверка уведомлений Spyder'
       : 'Новое зашифрованное сообщение'},
       ...(sound ? {sound} : {}), 'thread-id':'spyder.chat'},spyder_event:event};
     const response = await fetcher(`https://${host}/3/device/${deviceToken}`, {

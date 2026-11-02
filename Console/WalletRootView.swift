@@ -12,6 +12,8 @@ private enum SpyderNetworkPage: Hashable {
 }
 
 struct WalletRootView: View {
+    @EnvironmentObject private var chat: SpyderChatStore
+    @State private var showingLinkInvite = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedTab: WalletTab = .wallet
     @State private var walletPath: [SpyderWalletPage] = []
@@ -35,6 +37,7 @@ struct WalletRootView: View {
                 .accessibilityHidden(selectedTab != .wallet)
                 .zIndex(selectedTab == .wallet ? 1 : 0)
             networkNavigation
+                .environment(\.spyderChatSectionActive, selectedTab == .chats && presented == nil && !showingLinkInvite)
                 .opacity(selectedTab == .chats ? 1 : 0)
                 .allowsHitTesting(selectedTab == .chats)
                 .accessibilityHidden(selectedTab != .chats)
@@ -50,7 +53,29 @@ struct WalletRootView: View {
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(30)
         }
-        .task { openChatAfterNotificationIfNeeded() }
+        .sheet(isPresented: $showingLinkInvite) {
+            SpyderInvitePage(onOpen: { person in
+                showingLinkInvite = false
+                selectedTab = .chats
+                networkPath.append(.chat(person))
+            })
+        }
+        .onChange(of: chat.pendingInviteCode) { _, code in
+            if code != nil {
+                selectedTab = .chats
+                showingLinkInvite = chat.hasIdentity
+            }
+        }
+        .onChange(of: chat.hasIdentity) { _, ready in
+            if ready && chat.pendingInviteCode != nil { showingLinkInvite = true }
+        }
+        .task {
+            openChatAfterNotificationIfNeeded()
+            if chat.pendingInviteCode != nil {
+                selectedTab = .chats
+                showingLinkInvite = chat.hasIdentity
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .spyderChatOpenRequested)) { _ in
             openChatAfterNotificationIfNeeded()
         }
@@ -83,7 +108,7 @@ struct WalletRootView: View {
             ChatsHomeView(onOpen: { person in
                 networkPath.append(.chat(person))
             }, onAdd: {
-                presented = .touch
+                showingLinkInvite = true
             }, onProfile: {
                 networkPath.append(.identity)
             }, isActive: selectedTab == .chats)
@@ -135,7 +160,7 @@ struct WalletRootView: View {
         case .identity:
             SpyderIdentityHubView()
         case .chat(let contact):
-            SpyderTerminalChatContainer(contact: contact, onBack: {
+            SpyderConversationSession(contact: contact, ownerPersonaID: chat.activePersonaID, onBack: {
                 if !networkPath.isEmpty { networkPath.removeLast() }
             }, onAction: { action in
                 selectedContact = contact
@@ -149,18 +174,6 @@ struct WalletRootView: View {
                 selectedTab = .wallet
                 walletPath.append(.activity)
             })
-            // The terminal container does not expose the inner chat-header callback.
-            // Provide a real push action rather than a dead profile control.
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        networkPath.append(.contact(contact))
-                    } label: {
-                        Image(systemName: "person.crop.circle")
-                    }
-                    .accessibilityLabel("Профиль контакта")
-                }
-            }
         case .contact(let contact):
             SpyderContactProfilePage(contact: contact, onOpenChat: {
                 if !networkPath.isEmpty { networkPath.removeLast() }

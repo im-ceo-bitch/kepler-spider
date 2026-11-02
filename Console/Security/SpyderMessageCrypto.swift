@@ -11,7 +11,10 @@ struct SpyderPeerKeys: Codable, Equatable {
     let signature: String
 }
 
-struct SpyderEncryptedMessage: Decodable {
+struct SpyderEncryptedMessage: Decodable, Equatable {
+    let delivered_at: String?
+    let read_at: String?
+    let seq: Int?
     let id: String
     let client_id: String
     let sender_id: String

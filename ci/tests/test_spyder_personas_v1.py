@@ -30,7 +30,7 @@ class PersonaV1Safety(unittest.TestCase):
         home=source('Console/Features/Chats/ChatsHomeView.swift')
         detail=source('Console/Features/Chats/ChatDetailView.swift')
         contact=source('Console/Features/Chats/SpyderContactProfilePage.swift')
-        self.assertIn('person.avatar?.motion',home)
+        self.assertIn('item.peer.avatar?.motion',home)
         self.assertIn('onOpenActivity: onOpenActivity',detail)
         self.assertIn('SpyderProfileAvatarView',contact)
         self.assertIn('peer?.bio',contact)

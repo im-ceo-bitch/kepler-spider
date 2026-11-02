@@ -9,6 +9,7 @@ extension Notification.Name {
 
 @MainActor
 private final class SpyderTerminalChatBindings: ObservableObject {
+    @Published var chatVisible = true
     @Published var showAppearance = false
     let host: TerminalActionRegistryHost?
 
@@ -238,19 +239,23 @@ struct SpyderTerminalChatContainer: View {
     let onBack: () -> Void
     let onAction: (WalletModal) -> Void
     let onOpenActivity: () -> Void
+    var onOpenContact: () -> Void = {}
 
     var body: some View {
         Group {
             if let host = bindings.host {
                 SpyderChatTerminalSwitchView(
                     context: TerminalActionContext(conversationID: contact.id),
-                    host: host
+                    host: host,
+                    onDisplayModeChanged: { bindings.chatVisible = $0 == .chat }
                 ) {
-                    ChatDetailView(contact: contact, onBack: onBack, onAction: onAction)
+                    ChatDetailView(contact: contact, onBack: onBack, onAction: onAction,
+                        onOpenActivity: onOpenActivity, onOpenContact: onOpenContact, isVisible: bindings.chatVisible)
                 }
             } else {
                 // If the command catalog is unavailable, never break E2EE chat.
-                ChatDetailView(contact: contact, onBack: onBack, onAction: onAction)
+                ChatDetailView(contact: contact, onBack: onBack, onAction: onAction,
+                    onOpenActivity: onOpenActivity, onOpenContact: onOpenContact)
             }
         }
         .onAppear { bindings.connect(chat: chat, assets: assets, contact: contact,

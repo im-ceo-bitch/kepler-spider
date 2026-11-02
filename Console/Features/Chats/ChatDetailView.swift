@@ -22,6 +22,8 @@ private enum SpyderChatClock {
 
 struct ChatDetailView: View {
     @EnvironmentObject private var chat: SpyderChatStore
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.spyderChatSectionActive) private var sectionActive
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(SpyderMotionKeys.accent) private var accentRaw = SpyderSignalAccent.red.rawValue
     @AppStorage(SpyderMotionKeys.enabled) private var motionEnabled = true
@@ -30,7 +32,16 @@ struct ChatDetailView: View {
     let onAction: (WalletModal) -> Void
     let onOpenActivity: () -> Void
     var onOpenContact: () -> Void = {}
+    var isVisible = true
 
+    @State private var pageVisible = false
+    @State private var choosingPersona = false
+    @State private var nextPersonaID: String?
+    @State private var changingPersona = false
+    @State private var personaNotice: String?
+    @State private var messageFrames: [String: CGRect] = [:]
+    @State private var viewport = CGRect.zero
+    @State private var lastTypingAt = Date.distantPast
     @State private var terminalActive = false
     @State private var terminalEntries: [SpyderTerminalEntry] = []
     @State private var draft = ""
@@ -41,11 +52,13 @@ struct ChatDetailView: View {
     @State private var appearance = SpyderChatAppearance()
     @State private var reactions: [String: String] = [:]
 
+    private var summary: SpyderConversationSummary? { chat.conversations.first(where: { $0.id == contact.id }) }
+    private var visiblePersonaName: String { nextPersonaID.flatMap { chat.personaSummary($0)?.name } ?? chat.myName }
     private var messages: [SpyderServerMessage] { chat.messageByPeer[contact.id] ?? [] }
     private var peerAvatar: SpyderPersonaAvatar? { chat.contacts.first(where: { $0.id == contact.id })?.avatar }
     private var accent: Color { (SpyderSignalAccent(rawValue: accentRaw) ?? .red).color }
     private var shouldAnimate: Bool { appearance.animateMessages && motionEnabled && !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled }
-    private var canSend: Bool { chat.encryptionReady && !sending && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canSend: Bool { chat.encryptionReady && !sending && !changingPersona && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,6 +90,7 @@ struct ChatDetailView: View {
                 chatNavigationTitle
             }
         }
+        .sheet(isPresented: $choosingPersona) { personaPicker }
         .sheet(isPresented: $showingAppearance, onDismiss: reloadAppearance) {
             NavigationStack { SpyderChatAppearanceSettingsView(peerID: contact.id) }
         }
@@ -95,16 +109,46 @@ struct ChatDetailView: View {
                                                      set: { if !$0 { chat.errorMessage = nil } })) {
             Button("Закрыть", role: .cancel) { chat.errorMessage = nil }
         } message: { Text(chat.errorMessage ?? "") }
-        .task {
+        .task(id: "\(chat.activePersonaID ?? "")-\(scenePhase == .active)-\(isVisible)-\(terminalActive)-\(pageVisible)-\(sectionActive)") {
             reloadAppearance()
             reactions = SpyderLocalChatReactions.load(peer: contact.id)
+            guard sectionActive, pageVisible, scenePhase == .active, isVisible, !terminalActive else { return }
+            chat.resumeDecryption()
             await chat.loadMessages(peer: contact.id)
+            await chat.loadConversationSummaries()
+            acknowledgeVisible()
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                guard !Task.isCancelled else { break }
+                await chat.updatePresence(active: true)
+                if !draft.isEmpty && (nextPersonaID == nil || nextPersonaID == chat.activePersonaID) { await chat.updateTyping(peer: contact.id, active: true) }
+                do { try await Task.sleep(for: .seconds(3)) } catch { break }
+                guard !Task.isCancelled, sectionActive, pageVisible, scenePhase == .active, isVisible, !terminalActive else { break }
                 await chat.loadMessages(peer: contact.id)
+                await chat.loadConversationSummaries()
+                acknowledgeVisible()
             }
         }
+        .onChange(of: draft) { _, value in
+            guard sectionActive, pageVisible, isVisible, scenePhase == .active, nextPersonaID == nil || nextPersonaID == chat.activePersonaID else { return }
+            if value.isEmpty || Date().timeIntervalSince(lastTypingAt) > 2 {
+                lastTypingAt = Date()
+                Task { await chat.updateTyping(peer: contact.id, active: !value.isEmpty) }
+            }
+        }
+        .onChange(of: sectionActive) { _, active in
+            if !active { Task { await chat.updateTyping(peer: contact.id, active: false) } }
+        }
+        .onChange(of: isVisible) { _, visible in
+            if !visible { Task { await chat.updateTyping(peer: contact.id, active: false) } }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { Task { await chat.updateTyping(peer: contact.id, active: false) } }
+        }
+        .onAppear { pageVisible = true }
+        .onDisappear {
+            pageVisible = false
+            Task { await chat.updateTyping(peer: contact.id, active: false) }
+        }
+
     }
 
     // Dividing content from the page toolbar avoids a giant SwiftUI body
@@ -148,6 +192,11 @@ struct ChatDetailView: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 10)
                 }
+                .background(GeometryReader { geometry in
+                    Color.clear.preference(key: SpyderChatViewportKey.self, value: geometry.frame(in: .global))
+                })
+                .onPreferenceChange(SpyderChatViewportKey.self) { rect in viewport = rect; acknowledgeVisible() }
+                .onPreferenceChange(SpyderChatMessageFramesKey.self) { frames in messageFrames = frames; acknowledgeVisible() }
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: messages.last?.id) { _, newID in
                     guard let newID else { return }
@@ -161,6 +210,18 @@ struct ChatDetailView: View {
                                        accent: accent, glowEnabled: appearance.ambientGlow)
                     .ignoresSafeArea(edges: .horizontal)
             }
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Button { choosingPersona = true } label: {
+                        Label((nextPersonaID == nil ? "Пишешь как: " : "Следующее сообщение: ") + visiblePersonaName,
+                              systemImage: "person.crop.circle")
+                            .font(.system(size: 12, weight: .medium))
+                    }.disabled(sending || changingPersona)
+                    Spacer()
+                    if changingPersona { ProgressView().controlSize(.mini) }
+                }
+                if let personaNotice { Text(personaNotice).font(.caption2).foregroundStyle(WalletTheme.secondary) }
+            }.padding(.horizontal, 16).padding(.top, 8)
             composer
         }
     }
@@ -174,10 +235,13 @@ struct ChatDetailView: View {
                 SpyderProfileAvatarView(motion: peerAvatar?.motion ?? .quiet,
                     accent: peerAvatar?.color ?? .blue, diameter: 36,
                     seed: peerAvatar?.seed ?? "")
-                Text(contact.name)
-                    .font(.system(size: 16, weight: .semibold))
-                    .lineLimit(1)
-                    .foregroundStyle(WalletTheme.ink)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(contact.name).font(.system(size: 16, weight: .semibold)).lineLimit(1)
+                    if let summary {
+                        Text(summary.typing ? "печатает…" : (summary.online ? "в сети" : "не в сети"))
+                            .font(.system(size: 10)).foregroundStyle(summary.typing ? accent : WalletTheme.secondary)
+                    }
+                }.foregroundStyle(WalletTheme.ink)
             }
             .frame(maxWidth: 240)
             .contentShape(Rectangle())
@@ -259,6 +323,9 @@ struct ChatDetailView: View {
                         .background(WalletTheme.surface, in: Capsule())
                         .accessibilityLabel("Локальная реакция: \(chosen)")
                     }
+                    if outgoing && message.verified {
+                        receiptView(SpyderMessageReceipt(deliveredAt: message.delivered_at, readAt: message.read_at))
+                    }
                     if appearance.showTime {
                         Text(SpyderChatClock.text(message.created_at))
                             .font(.system(size: 10, weight: .medium))
@@ -267,6 +334,58 @@ struct ChatDetailView: View {
                 }.padding(.horizontal, 5)
             }
             if !outgoing { Spacer(minLength: 55) }
+        }
+        .background(GeometryReader { geometry in
+            Color.clear.preference(key: SpyderChatMessageFramesKey.self,
+                value: !outgoing && message.verified ? [message.id: geometry.frame(in: .global)] : [:])
+        })
+    }
+
+    private func receiptView(_ state: SpyderMessageReceipt) -> some View {
+        SpyderReceiptMark(state: state, accent: accent)
+    }
+
+    private func acknowledgeVisible() {
+        guard sectionActive, pageVisible, scenePhase == .active, isVisible, !terminalActive, !showingAppearance,
+              !choosingPersona, !viewport.isEmpty else { return }
+        let ids = SpyderReadViewport.visibleIDs(frames: messageFrames, viewport: viewport)
+        Task { await chat.markRead(peer: contact.id, visibleIDs: ids) }
+    }
+
+    private var personaPicker: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("Каждая личность ведёт отдельную защищённую переписку. Публичный контакт подключится по @username; для приватного может потребоваться его приглашение.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                ForEach(chat.personaIDs, id: \.self) { id in
+                    if let person = chat.personaSummary(id) {
+                        Section(person.name) {
+                            Button(id == chat.activePersonaID ? "Текущая личность" : "Для этого чата") {
+                                choosingPersona = false
+                                changingPersona = true
+                                Task {
+                                    if await chat.selectChatPersona(id, peer: contact) {
+                                        nextPersonaID = nil; draft = ""; reactions = [:]
+                                        personaNotice = "Открыта отдельная переписка: " + person.name
+                                    }
+                                    changingPersona = false
+                                }
+                            }.disabled(changingPersona || sending)
+                            Button("Только следующее сообщение") {
+                                nextPersonaID = id
+                                Task { await chat.updateTyping(peer: contact.id, active: false) }
+                                personaNotice = "Сообщение появится в отдельной переписке личности «" + person.name + "»."
+                                choosingPersona = false
+                            }.disabled(sending)
+                        }
+                    }
+                }
+                if nextPersonaID != nil {
+                    Button("Отменить личность следующего сообщения") { nextPersonaID = nil; choosingPersona = false }
+                }
+            }.navigationTitle("Личность в чате")
         }
     }
 
@@ -338,13 +457,30 @@ struct ChatDetailView: View {
         guard canSend, !content.isEmpty else { return }
         sending = true
         Task {
-            let succeeded = await chat.sendMessage(to: contact.id, text: content)
+            let succeeded: Bool
+            if let persona = nextPersonaID, persona != chat.activePersonaID {
+                succeeded = await chat.sendNextMessage(to: contact.id, text: content, personaID: persona)
+            } else { succeeded = await chat.sendMessage(to: contact.id, text: content) }
             if succeeded {
                 // A successful backend ack, not a fake local delivery tick.
                 draft = ""
+                nextPersonaID = nil
+                await chat.updateTyping(peer: contact.id, active: false)
                 SpyderSonicPlayer.shared.playSent()
             }
             sending = false
         }
     }
+}
+
+private struct SpyderChatMessageFramesKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private struct SpyderChatViewportKey: PreferenceKey {
+    static var defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }

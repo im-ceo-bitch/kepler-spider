@@ -12,14 +12,14 @@ struct SpyderDevnetChatsHomeView: View {
     @State private var showPersonas = false
     @State private var switchingPersona = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var archived = false
+    @State private var pendingDelete: SpyderChatPerson?
+    @State private var showHidden = false
+    @State private var pendingBlock: SpyderChatPerson?
     @State private var search = ""
     @State private var name = ""
     @State private var username = ""
-    @State private var lookup = ""
     @State private var claim = ""
-    @State private var invitation = ""
-    @State private var adding = false
-    @State private var inviteSent = false
     @State private var visibleInSearch = true
     @AppStorage(SpyderMotionKeys.accent) private var accentValue = SpyderSignalAccent.red.rawValue
     @AppStorage(SpyderMotionKeys.avatar) private var avatarValue = SpyderAvatarMotion.pulse.rawValue
@@ -30,180 +30,146 @@ struct SpyderDevnetChatsHomeView: View {
     private var identityAccent: SpyderSignalAccent { chat.myAvatar?.color ?? accent }
 
 
-    private var filtered: [SpyderChatPerson] {
-        search.isEmpty ? chat.contacts : chat.contacts.filter { $0.name.localizedCaseInsensitiveContains(search) }
+    private var filtered: [SpyderConversationSummary] {
+        chat.conversations.filter { item in
+            (showHidden || !item.preferences.hidden) &&
+            (item.preferences.archived == true) == archived &&
+            (search.isEmpty || item.peer.name.localizedCaseInsensitiveContains(search) ||
+             (item.peer.username ?? "").localizedCaseInsensitiveContains(search))
+        }.sorted { left, right in
+            if (left.preferences.pinned == true) != (right.preferences.pinned == true) {
+                return left.preferences.pinned == true
+            }
+            let l = left.last_message?.created_at ?? "", r = right.last_message?.created_at ?? ""
+            return l == r ? left.peer.name.localizedCaseInsensitiveCompare(right.peer.name) == .orderedAscending : l > r
+        }
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 21) {
-                HStack {
-                    Text("Чаты").font(.system(size: 34, weight: .bold)).foregroundStyle(WalletTheme.ink)
-                    Spacer()
-                    if chat.hasIdentity {
-                        Button { adding = true } label: {
-                            Label("Пригласить", systemImage: "person.badge.plus")
-                                .font(.system(size: 14, weight: .semibold))
-                                .padding(.horizontal, 15).frame(height: 44)
-                                .foregroundStyle(WalletTheme.ink)
-                                .background(WalletTheme.surface, in: Capsule())
-                        }
-                    }
-                }.spyderReveal(0.03)
-                identityCarousel
-
-                if !chat.hasIdentity { setup }
-                else {
-                    HStack(spacing: 8) {
-                        Circle().fill(chat.connected ? Color.green : WalletTheme.secondary).frame(width: 7, height: 7)
-                        Text(chat.connected ? "Сеть подключена" : (chat.refreshing ? "Подключаемся…" : "Нет соединения"))
-                            .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack {
+                        Text("Чаты").font(.system(size: 34, weight: .bold))
                         Spacer()
-                        if chat.refreshing { ProgressView().controlSize(.mini) }
-                    }
-                    .accessibilityElement(children: .combine)
-                    .spyderReveal(0.08)
-
-                    if !chat.connected && !chat.refreshing {
-                        HStack(alignment: .top, spacing: 11) {
-                            Image(systemName: "wifi.exclamationmark")
-                                .font(.system(size: 19))
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Нет связи со Spyder Chat").font(.system(size: 15, weight: .semibold))
-                                Text(chat.serverStatus ?? "Проверь соединение. Переписки и ключи сохранены.")
-                                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                                Text("Повторное подключение выполняется автоматически.")
-                                    .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
-                                Button("Повторить сейчас") { Task { await chat.refresh() } }
-                                    .font(.system(size: 13, weight: .semibold))
-                            }
-                        }
-                        .padding(15)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 18))
-                    }
-
-                    if chat.connected && !chat.pushEnabled {
-                        HStack(spacing: 12) {
-                            Image(systemName: "bell.badge")
-                                .font(.system(size: 20))
-                                .foregroundStyle(WalletTheme.secondary)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Уведомления выключены")
+                        if chat.hasIdentity {
+                            Button(action: onAdd) {
+                                Label("Пригласить", systemImage: "person.badge.plus")
                                     .font(.system(size: 14, weight: .semibold))
-                                Text("Разреши уведомления, чтобы видеть новые сообщения вне приложения.")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(WalletTheme.secondary)
-                            }
-                            Spacer(minLength: 4)
-                            Button("Включить") { Task { await chat.enablePush() } }
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .padding(14)
-                        .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 18))
-                    }
-
-                    if chat.myUsername.isEmpty && chat.personaKind != "private" {
-                        WalletCard {
-                            VStack(alignment: .leading, spacing: 9) {
-                                Text("Создай свой @username").font(.system(size: 15, weight: .semibold))
-                                TextField("your_username", text: $claim)
-                                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                                Button("Сохранить username") { Task { _ = await chat.claimUsername(claim) } }
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .disabled(claim.count < 3)
-                            }
+                                    .padding(.horizontal, 14).frame(height: 44)
+                                    .background(WalletTheme.surface, in: Capsule())
+                            }.buttonStyle(.plain)
                         }
                     }
-
-                    HStack(spacing: 10) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(WalletTheme.secondary)
-                        TextField("Поиск контактов", text: $search)
-                            .textInputAutocapitalization(.never)
-                    }
-                    .font(.system(size: 15))
-                    .padding(.horizontal, 16).frame(height: 48)
-                    .background(WalletTheme.surface, in: Capsule())
-
-                    if !chat.requests.isEmpty {
-                        Text("Запросы на общение").font(.system(size: 18, weight: .semibold)).foregroundStyle(WalletTheme.ink)
-                        ForEach(chat.requests) { peer in
-                            HStack {
-                                SpyderProfileAvatarView(motion: peer.avatar?.motion ?? .quiet,
-                                                         accent: peer.avatar?.color ?? .blue,
-                                                         diameter: 50, animate: motionEnabled,
-                                                         seed: peer.avatar?.seed ?? "")
-                                Text(peer.name).font(.system(size: 15, weight: .medium))
-                                Spacer()
-                                Button("Принять") { Task { await chat.accept(peer) } }
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(WalletTheme.contrast)
-                                    .padding(.horizontal, 16).frame(height: 38)
-                                    .background(WalletTheme.accent, in: Capsule())
-                            }
+                    identityCarousel
+                    if !chat.hasIdentity { setup }
+                    else {
+                        HStack(spacing: 7) {
+                            Circle().fill(chat.connected ? .green : WalletTheme.secondary).frame(width: 6, height: 6)
+                            Text(chat.connected ? "Подключено" : "Нет соединения").font(.caption)
+                            Spacer()
+                            if chat.refreshing { ProgressView().controlSize(.mini) }
+                        }.foregroundStyle(WalletTheme.secondary)
+                        if let status = chat.serverStatus {
+                            Text(status).font(.caption).foregroundStyle(WalletTheme.secondary)
+                            Button("Повторить") { Task { await chat.refresh() } }
+                        }
+                        if !chat.pushEnabled {
+                            Button("Включить уведомления") { Task { await chat.enablePush() } }
+                        }
+                        if chat.myUsername.isEmpty && chat.personaKind != "private" {
+                            TextField("Создать @username", text: $claim)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            Button("Сохранить username") { Task { _ = await chat.claimUsername(claim) } }
+                                .disabled(claim.count < 3)
+                        }
+                        TextField("Поиск переписок", text: $search)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .padding(13).background(WalletTheme.surface, in: Capsule())
+                        Picker("Переписки", selection: $archived) {
+                            Text("Чаты").tag(false)
+                            Text("Архив").tag(true)
+                        }.pickerStyle(.segmented)
+                        if chat.contactPreferences.values.contains(where: { $0.hidden }) {
+                            Toggle("Показать скрытые", isOn: $showHidden).font(.caption)
                         }
                     }
-
+                }
+                .foregroundStyle(WalletTheme.ink)
+                .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+            if chat.hasIdentity {
+                Section {
                     if filtered.isEmpty {
-                        WalletCard {
-                            VStack(alignment: .leading, spacing: 11) {
-                                Image(systemName: "message.badge")
-                                    .font(.system(size: 29)).foregroundStyle(WalletTheme.ink)
-                                Text("Пока нет переписок")
-                                    .font(.system(size: 18, weight: .semibold)).foregroundStyle(WalletTheme.ink)
-                                Text("Найди друга по @username, отправь запрос и начни переписку после его принятия.")
-                                    .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
-                                Button("Добавить контакт") { adding = true }
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(WalletTheme.ink)
-                            }
-                        }
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(filtered) { person in
-                                Button { onOpen(WalletContact(id: person.id, name: person.name, handle: person.username.map { "@" + $0 } ?? "", letter: String(person.name.prefix(1)).uppercased(), preview: "Открыть переписку", time: "")) } label: {
-                                    HStack(spacing: 14) {
-                                        SpyderProfileAvatarView(motion: person.avatar?.motion ?? .quiet,
-                                            accent: person.avatar?.color ?? .blue,
-                                            diameter: 50, animate: motionEnabled,
-                                            seed: person.avatar?.seed ?? "")
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(person.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(WalletTheme.ink)
-                                            Text(person.username.map { "@" + $0 } ?? "Открыть переписку")
-                                                .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right").foregroundStyle(WalletTheme.secondary)
-                                    }
-                                    .padding(.vertical, 12)
-                                }.buttonStyle(.plain)
-                                if person.id != filtered.last?.id { Divider().overlay(WalletTheme.divider) }
-                            }
-                        }
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(archived ? "Архив пуст" : "Пока нет переписок").font(.headline)
+                            Text(search.isEmpty ? "Подключи контакт через «Пригласить»." : "Нет совпадений.")
+                                .font(.caption).foregroundStyle(WalletTheme.secondary)
+                            if !archived { Button("Пригласить", action: onAdd) }
+                        }.padding(.vertical, 15).listRowBackground(Color.clear)
                     }
-                    Label("E2EE v2 · CryptoKit · одно устройство. Проверяйте отпечатки ключей вручную. Нет мультиустройств и Double Ratchet.", systemImage: "lock.shield")
-                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    ForEach(filtered) { item in
+                        conversationRow(item)
+                            .listRowInsets(EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20))
+                            .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) { pendingDelete = item.peer } label: {
+                                    Label("Удалить", systemImage: "trash")
+                                }
+                                Button {
+                                    Task { await chat.conversationAction(peer: item.id,
+                                        action: item.preferences.archived == true ? "unarchive" : "archive") }
+                                } label: { Label(item.preferences.archived == true ? "Вернуть" : "Архив", systemImage: "archivebox") }
+                                    .tint(.gray)
+                            }
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                Button {
+                                    Task { await chat.conversationAction(peer: item.id,
+                                        action: item.preferences.pinned == true ? "unpin" : "pin") }
+                                } label: { Label(item.preferences.pinned == true ? "Открепить" : "Закрепить", systemImage: "pin") }
+                                    .tint(.orange)
+                                Button { toggleMute(item) } label: {
+                                    Label(item.preferences.muted ? "Звук" : "Без звука", systemImage: "bell.slash")
+                                }.tint(.gray)
+                            }
+                            .contextMenu {
+                                Button("Открыть и выбрать личность") { open(item.peer) }
+                                Button(item.preferences.muted ? "Включить уведомления" : "Выключить уведомления") { toggleMute(item) }
+                                Button(item.preferences.hidden ? "Показать чат" : "Скрыть чат") {
+                                    Task { await chat.setContactPreferences(peer: item.id,
+                                        muted: item.preferences.muted, hidden: !item.preferences.hidden) }
+                                }
+                                Button("Заблокировать", role: .destructive) { pendingBlock = item.peer }
+                            }
+                    }
+                } footer: {
+                    Text("E2EE · отдельные ключи и история каждой личности. Сравнивай отпечатки ключей через независимый канал.")
+                        .font(.caption2)
                 }
             }
-            .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 25)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .background(WalletTheme.canvas.ignoresSafeArea())
         .refreshable {
             // Native iOS pull-to-refresh indicator appears at the top of the list.
             await chat.refresh()
         }
-        .task(id: isActive) {
+        .task(id: "\(isActive)-\(scenePhase == .active)") {
             guard isActive, scenePhase == .active else { return }
+            chat.resumeDecryption()
+            await chat.updatePresence(active: true)
             await chat.refresh()
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(chat.connected ? 10 : 6)) }
                 catch { break }
                 guard !Task.isCancelled, scenePhase == .active, isActive else { break }
+                await chat.updatePresence(active: true)
                 await chat.refresh()
             }
         }
-        .sheet(isPresented: $adding) { inviteSheet }
         .sheet(isPresented: $showPersonas) {
             NavigationStack { SpyderPersonasView() }
         }
@@ -223,9 +189,90 @@ struct SpyderDevnetChatsHomeView: View {
                 switchingPersona = false
             }
         }
+        .confirmationDialog("Удалить переписку у тебя?", isPresented: Binding(
+            get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }
+        ), titleVisibility: .visible) {
+            if let person = pendingDelete {
+                Button("Удалить у меня", role: .destructive) {
+                    Task { await chat.conversationAction(peer: person.id, action: "delete") }
+                    pendingDelete = nil
+                }
+            }
+            Button("Отмена", role: .cancel) { pendingDelete = nil }
+        } message: { Text("История собеседника сохранится. Новое входящее сообщение вернёт чат в список.") }
+        .confirmationDialog("Заблокировать контакт?", isPresented: Binding(
+            get: { pendingBlock != nil }, set: { if !$0 { pendingBlock = nil } }
+        ), titleVisibility: .visible) {
+            if let person = pendingBlock {
+                Button("Заблокировать " + person.name, role: .destructive) {
+                    Task { _ = await chat.block(person.id) }
+                    pendingBlock = nil
+                }
+            }
+            Button("Отмена", role: .cancel) { pendingBlock = nil }
+        }
         .alert("Spyder Chat", isPresented: Binding(get: { chat.errorMessage != nil }, set: { if !$0 { chat.errorMessage = nil } })) {
             Button("Понятно", role: .cancel) { chat.errorMessage = nil }
         } message: { Text(chat.errorMessage ?? "") }
+    }
+
+    private func open(_ person: SpyderChatPerson) {
+        onOpen(WalletContact(id: person.id, name: person.name,
+            handle: person.username.map { "@" + $0 } ?? "", letter: String(person.name.prefix(1)), preview: "", time: ""))
+    }
+
+    private func toggleMute(_ item: SpyderConversationSummary) {
+        Task { await chat.setContactPreferences(peer: item.id, muted: !item.preferences.muted, hidden: item.preferences.hidden) }
+    }
+
+    private func personaLabel(peer: String) -> String {
+        guard let owner = chat.activePersonaID,
+              let selected = UserDefaults.standard.string(forKey: SpyderChatStore.chatPersonaKey(owner: owner, peer: peer)),
+              let person = chat.personaSummary(selected) else { return chat.myName }
+        return person.name
+    }
+
+    private func conversationRow(_ item: SpyderConversationSummary) -> some View {
+        Button { open(item.peer) } label: {
+            HStack(spacing: 13) {
+                SpyderProfileAvatarView(motion: item.peer.avatar?.motion ?? .quiet,
+                    accent: item.peer.avatar?.color ?? .blue, diameter: 52,
+                    animate: motionEnabled && !reduceMotion, seed: item.peer.avatar?.seed ?? item.id)
+                    .overlay(alignment: .bottomTrailing) {
+                        if item.online { Circle().fill(.green).frame(width: 10, height: 10)
+                            .overlay(Circle().stroke(WalletTheme.canvas, lineWidth: 2)) }
+                    }
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        Text(item.peer.name).font(.system(size: 17, weight: .semibold)).lineLimit(1)
+                        Spacer()
+                        if let timestamp = item.last_message?.created_at {
+                            Text(SpyderConversationClock.text(timestamp)).font(.caption2).foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    HStack {
+                        if let message = item.last_message, message.sender_id == chat.activePersonaID {
+                            SpyderReceiptMark(state: SpyderMessageReceipt(deliveredAt: message.delivered_at,
+                                readAt: message.read_at), accent: accent.color)
+                        }
+                        Text(item.typing ? "печатает…" : (chat.conversationPreviews[item.id] ?? "Начать переписку"))
+                            .font(.system(size: 13)).foregroundStyle(item.typing ? accent.color : WalletTheme.secondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 3)
+                        if item.preferences.muted { Image(systemName: "bell.slash.fill").font(.caption2) }
+                        if item.preferences.pinned == true { Image(systemName: "pin.fill").font(.caption2) }
+                        if item.unread_count > 0 {
+                            Text(item.unread_count > 99 ? "99+" : String(item.unread_count))
+                                .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                                .padding(6).background(accent.color, in: Capsule())
+                        }
+                    }
+                    Text(personaLabel(peer: item.id)).font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(accent.color).lineLimit(1)
+                }
+            }
+            .foregroundStyle(WalletTheme.ink).padding(.vertical, 8)
+        }.buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -330,7 +377,7 @@ struct SpyderDevnetChatsHomeView: View {
                         .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
                     Toggle("Показывать мой @username в поиске", isOn: $visibleInSearch)
                         .font(.system(size: 14))
-                    Text("Если включено, другие пользователи Spyder смогут найти твой профиль и отправить запрос на общение.")
+                    Text("Если включено, другие пользователи Spyder смогут найти твой профиль и сразу начать переписку.")
                         .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                 }
             }
@@ -343,87 +390,9 @@ struct SpyderDevnetChatsHomeView: View {
             } label: {
                 Text(chat.working ? "Подключаем…" : "Начать общение").spyderPrimaryButton()
             }.buttonStyle(.plain).disabled(!chat.hasConfiguredServer || chat.working || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || username.count < 3)
-            Text("После создания профиля найди друга по @username. Он примет запрос — и вы сможете переписываться. Никогда не делись фразой восстановления.")
+            Text("После создания профиля найди друга по @username. Чат появится сразу после подключения. Никогда не делись фразой восстановления.")
                 .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
         }.spyderReveal(0.08)
     }
 
-    private var inviteSheet: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    Text("Пригласить").font(.system(size: 28, weight: .bold))
-                    Spacer()
-                    Button("Готово") { adding = false }.foregroundStyle(WalletTheme.ink)
-                }
-                if !chat.myUsername.isEmpty {
-                    Text("Мой профиль: @" + chat.myUsername)
-                        .font(.system(size: 16, weight: .semibold)).textSelection(.enabled)
-                }
-                Text("Найти человека по @username")
-                    .font(.system(size: 19, weight: .semibold))
-                HStack(spacing: 9) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(WalletTheme.secondary)
-                    TextField("Поиск @username", text: $lookup)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                }
-                .padding(14).background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 17))
-                .task(id: lookup) {
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    guard !Task.isCancelled else { return }
-                    await chat.searchUsers(lookup)
-                }
-                if chat.searching { ProgressView() }
-                ForEach(chat.searchResults) { person in
-                    HStack(spacing: 12) {
-                        SpyderProfileAvatarView(motion: person.avatar?.motion ?? .quiet,
-                                            accent: person.avatar?.color ?? .blue,
-                                            diameter: 50, animate: motionEnabled,
-                                            seed: person.avatar?.seed ?? "")
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(person.name).font(.system(size: 15, weight: .semibold))
-                            Text("@" + (person.username ?? ""))
-                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                        }
-                        Spacer()
-                        if chat.contacts.contains(where: { $0.id == person.id }) {
-                            Text("В контактах").font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                        } else {
-                            Button("Добавить") {
-                                Task { if await chat.inviteUsername(person.username ?? "") { inviteSent = true } }
-                            }.font(.system(size: 13, weight: .semibold))
-                        }
-                    }.padding(.vertical, 5)
-                }
-                Divider()
-                Text("Твой код приглашения")
-                    .font(.system(size: 14)).foregroundStyle(WalletTheme.secondary)
-                Text(chat.inviteCode)
-                    .font(.system(size: 18, weight: .semibold, design: .monospaced))
-                    .textSelection(.enabled)
-                Button { UIPasteboard.general.string = chat.inviteCode } label: {
-                    Label("Скопировать мой код", systemImage: "doc.on.doc").spyderPrimaryButton()
-                }.buttonStyle(.plain)
-                Divider()
-                Text("Пригласить по коду").font(.system(size: 20, weight: .semibold))
-                TextField("Код приглашения друга", text: $invitation)
-                    .textInputAutocapitalization(.characters).autocorrectionDisabled()
-                    .font(.system(size: 16, design: .monospaced))
-                    .padding(14).background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 17))
-                Button {
-                    Task {
-                        if await chat.invite(invitation) { inviteSent = true; invitation = "" }
-                    }
-                } label: { Text("Отправить приглашение").spyderPrimaryButton() }
-                    .buttonStyle(.plain)
-                    .disabled(invitation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                if inviteSent { Label("Приглашение отправлено. Друг увидит его во вкладке «Чаты».", systemImage: "checkmark.circle")
-                    .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary) }
-            }
-            .foregroundStyle(WalletTheme.ink)
-            .padding(22)
-        }
-        .background(WalletTheme.canvas.ignoresSafeArea())
-        .presentationDragIndicator(.visible).presentationCornerRadius(30)
-    }
 }

@@ -64,6 +64,11 @@ struct ConsoleApp: App {
             .onReceive(marketData.$quotes) { quotes in
                 publicAssets.applyMarketQuotes(quotes)
             }
+            .onOpenURL { url in
+                if let code = SpyderInviteLink.code(from: url.absoluteString) {
+                    spyderChat.pendingInviteCode = code
+                }
+            }
             .preferredColorScheme(preferredScheme)
             .environment(\.locale, Locale(identifier: language))
             .tint(WalletTheme.ink)

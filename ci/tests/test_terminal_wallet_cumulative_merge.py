@@ -9,10 +9,13 @@ class TerminalWalletCumulativeMergeTests(unittest.TestCase):
         for token in ('SpyderWalletProfilePage(', 'onControlCenter:', 'case .security:',
                       'WalletSecurityCenterView()', 'case .addressBook:',
                       'WalletAddressBookView()', 'onOpenActivity:',
-                      'SpyderTerminalChatContainer(contact: contact', 'SpyderIdentityHubView()',
+                      'SpyderConversationSession(contact: contact', 'SpyderIdentityHubView()',
                       'openChatAfterNotificationIfNeeded()', '.spyderChatOpenRequested',
                       'NavigationStack(path: $walletPath)', 'NavigationStack(path: $networkPath)'):
             self.assertIn(token,root)
+        session=read('Console/Features/Chats/SpyderConversationSession.swift')
+        self.assertIn('SpyderTerminalChatContainer(contact: contact',session)
+        self.assertIn('.environmentObject(session)',session)
         self.assertNotIn('WalletControlCenterView(', root)
         self.assertIn('SpyderTerminalSettingsScreen()',
                       read('Console/Features/Settings/SpyderIdentityHubView.swift'))

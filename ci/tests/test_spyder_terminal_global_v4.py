@@ -8,14 +8,18 @@ ROOT = Path(__file__).resolve().parents[2]
 def read(path): return (ROOT / path).read_text()
 
 class GlobalTerminalChecks(unittest.TestCase):
-    def test_root_global_entry_is_real_tab(self):
+    def test_root_has_two_tabs_and_terminal_is_conversation_scoped(self):
         root = read("Console/WalletRootView.swift")
         model = read("Console/Models/WalletModels.swift")
-        self.assertIn("case wallet, chats, terminal", model)
-        self.assertIn("case .terminal:", root)
-        self.assertIn("SpyderGlobalTerminalView(onAction:", root)
-        self.assertIn('tabButton(.terminal, title: "Терминал"', root)
-        self.assertIn("SpyderTerminalChatContainer(contact: contact", root)
+        self.assertIn("case wallet, chats }", model)
+        self.assertNotIn("case wallet, chats, terminal", model)
+        self.assertNotIn("SpyderGlobalTerminalView(onAction:", root)
+        self.assertNotIn('tabButton(.terminal', root)
+        self.assertIn('tabButton(.chats, title: "Чаты"', root)
+        self.assertIn("SpyderConversationSession(contact: contact", root)
+        session = read("Console/Features/Chats/SpyderConversationSession.swift")
+        self.assertIn("SpyderTerminalChatContainer(contact: contact", session)
+        self.assertIn(".environmentObject(session)", session)
 
     def test_global_host_fails_closed_and_does_not_sign(self):
         global_view = read("Console/Features/Chats/SpyderGlobalTerminalView.swift")

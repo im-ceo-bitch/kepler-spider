@@ -47,9 +47,22 @@ struct SpyderServerMessage: Codable, Identifiable, Hashable {
     let recipient_id: String
     let text: String
     let created_at: String
+    var delivered_at: String? = nil
+    var read_at: String? = nil
+    var verified = true
+}
+
+struct SpyderContactPreferences: Decodable {
+    let muted: Bool
+    let hidden: Bool
+    var pinned: Bool? = nil
+    var archived: Bool? = nil
+    var removed: Bool? = nil
+    var clear_through: Int? = nil
 }
 
 private struct SpyderChatList: Decodable {
+    let preferences: [String: SpyderContactPreferences]?
     let contacts: [SpyderChatPerson]
     let requests: [SpyderChatPerson]
     let invite_code: String
@@ -109,7 +122,14 @@ private enum SpyderChatNetworkError: LocalizedError {
         switch self {
         case .invalidServer: "Укажи HTTPS-адрес своего сервера Spyder Chat."
         case .missingAccount: "Создай профиль чата на этом устройстве."
-        case .rejected(let status, let code): "Сервер чата: \(code) (HTTP \(status))."
+        case .rejected(let status, let code):
+            switch code {
+            case "unknown_contacts_limited": "Пользователь ограничил неизвестных. Попроси его QR или ссылку приглашения."
+            case "blocked": "Подключение к этому контакту недоступно."
+            case "recipient_private", "invalid_recipient": "Контакт не найден или недоступен по @username. Используй его код приглашения."
+            case "rate_limited": "Слишком много попыток. Попробуй позже."
+            default: "Сервер чата: \(code) (HTTP \(status))."
+            }
         case .invalidResponse: "Сервер ответил в неизвестном формате."
         }
     }
@@ -117,6 +137,22 @@ private enum SpyderChatNetworkError: LocalizedError {
 
 @MainActor
 final class SpyderChatStore: ObservableObject {
+    @Published private(set) var conversations: [SpyderConversationSummary] = []
+    @Published private(set) var conversationPreviews: [String: String] = [:]
+    private var encryptedCache: [String: [String: SpyderEncryptedMessage]] = [:]
+    private var cacheEpoch = 0
+    private var decryptionAllowed = false
+    private var previewMessageIDs: [String: SpyderEncryptedMessage] = [:]
+    private var acknowledgedRead: Set<String> = []
+    private var pendingRead: Set<String> = []
+    private let persistsSelection: Bool
+    let conversationOwnerID: String?
+    @Published private(set) var contactPreferences: [String: SpyderContactPreferences] = [:]
+    @Published private(set) var lastConnectedPerson: SpyderChatPerson?
+    @Published var pendingInviteCode: String?
+    @Published private(set) var limitUnknownContacts = false
+    @Published private(set) var inviteHistory: [SpyderInviteEvent] = []
+
     @Published private(set) var personaIDs: [String] = []
     @Published private(set) var activePersonaID: String?
     @Published private(set) var myBio = ""
@@ -176,7 +212,7 @@ final class SpyderChatStore: ObservableObject {
         myBio = record.bio ?? ""
         myStatus = record.status ?? ""
         myAvatar = record.avatar
-        if let avatar = record.avatar {
+        if persistsSelection, let avatar = record.avatar {
             UserDefaults.standard.set(avatar.style, forKey: SpyderMotionKeys.avatar)
             UserDefaults.standard.set(avatar.accent, forKey: SpyderMotionKeys.accent)
         }
@@ -192,6 +228,14 @@ final class SpyderChatStore: ObservableObject {
         try SpyderChatKeychain.save(JSONEncoder().encode(personaIDs), account: SpyderChatKeychain.indexAccount)
     }
     private func resetPersonaCaches() {
+        cacheEpoch += 1
+        encryptedCache = [:]
+        conversations = []; conversationPreviews = [:]; previewMessageIDs = [:]
+        acknowledgedRead = []; pendingRead = []
+        lastConnectedPerson = nil
+        contactPreferences = [:]
+        limitUnknownContacts = false
+        inviteHistory = []
         contacts = []; requests = []; searchResults = []
         messageByPeer = [:]; peerFingerprints = [:]
         lastRegisteredPushToken = nil
@@ -199,7 +243,10 @@ final class SpyderChatStore: ObservableObject {
         errorMessage = nil
     }
 
-    init() {
+    init(personaID: String? = nil, persistsSelection: Bool = true, conversationOwnerID: String? = nil) {
+        self.decryptionAllowed = !persistsSelection
+        self.persistsSelection = persistsSelection
+        self.conversationOwnerID = conversationOwnerID
         let bundled = Bundle.main.object(forInfoDictionaryKey: "SpyderChatServerURL") as? String
         let saved = UserDefaults.standard.string(forKey: Self.serverKey)
         if let data = SpyderChatKeychain.load(),
@@ -213,7 +260,7 @@ final class SpyderChatStore: ObservableObject {
             }
             // Legacy E2EE keys always belong to the original identity.
             try? SpyderMessageCrypto.bindLegacyPersona(original.id)
-            let desired = UserDefaults.standard.string(forKey: SpyderChatKeychain.activeKey) ?? original.id
+            let desired = personaID ?? UserDefaults.standard.string(forKey: SpyderChatKeychain.activeKey) ?? original.id
             let loaded = desired == original.id ? original : personaIDs.dropFirst().compactMap { id -> SpyderChatIdentity? in
                 guard id == desired, let stored = SpyderChatKeychain.load(account: "persona:" + id) else { return nil }
                 return try? JSONDecoder().decode(SpyderChatIdentity.self, from: stored)
@@ -392,7 +439,7 @@ final class SpyderChatStore: ObservableObject {
         }
         resetPersonaCaches()
         loadProfile(next)
-        UserDefaults.standard.set(id, forKey: SpyderChatKeychain.activeKey)
+        if persistsSelection { UserDefaults.standard.set(id, forKey: SpyderChatKeychain.activeKey) }
         // Never share the same APNs device token with a private persona.
         if next.kind == "private" { pushStatus = "Приватная личность: push отключён для снижения связи между профилями" }
         await refresh()
@@ -608,6 +655,7 @@ final class SpyderChatStore: ObservableObject {
             let _: SpyderChatKeysAck = try await perform("/v2/contacts/block", method: "POST",
                 payload: JSONEncoder().encode(Payload(peer_id: peer)))
             messageByPeer.removeValue(forKey: peer)
+            encryptedCache.removeValue(forKey: peer)
             peerFingerprints.removeValue(forKey: peer)
             await refresh()
             return true
@@ -627,15 +675,17 @@ final class SpyderChatStore: ObservableObject {
             let result: SpyderChatList = try await perform("/v1/contacts")
             guard expectedIdentity == identity?.id else { return }
             contacts = result.contacts.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            contactPreferences = result.preferences ?? [:]
             requests = result.requests
             inviteCode = result.invite_code
             struct Privacy: Decodable { let discoverable: Bool }
             let privacy: Privacy = try await perform("/v2/profile/privacy")
             guard expectedIdentity == identity?.id else { return }
             discoverable = privacy.discoverable
-            await retryPushUnregister()
+            if persistsSelection { await retryPushUnregister() }
             connected = true
             serverStatus = nil
+            await loadConversationSummaries()
             // An APNs registration request made while offline needs another attempt.
             if pushEnabled, personaKind != "private", let token = lastPushToken, lastRegisteredPushToken != token {
                 await registerPushToken(token)
@@ -660,8 +710,14 @@ final class SpyderChatStore: ObservableObject {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    func resumeDecryption() { decryptionAllowed = true }
+
     func clearDecryptedCache() {
+        cacheEpoch += 1
+        decryptionAllowed = false
+        encryptedCache = [:]
         messageByPeer = [:]
+        conversationPreviews = [:]; previewMessageIDs = [:]
         searchResults = []
     }
 
@@ -696,23 +752,76 @@ final class SpyderChatStore: ObservableObject {
     }
 
     func inviteUsername(_ username: String) async -> Bool {
+        let expected = identity?.id
         do {
             struct Payload: Encodable { let username: String }
             struct Ack: Decodable { let status: String }
-            let _: Ack = try await perform("/v1/invites", method: "POST", payload: JSONEncoder().encode(Payload(username: username)))
+            let ack: Ack = try await perform("/v3/contacts/connect", method: "POST", payload: JSONEncoder().encode(Payload(username: username)))
+            guard expected == identity?.id else { return false }
+            guard ["connected", "already_connected"].contains(ack.status) else {
+                errorMessage = "Обнови сервер Spyder Chat для мгновенного подключения"
+                return false
+            }
             await refresh()
             return true
         } catch { errorMessage = error.localizedDescription; return false }
     }
 
     func invite(_ code: String) async -> Bool {
+        let expected = identity?.id
+        guard let parsed = SpyderInviteLink.code(from: code) else {
+            errorMessage = "Нужен код из 24 символов или ссылка Spyder"
+            return false
+        }
         do {
             struct Payload: Encodable { let code: String }
-            struct Ack: Decodable { let status: String }
-            let _: Ack = try await perform("/v1/invites", method: "POST", payload: JSONEncoder().encode(Payload(code: code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())))
+            struct Ack: Decodable { let status: String; let peer: SpyderChatPerson? }
+            let ack: Ack = try await perform("/v3/contacts/connect", method: "POST", payload: JSONEncoder().encode(Payload(code: parsed)))
+            guard expected == identity?.id else { return false }
+            guard ["connected", "already_connected"].contains(ack.status) else {
+                errorMessage = "Обнови сервер Spyder Chat для мгновенного подключения"
+                return false
+            }
+            lastConnectedPerson = ack.peer
             await refresh()
             return true
         } catch { errorMessage = error.localizedDescription; return false }
+    }
+
+    func setContactPreferences(peer: String, muted: Bool, hidden: Bool) async {
+        let expected = identity?.id
+        do {
+            struct Payload: Encodable { let peer_id: String; let muted: Bool; let hidden: Bool }
+            let _: SpyderChatKeysAck = try await perform("/v3/contacts/preferences", method: "POST",
+                payload: JSONEncoder().encode(Payload(peer_id: peer, muted: muted, hidden: hidden)))
+            guard expected == identity?.id else { return }
+            contactPreferences[peer] = SpyderContactPreferences(muted: muted, hidden: hidden)
+            await loadConversationSummaries()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func loadInviteSettings() async {
+        let expected = identity?.id
+        do {
+            struct Privacy: Decodable { let limit_unknown: Bool }
+            struct History: Decodable { let events: [SpyderInviteEvent] }
+            let privacy: Privacy = try await perform("/v3/contacts/privacy")
+            let history: History = try await perform("/v3/invites/history")
+            guard identity?.id == expected else { return }
+            limitUnknownContacts = privacy.limit_unknown
+            inviteHistory = history.events
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func setLimitUnknownContacts(_ enabled: Bool) async {
+        let expected = identity?.id
+        do {
+            struct Privacy: Codable { let limit_unknown: Bool }
+            let result: Privacy = try await perform("/v3/contacts/privacy", method: "POST",
+                payload: JSONEncoder().encode(Privacy(limit_unknown: enabled)))
+            guard identity?.id == expected else { return }
+            limitUnknownContacts = result.limit_unknown
+        } catch { errorMessage = error.localizedDescription }
     }
 
     func accept(_ person: SpyderChatPerson) async {
@@ -726,30 +835,51 @@ final class SpyderChatStore: ObservableObject {
     }
 
     func loadMessages(peer: String) async {
-        guard hasIdentity, let own = identity else { return }
+        let epoch = cacheEpoch
+        guard decryptionAllowed, hasIdentity, let own = identity else { return }
         do {
             try await activateEncryption()
-            guard own.id == identity?.id else { return }
+            guard own.id == identity?.id, cacheEpoch == epoch, decryptionAllowed else { return }
             let keys = try await fetchPeerKeys(peer)
-            guard own.id == identity?.id else { return }
-            let result: SpyderChatHistory = try await perform("/v2/messages?peer=\(peer)")
+            guard own.id == identity?.id, cacheEpoch == epoch, decryptionAllowed else { return }
+            let result: SpyderChatHistory = try await perform("/v3/messages?peer=\(peer)")
+            guard own.id == identity?.id, cacheEpoch == epoch, decryptionAllowed else { return }
+            var seen: Set<String> = []
+            let encrypted = result.messages.filter { seen.insert($0.id).inserted }
+            let previous = Dictionary((messageByPeer[peer] ?? []).map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
             var displayed: [SpyderServerMessage] = []
-            for item in result.messages {
+            var delivered: [String] = []
+            for item in encrypted {
                 guard (item.sender_id == peer && item.recipient_id == own.id) ||
                       (item.sender_id == own.id && item.recipient_id == peer) else { continue }
                 let plaintext: String
-                do { plaintext = try SpyderMessageCrypto.open(item, myID: own.id, peerKeys: keys, personaID: own.id) }
-                catch { plaintext = "🔒 Невозможно подтвердить или расшифровать сообщение" }
+                var verified = true
+                do {
+                    if encryptedCache[peer]?[item.id] == item, let cached = previous[item.id], cached.verified {
+                        plaintext = cached.text
+                    } else { plaintext = try SpyderMessageCrypto.open(item, myID: own.id, peerKeys: keys, personaID: own.id) }
+                    if item.recipient_id == own.id && item.delivered_at == nil { delivered.append(item.id) }
+                } catch {
+                    verified = false
+                    plaintext = "🔒 Невозможно подтвердить или расшифровать сообщение"
+                }
                 displayed.append(SpyderServerMessage(id: item.id, client_id: item.client_id,
                     sender_id: item.sender_id, recipient_id: item.recipient_id,
-                    text: plaintext, created_at: item.created_at))
+                    text: plaintext, created_at: item.created_at,
+                    delivered_at: item.delivered_at, read_at: item.read_at, verified: verified))
             }
-            guard own.id == identity?.id else { return }
+            guard own.id == identity?.id, cacheEpoch == epoch, decryptionAllowed else { return }
             messageByPeer[peer] = displayed
+            encryptedCache[peer] = Dictionary(encrypted.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+            for start in stride(from: 0, to: delivered.count, by: 100) {
+                guard own.id == identity?.id, cacheEpoch == epoch, decryptionAllowed else { return }
+                _ = await acknowledge(peer: peer, delivered: Array(delivered[start..<min(start + 100, delivered.count)]), read: [])
+            }
+            guard own.id == identity?.id, cacheEpoch == epoch, decryptionAllowed else { return }
             connected = true
             encryptionReady = true
         } catch {
-            guard own.id == identity?.id else { return }
+            guard own.id == identity?.id, cacheEpoch == epoch, decryptionAllowed else { return }
             connected = false
             errorMessage = error.localizedDescription
         }
@@ -773,6 +903,144 @@ final class SpyderChatStore: ObservableObject {
             await loadMessages(peer: peer)
             return true
         } catch { errorMessage = error.localizedDescription; return false }
+    }
+
+    func loadConversationSummaries() async {
+        let epoch = cacheEpoch
+        guard let own = identity else { return }
+        do {
+            struct Result: Decodable { let conversations: [SpyderConversationSummary] }
+            let result: Result = try await perform("/v3/conversations")
+            guard own.id == identity?.id, cacheEpoch == epoch else { return }
+            conversations = result.conversations
+            for item in result.conversations {
+                contactPreferences[item.peer.id] = item.preferences
+                guard let message = item.last_message else {
+                    conversationPreviews[item.peer.id] = nil; previewMessageIDs[item.peer.id] = nil
+                    continue
+                }
+                guard decryptionAllowed, previewMessageIDs[item.peer.id] != message else { continue }
+                let preview: String
+                do {
+                    let keys = try await fetchPeerKeys(item.peer.id)
+                    guard own.id == identity?.id, cacheEpoch == epoch else { return }
+                    let text = try SpyderMessageCrypto.open(message, myID: own.id, peerKeys: keys, personaID: own.id)
+                    preview = (message.sender_id == own.id ? "Ты: " : "") + text
+                } catch { preview = "🔒 Зашифрованное сообщение" }
+                guard own.id == identity?.id, cacheEpoch == epoch else { return }
+                conversationPreviews[item.peer.id] = preview
+                previewMessageIDs[item.peer.id] = message
+            }
+        } catch {
+            guard own.id == identity?.id, cacheEpoch == epoch else { return }
+            serverStatus = "Не удалось обновить список переписок: " + error.localizedDescription
+        }
+    }
+
+    private func acknowledge(peer: String, delivered: [String], read: [String]) async -> Bool {
+        do {
+            struct Payload: Encodable { let peer_id: String; let delivered_ids: [String]; let read_ids: [String] }
+            let _: SpyderChatKeysAck = try await perform("/v3/messages/ack", method: "POST",
+                payload: JSONEncoder().encode(Payload(peer_id: peer, delivered_ids: delivered, read_ids: read)))
+            return true
+        } catch { return false } // Retried on the next foreground poll; never invent a receipt.
+    }
+
+    func markRead(peer: String, visibleIDs: Set<String>) async {
+        guard decryptionAllowed, UIApplication.shared.applicationState == .active else { return }
+        let expected = identity?.id
+        let ids = (messageByPeer[peer] ?? []).filter {
+            visibleIDs.contains($0.id) && $0.recipient_id == expected && $0.verified &&
+            $0.read_at == nil && !acknowledgedRead.contains($0.id) && !pendingRead.contains($0.id)
+        }.map(\.id)
+        guard !ids.isEmpty else { return }
+        pendingRead.formUnion(ids)
+        let saved = await acknowledge(peer: peer, delivered: ids, read: ids)
+        guard identity?.id == expected else { return }
+        pendingRead.subtract(ids)
+        if saved { acknowledgedRead.formUnion(ids) }
+    }
+
+    func conversationAction(peer: String, action: String) async {
+        let expected = identity?.id
+        do {
+            struct Payload: Encodable { let peer_id: String; let action: String }
+            let _: SpyderChatKeysAck = try await perform("/v3/conversations/action", method: "POST",
+                payload: JSONEncoder().encode(Payload(peer_id: peer, action: action)))
+            guard identity?.id == expected else { return }
+            if action == "delete" { messageByPeer[peer] = nil; encryptedCache[peer] = nil; conversationPreviews[peer] = nil }
+            await loadConversationSummaries()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func updatePresence(active: Bool) async {
+        guard hasIdentity else { return }
+        struct Payload: Encodable { let active: Bool }
+        let _: SpyderChatKeysAck? = try? await perform("/v3/presence", method: "POST",
+            payload: JSONEncoder().encode(Payload(active: active)))
+    }
+
+    func updateTyping(peer: String, active: Bool) async {
+        guard hasIdentity else { return }
+        struct Payload: Encodable { let peer_id: String; let active: Bool }
+        let _: SpyderChatKeysAck? = try? await perform("/v3/typing", method: "POST",
+            payload: JSONEncoder().encode(Payload(peer_id: peer, active: active)))
+    }
+
+    /// A scoped store keeps chat selection separate from the home carousel and wallet.
+    func selectChatPersona(_ id: String, peer: WalletContact) async -> Bool {
+        guard !id.isEmpty, personaIDs.contains(id) else { return false }
+        if id == activePersonaID { return true }
+        let candidate = SpyderChatStore(personaID: id, persistsSelection: false)
+        candidate.clearDecryptedCache()
+        guard SpyderChatEndpoint.normalized(candidate.serverAddress) == SpyderChatEndpoint.normalized(serverAddress) else {
+            errorMessage = "Эти личности подключены к разным серверам. Нельзя автоматически связать их переписки."
+            return false
+        }
+        await candidate.refresh()
+        if !candidate.contacts.contains(where: { $0.id == peer.id }), !peer.handle.isEmpty {
+            _ = await candidate.inviteUsername(peer.handle)
+        }
+        guard candidate.activePersonaID == id, candidate.contacts.contains(where: { $0.id == peer.id }) else {
+            errorMessage = "Сначала подключи этот контакт от выбранной личности через «Пригласить». У каждой личности отдельные ключи и история."
+            return false
+        }
+        await activatePersona(id)
+        guard activePersonaID == id else { return false }
+        if let owner = conversationOwnerID {
+            UserDefaults.standard.set(id, forKey: Self.chatPersonaKey(owner: owner, peer: peer.id))
+        }
+        return true
+    }
+
+    func sendNextMessage(to peer: String, text: String, personaID: String) async -> Bool {
+        guard personaIDs.contains(personaID) else { return false }
+        let scoped = SpyderChatStore(personaID: personaID, persistsSelection: false)
+        guard scoped.activePersonaID == personaID else { return false }
+        // One-off sending signs as this identity without loading its other plaintext conversations.
+        scoped.clearDecryptedCache()
+        defer { scoped.clearDecryptedCache() }
+        guard SpyderChatEndpoint.normalized(scoped.serverAddress) == SpyderChatEndpoint.normalized(serverAddress) else {
+            errorMessage = "Эти личности подключены к разным серверам. Отправка остановлена."
+            return false
+        }
+        await scoped.refresh()
+        if !scoped.contacts.contains(where: { $0.id == peer }),
+           let username = contacts.first(where: { $0.id == peer })?.username {
+            _ = await scoped.inviteUsername(username)
+        }
+        guard scoped.contacts.contains(where: { $0.id == peer }) else {
+            errorMessage = "Этот контакт ещё не подключён к выбранной личности. Подключи его через «Пригласить»."
+            return false
+        }
+        let result = await scoped.sendMessage(to: peer, text: text)
+        if !result { errorMessage = scoped.errorMessage }
+        scoped.clearDecryptedCache()
+        return result
+    }
+
+    static func chatPersonaKey(owner: String, peer: String) -> String {
+        "spyder.chat.conversation.persona.v1." + owner + "." + peer
     }
 
     func isOutgoing(_ message: SpyderServerMessage) -> Bool { message.sender_id == identity?.id }

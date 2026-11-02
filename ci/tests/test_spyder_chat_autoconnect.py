@@ -23,7 +23,8 @@ class ChatAutoconnectTests(unittest.TestCase):
     def test_pull_refresh_and_foreground_poll(self):
         src = source('Console/Features/Chats/ChatsHomeView.swift')
         self.assertIn('.refreshable {', src)
-        self.assertIn('.task(id: isActive) {', src)
+        self.assertIn('.task(id:', src)
+        self.assertIn('\\(scenePhase == .active)', src)
         self.assertIn('guard isActive, scenePhase == .active', src)
         self.assertNotIn('Image(systemName: "arrow.clockwise")', src)
         self.assertIn('await chat.refresh()', src)
