@@ -1,0 +1,36 @@
+SPYDER — Block 1 / Navigation and real persona carousel
+Base: attached kepler-spider-main.zip; archive commit b8a17aae9db1ca4c467075f3c5af7961df58f90b.
+GitHub current main was not available/verified. Apply only if this is still your base.
+
+Implemented:
+- Two bottom tabs: Wallet and Chats. Global Terminal removed from root navigation.
+- Terminal inside conversations remains intact.
+- Chats title and Invite pill replace duplicate profile avatar.
+- Swipe carousel uses real Keychain personas, individual stored avatar, bio, status and privacy kind.
+- Selection activates the existing persona account, separate keys and conversation context.
+- Create-persona card opens existing persona management and registration.
+- Accent side edge, active label, reduced-motion support for carousel avatars.
+
+Validation:
+- Server persona tests: 2 passed.
+- Reviewed Swift call sites for extended personaSummary tuple and WalletTab cases.
+- ZIP overlaid onto pristine attached archive; changed files compared byte-for-byte.
+- No Xcode/Swift compiler available: iOS build, device layout and animation NOT verified.
+- No server or workflow changes. No real NFC/nearby feature added in this block.
+
+Remaining ordered blocks (all part of requested scope):
+2. Instant contacts: server/client migration from requests, QR/link/username invites,
+   blocking, hidden/mute/unknown filters; real invite history and notifications.
+3. Conversation model: persona per chat/next-message identity, genuine sent/delivered/read
+   acknowledgements; previews/time/unread/pin/mute/archive/delete/typing/online and swipe actions.
+4. Identity: circle-to-square pull-down and fullscreen viewer; public/private/hidden;
+   accent palette including gold/silver/copper/white, glow/style/badge controls and per-persona themes.
+5. Appearance: live preview, categories, animated/native/static/photo wallpapers,
+   all requested presets and controls (motion, blur, bubble/radius/transparency/receipt/typing styles).
+6. Privacy and connection: read/typing/preview toggles, silent send, Face ID lock,
+   disappearing messages, export/clear/verify keys; actual supported Touch/nearby transport,
+   invitation animation/haptics, reactions. Voice animation when voice is implemented.
+
+Do not describe pending blocks or unsupported transport as implemented.
+Upload console-update-block1-chats-personas.zip to repository root for existing unpacker.
+Workflow files intentionally excluded.

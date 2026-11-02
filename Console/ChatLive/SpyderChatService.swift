@@ -398,10 +398,10 @@ final class SpyderChatStore: ObservableObject {
         await refresh()
     }
 
-    func personaSummary(_ id: String) -> (name: String, username: String, kind: String)? {
+    func personaSummary(_ id: String) -> (name: String, username: String, kind: String, bio: String, status: String, avatar: SpyderPersonaAvatar?)? {
         guard let data = SpyderChatKeychain.load(account: identityAccount(for: id)),
               let item = try? JSONDecoder().decode(SpyderChatIdentity.self, from: data) else { return nil }
-        return (item.name, item.username ?? "", item.kind ?? "public")
+        return (item.name, item.username ?? "", item.kind ?? "public", item.bio ?? "", item.status ?? "", item.avatar)
     }
 
     /// Profile fields are visible to accepted contacts. Server-side profile data

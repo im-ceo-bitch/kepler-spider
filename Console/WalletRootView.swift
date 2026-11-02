@@ -24,7 +24,6 @@ struct WalletRootView: View {
         switch selectedTab {
         case .wallet: return walletPath.isEmpty
         case .chats: return networkPath.isEmpty
-        case .terminal: return true
         }
     }
 
@@ -40,11 +39,7 @@ struct WalletRootView: View {
                 .allowsHitTesting(selectedTab == .chats)
                 .accessibilityHidden(selectedTab != .chats)
                 .zIndex(selectedTab == .chats ? 1 : 0)
-            terminalNavigation
-                .opacity(selectedTab == .terminal ? 1 : 0)
-                .allowsHitTesting(selectedTab == .terminal)
-                .accessibilityHidden(selectedTab != .terminal)
-                .zIndex(selectedTab == .terminal ? 1 : 0)
+
         }
         .tint(WalletTheme.ink)
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -98,20 +93,6 @@ struct WalletRootView: View {
                     .toolbar(.visible, for: .navigationBar)
                     .navigationBarTitleDisplayMode(.inline)
             }
-        }
-    }
-
-    // The global terminal retains its independent UI and safe action registry.
-    // It never reuses either wallet or conversation navigation history.
-    private var terminalNavigation: some View {
-        NavigationStack {
-            SpyderGlobalTerminalView(onAction: { action in
-                presented = action
-            }, onOpenActivity: {
-                selectedTab = .wallet
-                walletPath.append(.activity)
-            })
-            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
@@ -228,8 +209,7 @@ struct WalletRootView: View {
     private var bottomBar: some View {
         HStack(spacing: 5) {
             tabButton(.wallet, title: "Кошелёк", symbol: "wallet.pass")
-            tabButton(.chats, title: "Сеть", symbol: "message")
-            tabButton(.terminal, title: "Терминал", symbol: "terminal")
+            tabButton(.chats, title: "Чаты", symbol: "message")
         }
         .padding(5)
         .background(WalletTheme.surface, in: Capsule())

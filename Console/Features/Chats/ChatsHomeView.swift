@@ -8,6 +8,10 @@ struct SpyderDevnetChatsHomeView: View {
     let onAdd: () -> Void
     let onProfile: () -> Void
     let isActive: Bool
+    @State private var selectedPersona = ""
+    @State private var showPersonas = false
+    @State private var switchingPersona = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var search = ""
     @State private var name = ""
     @State private var username = ""
@@ -34,23 +38,19 @@ struct SpyderDevnetChatsHomeView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 21) {
                 HStack {
-                    Text("Сеть").font(.system(size: 34, weight: .bold)).foregroundStyle(WalletTheme.ink)
+                    Text("Чаты").font(.system(size: 34, weight: .bold)).foregroundStyle(WalletTheme.ink)
                     Spacer()
-                    Button { onProfile() } label: {
-                        SpyderProfileAvatarView(motion: avatarMotion, accent: identityAccent,
-                                                diameter: 46, animate: motionEnabled, seed: chat.myAvatar?.seed ?? "")
-                    }
-                    .accessibilityLabel("Мой профиль Spyder")
                     if chat.hasIdentity {
                         Button { adding = true } label: {
-                            Image(systemName: "square.and.pencil")
-                                .font(.system(size: 19)).foregroundStyle(WalletTheme.ink)
-                                .frame(width: 44, height: 44)
-                                .background(WalletTheme.surface, in: Circle())
-                        }.accessibilityLabel("Новый контакт")
+                            Label("Пригласить", systemImage: "person.badge.plus")
+                                .font(.system(size: 14, weight: .semibold))
+                                .padding(.horizontal, 15).frame(height: 44)
+                                .foregroundStyle(WalletTheme.ink)
+                                .background(WalletTheme.surface, in: Capsule())
+                        }
                     }
                 }.spyderReveal(0.03)
-                identityCard
+                identityCarousel
 
                 if !chat.hasIdentity { setup }
                 else {
@@ -204,41 +204,101 @@ struct SpyderDevnetChatsHomeView: View {
             }
         }
         .sheet(isPresented: $adding) { inviteSheet }
+        .sheet(isPresented: $showPersonas) {
+            NavigationStack { SpyderPersonasView() }
+        }
+        .onAppear { selectedPersona = chat.activePersonaID ?? "" }
+        .onChange(of: chat.activePersonaID) { _, id in selectedPersona = id ?? "" }
+        .onChange(of: selectedPersona) { _, id in
+            if id == "create-persona" {
+                showPersonas = true
+                selectedPersona = chat.activePersonaID ?? ""
+                return
+            }
+            guard !id.isEmpty, id != chat.activePersonaID, !switchingPersona else { return }
+            switchingPersona = true
+            Task {
+                await chat.activatePersona(id)
+                selectedPersona = chat.activePersonaID ?? ""
+                switchingPersona = false
+            }
+        }
         .alert("Spyder Chat", isPresented: Binding(get: { chat.errorMessage != nil }, set: { if !$0 { chat.errorMessage = nil } })) {
             Button("Понятно", role: .cancel) { chat.errorMessage = nil }
         } message: { Text(chat.errorMessage ?? "") }
     }
 
-    private var identityCard: some View {
-        HStack(spacing: 15) {
-            SpyderProfileAvatarView(motion: avatarMotion, accent: identityAccent,
-                                    diameter: 88, animate: motionEnabled, seed: chat.myAvatar?.seed ?? "")
-            VStack(alignment: .leading, spacing: 6) {
-                Text(chat.hasIdentity ? (chat.myName.isEmpty ? "Мой Spyder ID" : chat.myName) : "Твой Spyder ID")
-                    .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
-                    .lineLimit(2)
-                Text(chat.hasIdentity && !chat.myUsername.isEmpty ? "@" + chat.myUsername : (chat.personaKind == "private" ? "Приватная личность" : "Создай имя и @username"))
-                    .font(.system(size: 13)).foregroundStyle(.white.opacity(0.7))
-                    .lineLimit(1)
-                Text(chat.connected ? "Связь установлена" : (chat.refreshing ? "Подключаемся к сети…" : "Подключение восстанавливается"))
-                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.58))
-                    .lineLimit(2)
+    @ViewBuilder
+    private var identityCarousel: some View {
+        if chat.hasIdentity {
+            TabView(selection: $selectedPersona) {
+                ForEach(chat.personaIDs, id: \.self) { id in
+                    if let item = chat.personaSummary(id) {
+                        personaCard(id: id, name: item.name, username: item.username,
+                                    kind: item.kind, bio: item.bio, status: item.status, avatar: item.avatar)
+                            .tag(id)
+                    }
+                }
+                Button { showPersonas = true } label: {
+                    VStack(spacing: 14) {
+                        Image(systemName: "plus.circle").font(.system(size: 42, weight: .light))
+                        Text("Создать личность").font(.system(size: 20, weight: .semibold))
+                        Text("Отдельные ключи и переписки").font(.system(size: 13))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(white: 0.075), in: RoundedRectangle(cornerRadius: 28))
+                }
+                .buttonStyle(.plain)
+                .tag("create-persona")
             }
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.65))
+            .tabViewStyle(.page(indexDisplayMode: .always))
+            .frame(height: 285)
+            .disabled(switchingPersona)
+            .overlay { if switchingPersona { ProgressView().tint(.white) } }
         }
-        .padding(18)
-        .frame(maxWidth: .infinity, minHeight: 145)
-        .background(Color(red: 0.065, green: 0.067, blue: 0.078),
-                    in: RoundedRectangle(cornerRadius: 28))
-        .overlay(RoundedRectangle(cornerRadius: 28).stroke(accent.color.opacity(0.28), lineWidth: 1))
-        .contentShape(RoundedRectangle(cornerRadius: 28))
-        .onTapGesture { onProfile() }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
     }
 
+    private func personaCard(id: String, name: String, username: String, kind: String,
+                             bio: String, status: String, avatar: SpyderPersonaAvatar?) -> some View {
+        let tint = avatar?.color ?? accent
+        return Button { onProfile() } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 17) {
+                    SpyderProfileAvatarView(motion: avatar?.motion ?? .pulse, accent: tint,
+                        diameter: 90, animate: motionEnabled && !reduceMotion && id == chat.activePersonaID,
+                        seed: avatar?.seed ?? id)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(name).font(.system(size: 24, weight: .bold)).lineLimit(1)
+                        Text(username.isEmpty ? "По приглашению" : "@" + username)
+                            .font(.system(size: 14)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                        Label(kind == "private" ? "Private" : "Public",
+                              systemImage: kind == "private" ? "lock.shield" : "globe")
+                            .font(.system(size: 11, weight: .medium)).foregroundStyle(tint.color)
+                    }
+                    Spacer(minLength: 0)
+                }
+                if !bio.isEmpty { Text(bio).font(.system(size: 14)).lineLimit(2).foregroundStyle(.white.opacity(0.8)) }
+                HStack(spacing: 6) {
+                    Circle().fill(tint.color).frame(width: 6, height: 6)
+                    Text(status.isEmpty ? "Моя личность" : status).lineLimit(1)
+                    Spacer()
+                    if id == chat.activePersonaID { Text("Активна").foregroundStyle(tint.color) }
+                }.font(.system(size: 11))
+            }
+            .foregroundStyle(.white)
+            .padding(22).padding(.bottom, 20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(Color(white: 0.065), in: RoundedRectangle(cornerRadius: 28))
+            .overlay(alignment: .leading) {
+                Capsule().fill(tint.color).frame(width: 3, height: 120)
+                    .shadow(color: tint.color.opacity(0.65), radius: 10).padding(.leading, 1)
+            }
+            .overlay(RoundedRectangle(cornerRadius: 28).stroke(tint.color.opacity(0.24), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Личность: " + name)
+    }
 
     private var setup: some View {
         VStack(alignment: .leading, spacing: 17) {
@@ -292,7 +352,7 @@ struct SpyderDevnetChatsHomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack {
-                    Text("Контакты").font(.system(size: 28, weight: .bold))
+                    Text("Пригласить").font(.system(size: 28, weight: .bold))
                     Spacer()
                     Button("Готово") { adding = false }.foregroundStyle(WalletTheme.ink)
                 }
@@ -357,7 +417,7 @@ struct SpyderDevnetChatsHomeView: View {
                 } label: { Text("Отправить приглашение").spyderPrimaryButton() }
                     .buttonStyle(.plain)
                     .disabled(invitation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                if inviteSent { Label("Приглашение отправлено. Друг увидит его во вкладке «Сеть».", systemImage: "checkmark.circle")
+                if inviteSent { Label("Приглашение отправлено. Друг увидит его во вкладке «Чаты».", systemImage: "checkmark.circle")
                     .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary) }
             }
             .foregroundStyle(WalletTheme.ink)
