@@ -9,6 +9,9 @@ struct SpyderDevnetChatsHomeView: View {
     let onProfile: () -> Void
     let isActive: Bool
     @State private var selectedPersona = ""
+    @State private var showIdentityQR = false
+    @State private var showPersonaStyle = false
+    @ScaledMetric(relativeTo: .body) private var personaCardHeight: CGFloat = 350
     @State private var showPersonas = false
     @State private var switchingPersona = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -170,6 +173,14 @@ struct SpyderDevnetChatsHomeView: View {
                 await chat.refresh()
             }
         }
+        .sheet(isPresented: $showIdentityQR) { NavigationStack { SpyderIdentityQRView() } }
+        .sheet(isPresented: $showPersonaStyle) {
+            NavigationStack { SpyderPersonaStyleView()
+                .toolbar { ToolbarItem(placement: .confirmationAction) {
+                    Button("Готово") { showPersonaStyle = false }
+                } }
+            }
+        }
         .sheet(isPresented: $showPersonas) {
             NavigationStack { SpyderPersonasView() }
         }
@@ -282,7 +293,8 @@ struct SpyderDevnetChatsHomeView: View {
                 ForEach(chat.personaIDs, id: \.self) { id in
                     if let item = chat.personaSummary(id) {
                         personaCard(id: id, name: item.name, username: item.username,
-                                    kind: item.kind, bio: item.bio, status: item.status, avatar: item.avatar)
+                                    kind: item.kind, bio: item.bio, status: item.status, avatar: item.avatar,
+                                    privacy: item.privacy, style: item.style)
                             .tag(id)
                     }
                 }
@@ -300,51 +312,59 @@ struct SpyderDevnetChatsHomeView: View {
                 .tag("create-persona")
             }
             .tabViewStyle(.page(indexDisplayMode: .always))
-            .frame(height: 285)
+            .frame(height: personaCardHeight)
             .disabled(switchingPersona)
             .overlay { if switchingPersona { ProgressView().tint(.white) } }
         }
     }
 
     private func personaCard(id: String, name: String, username: String, kind: String,
-                             bio: String, status: String, avatar: SpyderPersonaAvatar?) -> some View {
-        let tint = avatar?.color ?? accent
-        return Button { onProfile() } label: {
-            VStack(alignment: .leading, spacing: 12) {
+                             bio: String, status: String, avatar: SpyderPersonaAvatar?,
+                             privacy: SpyderPersonaPrivacy, style: SpyderPersonaStylePreferences) -> some View {
+        let tint = avatar?.color ?? .blue
+        return VStack(alignment: .leading, spacing: 13) {
+            Button { onProfile() } label: {
                 HStack(spacing: 17) {
                     SpyderProfileAvatarView(motion: avatar?.motion ?? .pulse, accent: tint,
                         diameter: 90, animate: motionEnabled && !reduceMotion && id == chat.activePersonaID,
-                        seed: avatar?.seed ?? id)
+                        seed: avatar?.seed ?? id, ringStyle: style.ring)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(name).font(.system(size: 24, weight: .bold)).lineLimit(1)
+                        Label(name, systemImage: style.badge.symbol).font(.system(size: 23, weight: .bold)).lineLimit(2)
                         Text(username.isEmpty ? "По приглашению" : "@" + username)
                             .font(.system(size: 14)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
-                        Label(kind == "private" ? "Private" : "Public",
-                              systemImage: kind == "private" ? "lock.shield" : "globe")
+                        Label(privacy.title, systemImage: privacy.symbol)
                             .font(.system(size: 11, weight: .medium)).foregroundStyle(tint.color)
                     }
                     Spacer(minLength: 0)
                 }
-                if !bio.isEmpty { Text(bio).font(.system(size: 14)).lineLimit(2).foregroundStyle(.white.opacity(0.8)) }
-                HStack(spacing: 6) {
-                    Circle().fill(tint.color).frame(width: 6, height: 6)
-                    Text(status.isEmpty ? "Моя личность" : status).lineLimit(1)
-                    Spacer()
-                    if id == chat.activePersonaID { Text("Активна").foregroundStyle(tint.color) }
-                }.font(.system(size: 11))
+            }.buttonStyle(.plain).accessibilityLabel("Открыть личность: " + name)
+            if !bio.isEmpty { Text(bio).font(.system(size: 14)).lineLimit(2).foregroundStyle(.white.opacity(0.8)) }
+            HStack(spacing: 6) {
+                Text(status.isEmpty ? "Моя личность" : status).lineLimit(1)
+                Spacer()
+                if id == chat.activePersonaID {
+                    Text("Активна · чатов: " + String(chat.contacts.count)).foregroundStyle(tint.color)
+                }
+            }.font(.system(size: 11))
+            Spacer(minLength: 0)
+            HStack(spacing: 16) {
+                Button { showIdentityQR = true } label: { Label("QR", systemImage: "qrcode") }
+                Button(action: onAdd) { Label("Пригласить", systemImage: "person.badge.plus") }
+                Button { showPersonaStyle = true } label: { Image(systemName: "slider.horizontal.3") }
+                    .accessibilityLabel("Стиль личности")
             }
-            .foregroundStyle(.white)
-            .padding(22).padding(.bottom, 20)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(Color(white: 0.065), in: RoundedRectangle(cornerRadius: 28))
-            .overlay(alignment: .leading) {
-                Capsule().fill(tint.color).frame(width: 3, height: 120)
-                    .shadow(color: tint.color.opacity(0.65), radius: 10).padding(.leading, 1)
-            }
-            .overlay(RoundedRectangle(cornerRadius: 28).stroke(tint.color.opacity(0.24), lineWidth: 1))
+            .font(.system(size: 12, weight: .semibold))
+            .disabled(id != chat.activePersonaID)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Личность: " + name)
+        .foregroundStyle(.white)
+        .padding(22).padding(.bottom, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(Color(white: 0.065), in: RoundedRectangle(cornerRadius: 28))
+        .overlay(alignment: .leading) {
+            SpyderPersonaGlowEdge(accent: tint.color, intensity: style.glowIntensity,
+                animate: motionEnabled && isActive && id == chat.activePersonaID).padding(.leading, 1)
+        }
+        .overlay(RoundedRectangle(cornerRadius: 28).stroke(tint.color.opacity(0.24), lineWidth: 1))
     }
 
     private var setup: some View {

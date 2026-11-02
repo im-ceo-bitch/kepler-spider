@@ -8,18 +8,21 @@ struct SpyderProfileAvatarView: View {
     var diameter: CGFloat = 116
     var animate = true
     var seed: String = ""
+    var cornerRadius: CGFloat? = nil
+    var ringStyle: SpyderPersonaRingStyle = .thin
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var started = Date()
+    @State private var visible = false
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0,
-                                paused: !animate || reduceMotion || scenePhase != .active)) { timeline in
-            let time = animate && !reduceMotion
+                                paused: !visible || !animate || reduceMotion || scenePhase != .active || ProcessInfo.processInfo.isLowPowerModeEnabled)) { timeline in
+            let time = visible && animate && !reduceMotion && scenePhase == .active && !ProcessInfo.processInfo.isLowPowerModeEnabled
                 ? max(0, timeline.date.timeIntervalSince(started)) : 0
             ZStack {
-                Circle().fill(Color(red: 0.055, green: 0.058, blue: 0.073))
+                RoundedRectangle(cornerRadius: cornerRadius ?? diameter / 2).fill(Color(red: 0.055, green: 0.058, blue: 0.073))
                 Canvas(opaque: false, rendersAsynchronously: true) { context, size in
                     render(context: context, size: size, time: time)
                 }
@@ -31,10 +34,22 @@ struct SpyderProfileAvatarView: View {
                     .frame(width: diameter * CGFloat(motion == .breathe ? 0.34 + 0.013 * sin(time * 1.3) : 0.34))
             }
             .frame(width: diameter, height: diameter)
-            .clipShape(Circle())
-            .overlay(Circle().stroke(accent.color.opacity(0.38), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius ?? diameter / 2, style: .continuous))
+            .overlay {
+                if ringStyle != .none {
+                    RoundedRectangle(cornerRadius: cornerRadius ?? diameter / 2, style: .continuous)
+                        .stroke(accent.color.opacity(0.5), style: StrokeStyle(lineWidth: 1,
+                            dash: ringStyle == .dotted ? [2, 5] : []))
+                    if ringStyle == .double {
+                        RoundedRectangle(cornerRadius: max(0, (cornerRadius ?? diameter / 2) - 4), style: .continuous)
+                            .stroke(accent.color.opacity(0.3), lineWidth: 1).padding(4)
+                    }
+                }
+            }
         }
         .frame(width: diameter, height: diameter)
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Анимированный аватар Spyder: \(motion.title)")
     }

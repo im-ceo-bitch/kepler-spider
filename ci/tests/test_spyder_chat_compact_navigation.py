@@ -34,7 +34,7 @@ class CompactChatNavigationTests(unittest.TestCase):
         self.assertIn('Button(action: onReturnToChat)', terminal)
         self.assertIn('await chat.sendMessage(to: contact.id, text: content)', chat)
         self.assertIn('await chat.loadMessages(peer: contact.id)', chat)
-        self.assertIn('SpyderChatAppearanceStore.save(appearance, peer: contact.id)', chat)
+        self.assertIn('SpyderChatAppearanceStore.save(appearance, peer: contact.id, persona: chat.activePersonaID)', chat)
 
 if __name__ == '__main__':
     unittest.main()

@@ -18,13 +18,13 @@ struct SpyderPersonasView: View {
                             Task { await chat.activatePersona(id); dismiss() }
                         } label: {
                             HStack(spacing: 14) {
-                                Image(systemName: item.kind == "private" ? "lock.shield" : "person.crop.circle")
+                                Image(systemName: item.privacy.symbol)
                                     .font(.title2)
                                     .frame(width: 40, height: 40)
                                     .background(.quaternary, in: Circle())
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(item.name).font(.headline)
-                                    Text(item.kind == "private" ? "Только по приглашению" : "@" + item.username)
+                                    Text(item.privacy.title + (item.username.isEmpty ? " · по приглашению" : " · @" + item.username))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -47,7 +47,7 @@ struct SpyderPersonasView: View {
                 }
                 .disabled(chat.working || chat.personaIDs.count >= 8)
             } footer: {
-                Text("Приватная личность не отображается в поиске. Это НЕ гарантия анонимности перед сервером: IP и время запросов могут связывать профили. Push для неё отключён, пока нет приватной доставки.")
+                Text("Новая личность создаётся в Private; видимость можно изменить в её Spyder ID. Это НЕ гарантия анонимности перед сервером: IP и время запросов могут связывать профили. Push у таких личностей остаётся отключён.")
             }
         }
         .navigationTitle("Мои личности")

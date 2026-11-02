@@ -37,8 +37,8 @@ class SpyderChatExperienceTests(unittest.TestCase):
         profile = read('Console/Features/Settings/SpyderIdentityHubView.swift')
         detail = read('Console/Features/Chats/ChatDetailView.swift')
         for token in ('case void, web, orbit, cyber, constellation',
-                      'static func reset(peer: String)',
-                      'func save(_ value: SpyderChatAppearance, peer: String? = nil)'):
+                      'static func reset(peer: String, persona: String? = nil',
+                      'func save(_ value: SpyderChatAppearance, peer: String? = nil, persona: String? = nil'):
             self.assertIn(token, prefs)
         self.assertIn('SpyderChatAppearanceSettingsView(peerID: nil)', profile)
         self.assertIn('SpyderChatAppearanceSettingsView(peerID: contact.id)', detail)

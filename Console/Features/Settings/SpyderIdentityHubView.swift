@@ -5,65 +5,92 @@ import CoreImage.CIFilterBuiltins
 /// so the wallet's account and recovery settings never appear here.
 struct SpyderIdentityHubView: View {
     @EnvironmentObject private var chat: SpyderChatStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pull: CGFloat = 0
+    @State private var peakPull: CGFloat = 0
+    @State private var dragging = false
+    @State private var showingViewer = false
+    @State private var savingPrivacy = false
     @AppStorage(SpyderMotionKeys.avatar) private var avatarValue = SpyderAvatarMotion.pulse.rawValue
     @AppStorage(SpyderMotionKeys.accent) private var accentValue = SpyderSignalAccent.red.rawValue
     @AppStorage(SpyderMotionKeys.enabled) private var motionEnabled = true
 
 
-    private var accent: Color {
-        (SpyderSignalAccent(rawValue: accentValue) ?? .red).color
-    }
+    private var accent: Color { (chat.myAvatar?.color ?? .blue).color }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 21) {
-                identityHeader
-                if chat.hasIdentity { shareActions }
-                else { noIdentityHint }
-                profileGroup
-                preferencesGroup
-                discoverabilityGroup
-                Text("Spyder ID и ключи переписки не связаны с seed-фразой криптовалютного кошелька.")
-                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
+        GeometryReader { geometry in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 21) {
+                    Color.clear.frame(height: 0).background(GeometryReader { proxy in
+                        Color.clear.preference(key: SpyderIdentityPullKey.self,
+                            value: proxy.frame(in: .named("spyder.identity.scroll")).minY - 20)
+                    })
+                    identityHeader(width: max(1, geometry.size.width - 40))
+                    if chat.hasIdentity { shareActions }
+                    else { noIdentityHint }
+                    profileGroup
+                    preferencesGroup
+                    discoverabilityGroup
+                    Text("Spyder ID и ключи переписки не связаны с seed-фразой криптовалютного кошелька.")
+                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                }
+                .foregroundStyle(WalletTheme.ink).padding(20)
             }
-            .foregroundStyle(WalletTheme.ink)
-            .padding(20)
+            .coordinateSpace(name: "spyder.identity.scroll")
+            .onPreferenceChange(SpyderIdentityPullKey.self) { value in
+                pull = max(0, value)
+                if dragging { peakPull = max(peakPull, pull) }
+            }
+            .simultaneousGesture(DragGesture(minimumDistance: 12)
+                .onChanged { _ in
+                    if !dragging { peakPull = 0 }
+                    dragging = true
+                }
+                .onEnded { _ in
+                    let expand = chat.hasIdentity && SpyderIdentityExpansion.opensViewer(peakPull: peakPull)
+                    dragging = false; peakPull = 0
+                    if expand { showingViewer = true }
+                })
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
         .navigationTitle("Spyder ID")
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            if chat.hasIdentity {
-                await chat.refresh()
-                if chat.connected && chat.myAvatar == nil {
-                    _ = await chat.updateProfile(bio: chat.myBio, status: chat.myStatus,
-                        motion: SpyderAvatarMotion(rawValue: avatarValue) ?? .pulse,
-                        accent: SpyderSignalAccent(rawValue: accentValue) ?? .red)
-                }
-            }
-        }
+        .fullScreenCover(isPresented: $showingViewer) { SpyderIdentityViewer() }
+        .onChange(of: chat.activePersonaID) { _, _ in showingViewer = false; pull = 0; peakPull = 0 }
+        .task { if chat.hasIdentity { await chat.refresh() } }
+        .alert("Spyder ID", isPresented: Binding(
+            get: { chat.errorMessage != nil }, set: { if !$0 { chat.errorMessage = nil } }
+        )) { Button("Понятно", role: .cancel) { chat.errorMessage = nil } }
+            message: { Text(chat.errorMessage ?? "") }
     }
 
-    private var identityHeader: some View {
-        VStack(spacing: 12) {
-            SpyderProfileAvatarView(
-                motion: chat.myAvatar?.motion ?? (SpyderAvatarMotion(rawValue: avatarValue) ?? .pulse),
-                accent: chat.myAvatar?.color ?? (SpyderSignalAccent(rawValue: accentValue) ?? .red),
-                diameter: 114, animate: motionEnabled, seed: chat.myAvatar?.seed ?? "")
+    private func identityHeader(width: CGFloat) -> some View {
+        let size = SpyderIdentityExpansion.size(width: width, pull: pull, reduceMotion: reduceMotion)
+        let radius = SpyderIdentityExpansion.radius(size: size, pull: pull, reduceMotion: reduceMotion)
+        return VStack(spacing: 12) {
+            Button { showingViewer = true } label: {
+                SpyderProfileAvatarView(motion: chat.myAvatar?.motion ?? .pulse,
+                    accent: chat.myAvatar?.color ?? .blue, diameter: size,
+                    animate: motionEnabled, seed: chat.myAvatar?.seed ?? "",
+                    cornerRadius: radius, ringStyle: chat.personaStyle.ring)
+            }
+            .buttonStyle(.plain).disabled(!chat.hasIdentity)
+            .accessibilityLabel("Открыть личность на весь экран")
             Text(chat.hasIdentity ? (chat.myName.isEmpty ? "Spyder ID" : chat.myName) : "Твой Spyder ID")
-                .font(.system(size: 29, weight: .bold))
-                .multilineTextAlignment(.center)
-            Text(chat.myUsername.isEmpty ? (chat.personaKind == "private" ? "Только по приглашению" : "Username не создан") : "@" + chat.myUsername)
-                .font(.system(size: 16))
-                .foregroundStyle(WalletTheme.secondary)
-                .textSelection(.enabled)
+                .font(.system(size: 29, weight: .bold)).multilineTextAlignment(.center)
+            Text(chat.myUsername.isEmpty ? "Только по приглашению" : "@" + chat.myUsername)
+                .font(.system(size: 16)).foregroundStyle(WalletTheme.secondary).textSelection(.enabled)
+            Label(chat.personaPrivacy.title, systemImage: chat.personaPrivacy.symbol)
+                .font(.caption.weight(.medium)).foregroundStyle(accent)
+            if !chat.myBio.isEmpty { Text(chat.myBio).font(.subheadline).multilineTextAlignment(.center) }
+            if !chat.myStatus.isEmpty { Text(chat.myStatus).font(.caption).foregroundStyle(WalletTheme.secondary) }
             Label(chat.connected ? "Сеть доступна" : "Соединение восстанавливается",
                   systemImage: chat.connected ? "checkmark.shield" : "wifi.slash")
-                .font(.system(size: 12))
-                .foregroundStyle(WalletTheme.secondary)
+                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+            Text("Потяни вниз, чтобы раскрыть аватар").font(.caption2).foregroundStyle(WalletTheme.secondary)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
+        .frame(maxWidth: .infinity).padding(.vertical, 18)
     }
 
     private var shareActions: some View {
@@ -75,7 +102,7 @@ struct SpyderIdentityHubView: View {
             .buttonStyle(.borderedProminent)
             .tint(WalletTheme.accent)
             .foregroundStyle(WalletTheme.contrast)
-            ShareLink(item: chat.myUsername.isEmpty ? chat.inviteCode : "@" + chat.myUsername) {
+            ShareLink(item: SpyderInviteLink.url(code: chat.inviteCode)?.absoluteString ?? chat.inviteCode) {
                 Label("Поделиться", systemImage: "square.and.arrow.up")
                     .frame(maxWidth: .infinity).frame(height: 48)
             }
@@ -85,7 +112,7 @@ struct SpyderIdentityHubView: View {
 
     private var noIdentityHint: some View {
         WalletCard {
-            Text("Создай Spyder ID во вкладке «Сеть». Это отдельная идентичность для сообщений, не кошелёк.")
+            Text("Создай Spyder ID во вкладке «Чаты». Это отдельная идентичность для сообщений, не кошелёк.")
                 .font(.subheadline).foregroundStyle(WalletTheme.secondary)
         }
     }
@@ -114,7 +141,7 @@ struct SpyderIdentityHubView: View {
                 identityRow("Уведомления и звуки", detail: "Spyder Pulse · APNs", symbol: "bell.badge")
             }
             Divider()
-            NavigationLink { SpyderMotionSettingsView() } label: {
+            NavigationLink { SpyderPersonaStyleView() } label: {
                 identityRow("Персонализация", detail: "Аватар, цвета, анимации", symbol: "paintpalette")
             }
             Divider()
@@ -137,12 +164,26 @@ struct SpyderIdentityHubView: View {
     private var discoverabilityGroup: some View {
         WalletCard {
             VStack(alignment: .leading, spacing: 12) {
-                Toggle("Показывать меня в поиске", isOn: Binding(
-                    get: { chat.discoverable },
-                    set: { enabled in Task { await chat.updateDiscovery(enabled) } }
-                ))
-                .disabled(!chat.hasIdentity || chat.personaKind == "private")
-                Text(chat.personaKind == "private" ? "Приватную личность нельзя включить в поиск. Её контакты добавляются только через QR или приглашение." : "Настройка определяет видимость в поиске по @username. Уже добавленные контакты сохраняются.")
+                Text("Уровень приватности").font(.headline)
+                ForEach(SpyderPersonaPrivacy.allCases) { mode in
+                    Button {
+                        savingPrivacy = true
+                        Task { _ = await chat.setPersonaPrivacy(mode); savingPrivacy = false }
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: mode.symbol).frame(width: 24)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(mode.title).font(.subheadline.bold())
+                                Text(mode.explanation).font(.caption).foregroundStyle(WalletTheme.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            if chat.personaPrivacy == mode { Image(systemName: "checkmark.circle.fill").foregroundStyle(accent) }
+                        }.foregroundStyle(WalletTheme.ink).padding(.vertical, 5)
+                    }.buttonStyle(.plain).disabled(!chat.hasIdentity || savingPrivacy)
+                        .accessibilityAddTraits(chat.personaPrivacy == mode ? .isSelected : [])
+                }
+                if savingPrivacy { ProgressView() }
+                Text("Для Public нужен @username. Hidden не удаляет старые чаты и не делает личность анонимной перед сервером. Личности, созданные приватными, по-прежнему не передают APNs-токен.")
                     .font(.footnote).foregroundStyle(WalletTheme.secondary)
             }
         }
@@ -204,8 +245,8 @@ private struct SpyderProfileEditView: View {
                         Task {
                             saving = true
                             let ok = await chat.updateProfile(bio: bio, status: status,
-                                motion: SpyderAvatarMotion(rawValue: avatarValue) ?? .pulse,
-                                accent: SpyderSignalAccent(rawValue: accentValue) ?? .red)
+                                motion: chat.myAvatar?.motion ?? .pulse,
+                                accent: chat.myAvatar?.color ?? .blue)
                             saving = false
                             result = ok ? "Профиль сохранён" : "Не удалось обновить профиль"
                         }
@@ -214,7 +255,7 @@ private struct SpyderProfileEditView: View {
                     Text("Параметры анимированного аватара передаются контактам; видео или фотография не загружаются.")
                         .font(.footnote)
                 }
-                if chat.personaKind != "private" { Section("Username") {
+                Section("Username") {
                     TextField("username", text: $username)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button("Сохранить @username") {
@@ -226,9 +267,9 @@ private struct SpyderProfileEditView: View {
                         }
                     }
                     .disabled(saving || !chat.hasIdentity || username.count < 3)
-                    Text("Публичное имя уникально во всей сети. Допустимы 3–20 символов: латинские буквы, цифры и _. Отдельный кошелёк не создаётся.")
+                    Text("@username уникален во всей сети. Видимость определяется уровнем Public / Private / Hidden. Допустимы 3–20 символов: латинские буквы, цифры и _. Отдельный кошелёк не создаётся.")
                         .font(.footnote)
-                } }
+                }
                 if let result { Text(result).font(.footnote) }
             }
             .navigationTitle("Личные данные")
@@ -242,10 +283,10 @@ private struct SpyderProfileEditView: View {
     }
 }
 
-private struct SpyderIdentityQRView: View {
+struct SpyderIdentityQRView: View {
     @EnvironmentObject private var chat: SpyderChatStore
     @Environment(\.dismiss) private var dismiss
-    private var qrValue: String { chat.myUsername.isEmpty ? chat.inviteCode : "@" + chat.myUsername }
+    private var qrValue: String { SpyderInviteLink.url(code: chat.inviteCode)?.absoluteString ?? "" }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -260,7 +301,7 @@ private struct SpyderIdentityQRView: View {
                 }
                 Text(qrValue).font(.headline.monospaced()).textSelection(.enabled)
                 ShareLink(item: qrValue) { Label("Поделиться", systemImage: "square.and.arrow.up") }
-                Text("QR содержит только публичный @username или код приглашения. Приватные ключи и адреса кошелька в нём отсутствуют.")
+                Text("QR содержит код подключения этой личности. Отправляй его тем, с кем хочешь общаться. Hidden блокирует новые подключения даже по QR. Ключи и адреса кошелька не передаются.")
                     .font(.footnote).foregroundStyle(WalletTheme.secondary).multilineTextAlignment(.center)
             }
             .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -278,4 +319,9 @@ private struct SpyderIdentityQRView: View {
               let cg = context.createCGImage(output, from: output.extent) else { return nil }
         return UIImage(cgImage: cg)
     }
+}
+
+private struct SpyderIdentityPullKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

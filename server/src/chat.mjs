@@ -14,15 +14,16 @@ const sanitizedName = value => String(value ?? '').trim().slice(0, 36);
 const cleanBio = value => typeof value === 'string' && value.length <= 160 && !/[\u0000-\u0009\u000b-\u001f\u007f]/.test(value);
 const cleanStatus = value => typeof value === 'string' && value.length <= 64 && !/[\u0000-\u001f\u007f]/.test(value);
 const avatarStyles = new Set(['pulse','orbit','web','halo','constellation','radar','waves','nexus','eclipse','breathe','spark','quiet']);
-const avatarColors = new Set(['red','blue','violet','cyan','magenta','lime','amber','emerald','orange','ice','pink','ultraviolet']);
+const avatarColors = new Set(['red','blue','violet','cyan','magenta','lime','amber','emerald','orange','ice','pink','ultraviolet','gold','silver','copper','white']);
 const validAvatar = value => value && typeof value === 'object' && !Array.isArray(value) &&
   value.version === 1 && avatarStyles.has(value.style) && avatarColors.has(value.accent) &&
   typeof value.seed === 'string' && /^[a-f0-9]{32}$/.test(value.seed);
-const publicPerson = u => ({id:u.id,name:u.name,username:u.username || null,
+const privacyMode = u => ['public','private','hidden'].includes(u.privacy_mode) ? u.privacy_mode : (u.discoverable===true?'public':'private');
+const publicPerson = u => ({privacy_mode:privacyMode(u),id:u.id,name:u.name,username:u.username || null,
   bio:u.bio || '',status:u.status || '',avatar:u.avatar || null});
 // Usernames are public, case-insensitive, unique identifiers. They are not credentials.
 const normalizedUsername = value => typeof value === 'string' ? value.trim().replace(/^@/, '').toLowerCase() : '';
-const validUsername = value => /^[a-z][a-z0-9_]{2,19}$/.test(value) && !['admin', 'support', 'spyder', 'system', 'security'].includes(value);
+const validUsername = value => typeof value === 'string' && /^[a-z][a-z0-9_]{2,19}$/.test(value) && !['admin', 'support', 'spyder', 'system', 'security'].includes(value);
 const usernameKey = value => 'handle:' + value;
 const isBase64 = (value, min, max) => typeof value === 'string' && value.length >= min && value.length <= max &&
   /^[A-Za-z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0;
@@ -100,6 +101,7 @@ export class ChatHub {
         if(pendingKey)await storage.delete(pendingKey);
         return {status:'already_connected',peer:publicPerson(recipient)};
       }
+      if(privacyMode(recipient)==='hidden'){if(pendingKey)await storage.delete(pendingKey);return {error:'recipient_hidden',code:403};}
       const privacy=await storage.get('contactprivacy:'+to);
       if(privacy?.limit_unknown && source!=='code') {
         if(pendingKey)await storage.delete(pendingKey);
@@ -243,14 +245,29 @@ export class ChatHub {
       const result=await this.conversationRoutes(request,me,url);
       if(result)return result;
     }
+    if(path==='/v4/profile/privacy' && (method==='GET'||method==='POST')) {
+      if(method==='GET')return json({mode:privacyMode(me),discoverable:me.discoverable===true});
+      const b=await this.body(request);
+      if(!['public','private','hidden'].includes(b?.mode))return bad('invalid_privacy');
+      return this.transaction(async storage=>{
+        const latest=await storage.get('user:'+me.id);
+        if(b.mode==='public'&&!validUsername(latest.username))return bad('username_required',409);
+        latest.privacy_mode=b.mode;latest.discoverable=b.mode==='public';
+        await storage.put('user:'+me.id,latest);
+        return json({mode:latest.privacy_mode,discoverable:latest.discoverable});
+      });
+    }
     if(method==='GET'&&path==='/v1/me')return json({...publicPerson(me),invite_code:me.invite_code,has_keys:!!me.keys});
     if(method==='GET'&&path==='/v3/profile/me')return json(publicPerson(me));
     if(method==='POST'&&path==='/v3/profile'){
       const b=await this.body(request);
       if(!b || !cleanBio(b.bio) || !cleanStatus(b.status) || !validAvatar(b.avatar))return bad('invalid_profile');
-      me.bio=b.bio; me.status=b.status; me.avatar=b.avatar;
-      await this.ctx.storage.put('user:'+me.id,me);
-      return json(publicPerson(me));
+      return this.transaction(async storage=>{
+        const latest=await storage.get('user:'+me.id);
+        latest.bio=b.bio;latest.status=b.status;latest.avatar=b.avatar;
+        await storage.put('user:'+me.id,latest);
+        return json(publicPerson(latest));
+      });
     }
     if(method==='GET'&&path==='/v3/profile/contact'){
       const peerId=url.searchParams.get('peer');
@@ -298,28 +315,35 @@ export class ChatHub {
     if(method==='POST'&&path==='/v2/profile/name') {
       const b=await this.body(request);
       if(typeof b?.name !== 'string' || !b.name.trim() || b.name.trim().length>36)return bad('invalid_display_name');
-      me.name=sanitizedName(b.name);
-      await this.ctx.storage.put('user:'+me.id,me);
-      return json({name:me.name});
+      return this.transaction(async storage=>{
+        const latest=await storage.get('user:'+me.id);latest.name=sanitizedName(b.name);
+        await storage.put('user:'+me.id,latest);return json({name:latest.name});
+      });
     }
     if(method==='GET'&&path==='/v2/profile/privacy')return json({discoverable:me.discoverable === true});
     if(method==='POST'&&path==='/v2/profile/privacy'){
       const b=await this.body(request);
       if(typeof b?.discoverable!=='boolean')return bad('invalid_privacy_settings');
-      me.discoverable=b.discoverable;
-      await this.ctx.storage.put('user:'+me.id,me);
-      return json({discoverable:me.discoverable});
+      return this.transaction(async storage=>{
+        const latest=await storage.get('user:'+me.id);
+        if(privacyMode(latest)==='hidden')return bad('explicit_privacy_change_required',409);
+        if(b.discoverable&&!validUsername(latest.username))return bad('username_required',409);
+        latest.privacy_mode=b.discoverable?'public':'private';latest.discoverable=b.discoverable;
+        await storage.put('user:'+me.id,latest);return json({discoverable:latest.discoverable});
+      });
     }
     if(method==='POST'&&path==='/v2/keys/activate'){
       const keys=await this.body(request);
       if(!keyPair(keys))return bad('invalid_public_keys');
-      if(me.keys){
-        if(me.keys.version!==keys.version || me.keys.key_agreement!==keys.key_agreement || me.keys.signature!==keys.signature)return bad('keys_immutable',409);
-        return json({status:'already_active'});
-      }
-      me.keys={version:2,key_agreement:keys.key_agreement,signature:keys.signature};
-      await this.ctx.storage.put('user:'+me.id,me);
-      return json({status:'active'});
+      return this.transaction(async storage=>{
+        const latest=await storage.get('user:'+me.id);
+        if(latest.keys){
+          if(latest.keys.version!==keys.version||latest.keys.key_agreement!==keys.key_agreement||latest.keys.signature!==keys.signature)return bad('keys_immutable',409);
+          return json({status:'already_active'});
+        }
+        latest.keys={version:2,key_agreement:keys.key_agreement,signature:keys.signature};
+        await storage.put('user:'+me.id,latest);return json({status:'active'});
+      });
     }
     if(method==='GET'&&path==='/v2/keys'){
       const peerID=url.searchParams.get('peer');
@@ -346,14 +370,15 @@ export class ChatHub {
       const b=await this.body(request);
       const username=normalizedUsername(b?.username);
       if(!validUsername(username))return bad('invalid_username');
-      const existing=await this.ctx.storage.get(usernameKey(username));
-      if(existing && existing!==me.id)return bad('username_taken',409);
-      if(me.username===username)return json({username});
-      if(me.username)await this.ctx.storage.delete(usernameKey(me.username));
-      await this.ctx.storage.put(usernameKey(username),me.id);
-      me.username=username;
-      await this.ctx.storage.put('user:'+me.id,me);
-      return json({username});
+      return this.transaction(async storage=>{
+        const latest=await storage.get('user:'+me.id);
+        const existing=await storage.get(usernameKey(username));
+        if(existing&&existing!==me.id)return bad('username_taken',409);
+        if(latest.username===username)return json({username});
+        if(latest.username)await storage.delete(usernameKey(latest.username));
+        await storage.put(usernameKey(username),me.id);latest.username=username;
+        await storage.put('user:'+me.id,latest);return json({username});
+      });
     }
     if(method==='GET'&&path==='/v1/users/search') {
       if(!(await this.permit(me.id,'search',60,60000)))return bad('rate_limited',429);

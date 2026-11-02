@@ -1,81 +1,90 @@
-SPYDER — cumulative blocks 1 + 2 + 3 (source update)
-Base: user attachment kepler-spider-main.zip, archive commit b8a17aae9db1ca4c467075f3c5af7961df58f90b.
-This is NOT a diff verified against current GitHub main. Retrieval was unavailable in this session.
-Do not overwrite newer independent repository changes without comparing these paths first.
+SPYDER — cumulative blocks 1–4 (source update)
+Base: user-provided kepler-spider-main.zip, archive commit b8a17aae9db1ca4c467075f3c5af7961df58f90b.
+Current GitHub main has NOT been verified. Retrieval was unavailable during this work.
+Compare against newer independent changes before overwriting files.
 
-BLOCK 1: two bottom tabs Wallet / Chats; terminal stays inside conversations; real persona carousel,
-profile fields and independent account/key/history switching; create-persona entry; Invite pill.
-The identity accent side edge remains static; its animation is assigned to block 4.
+BLOCKS 1–3 INCLUDED:
+Two tabs Wallet/Chats; terminal inside chats; real separate personas and carousel;
+instant contacts by username/code/QR app link, QR photo import, connection history,
+unknown-contact filter/block/hide/mute; message preview/time/unread, pin/archive/delete,
+recipient delivery/read acknowledgements, recent online/typing, scoped chat persona and
+next-message persona selection. Each identity pair retains separate keys and history.
+No NFC, Nearby, camera scanner, HTTPS universal links or unlimited archival storage yet.
+Existing retention is up to 300 encrypted messages per pair. Foreground polling is about
+3 seconds in chat / 10 seconds on home. APNs is not proof of decryption or delivery.
+Receipts are authenticated application acknowledgements, not signed proof against the relay.
+Existing TOFU single-device E2EE trust model is unchanged; this is not a security audit.
 
-BLOCK 2: instant bilateral contacts with legacy pending migration, idempotent compatibility,
-username and invite-code lookup, own QR, QR import from image, native sharing, strict
-spyder://invite?code=... parser, recent connections, limit-unknown, block/hide/mute.
-Custom app links require installed Spyder. No HTTPS universal links, camera scanner, NFC or Nearby yet.
-Mute acts at the server APNs delivery layer. APNs credentials and device permission remain required.
+BLOCK 4 — IMPLEMENTED IN SOURCE:
+1. Spyder ID pull-down: circular avatar grows toward a nearly full-width square with 8 pt corners.
+   A stronger pull (260 pt threshold) opens a fullscreen native identity viewer on release.
+   Avatar tap provides an alternative. Fullscreen can close by button, downward swipe or accessibility escape.
+   The drag morph is not a scaling screenshot: the native avatar canvas, size and clipping radius change.
+   Fullscreen presentation uses a native cover; no cross-window matched-geometry transition is claimed.
+2. Reduced Motion keeps the header avatar at its circular resting size; viewer remains accessible by tap.
+3. Hero carousel: enlarged card, animated side signal sweep, actual privacy badge, active-chat count,
+   native avatar/ring, chosen badge icon, quick QR/invite/style actions. Decorative glow is not presence.
+4. Curated persona palette: Signal Gold, Electric Blue, Neon Violet, Emerald, Ice Cyan, Crimson Red,
+   Magenta, Chrome Silver, Amber, Copper and Mono White. Five legacy colors remain decodable/supported.
+   The server validates all supported raw color values; older profiles are not forcibly recolored.
+5. Per-persona Style page: avatar motion, ring (thin/double/dotted/none), badge,
+   glow intensity, optional independent bubble accent and existing wallpaper family.
+   Avatar/main accent are shared through the existing profile protocol. Ring/glow/badge/bubble/default
+   wallpaper preferences are local to this device. Contact avatars retain protocol-compatible defaults.
+6. Per-persona chat defaults and per-peer overrides. Appearance save/load/reset paths, including terminal
+   handlers, all carry the actual active persona. Old unscoped settings migrate ONCE to the original persona,
+   never automatically to new personas, and do not overwrite an existing scoped value.
+   Local reaction metadata is also scoped; invalid input cannot fall back to another persona's metadata.
+7. Loading another persona no longer rewrites device-wide motion accent/avatar settings.
+   Local profile metadata reloads so edits by a scoped chat store reach the home carousel on refresh.
+8. Server privacy modes:
+   Public: searchable username, new connections allowed subject to existing block/unknown filters.
+   Private: no username search; new contacts require a capability code/QR/app link.
+   Hidden: no username search; NEW INCOMING connections denied even by capability code.
+           Existing contacts remain and the owner may explicitly initiate an outgoing connection.
+   Public requires an actual valid username. Reserving a username alone does not publish the profile.
+   Legacy privacy toggles cannot silently undo Hidden. Pending legacy invitations to Hidden are discarded.
+   Hidden is not anonymity from the server; profile privacy does not erase existing contacts or conversations.
+9. Profile/name/username/key-activation writes preserve the latest privacy setting transactionally.
+   A delayed profile request cannot overwrite a newer Hidden selection.
+10. QR on Spyder ID now uses the same validated spyder://invite?code=... payload as the invitation page,
+    rather than a username payload the QR importer cannot consume. Links require installed Spyder.
+11. Timelines honor view visibility, app lifecycle, Reduce Motion and low-power checks.
+    Private-origin secondary personas retain their previous APNs-token restriction, even if made searchable.
 
-BLOCK 3 — IMPLEMENTED IN SOURCE:
-- Native List chat rows: decrypted-on-device last-message preview, timestamp, unread count,
-  outgoing receipt marks, real recent online/typing state, mute/pin icons and persona label.
-- Native swipe actions: pin/unpin and mute on leading edge; archive/restore and delete on trailing edge.
-  Persona selection is inside the composer; row long-press offers Open and choose persona.
-- Chats/Archive filter; hidden-chat recovery; pinned-first, then newest-first ordering.
-- Per-owner pin/archive/delete state, preserved when changing mute/hide.
-- Delete removes history from this account's view via monotonic clear boundary, not the other person's.
-  Receiving/sending a new message restores the chat with the old clear boundary intact.
-  Explicit reconnect also restores the initiator's conversation.
-- Three statuses: server accepted = one tick; recipient device acknowledged after authenticated
-  decryption = two ticks; visible incoming message acknowledged = two accent ticks.
-  Fetching a preview/history alone does NOT imply read. APNs is NOT a delivery receipt.
-- ACK target validation rejects sender/outsider/unknown-message and partial-invalid batches.
-  Receipts are authenticated application acknowledgements stored by the relay, not signed
-  cryptographic proof against a malicious relay. Existing TOFU E2EE trust model is unchanged.
-- Read viewport checks exclude offscreen rows, terminal mode, Wallet tab, modal overlays,
-  navigation disappearance and inactive/background app state.
-- Ephemeral presence expires after 45 seconds, typing after 7 seconds. Foreground polling:
-  chat about 3 seconds, chat home about 10 seconds; these are not WebSocket instant updates.
-- Scoped conversation store: changing chat persona does not alter home-carousel selection.
-  Selection is remembered for the originating persona/contact. Each identity pair keeps separate history.
-- Composer chip: for this chat / only next message. Public contacts connect under selected persona
-  if allowed. Private or restricted recipients may require explicit invitation for that identity first.
-  Cross-server identity switching/sending is rejected. One-off sending does not load other persona plaintext.
-- Contact/key-verification push page uses the actual scoped account.
-- Terminal session resets on persona change; terminal-hidden chat cannot issue read acknowledgements.
-- Plaintext cache invalidation prevents in-flight requests repopulating it after lock/background.
-- All existing retained messages (up to 300 per pair) are reachable by the new history API;
-  delivery ACKs are chunked at 100. This does not introduce unlimited archival storage or pagination.
+VALIDATION PASS 1:
+- Node server suite: 44 passed, 0 failed (8 new identity/privacy/palette scenarios).
+- Static repository integrity: passed, 89 Swift sources plus assets/plist/server manifest.
+- Repository Python CI: 135 discovered; 119 passed, 16 environment-dependent checks skipped.
+- Three obsolete appearance source assertions updated to require persona-scoped APIs.
+- Swift XCTest cases added for style isolation, corrupt local state, legacy migration,
+  per-persona reaction fallback and expansion bounds/Reduce Motion. NOT RUN here.
+- Reviewed affected Swift types, initializer labels, call sites, persistence paths and server protocol.
 
-VALIDATION PASS 1 (after implementation):
-- Node server suite: 36 passed, 0 failed (11 new conversation-protocol scenarios).
-- python3 ci/verify_repo.py: passed, 85 Swift files / assets / plist / server package.
-- Python repository CI: 135 discovered, 119 passed, 16 skipped (environment-dependent checks).
-- Five obsolete source assertions were updated for the requested two-tab navigation,
-  scoped contact push page and renamed row model. Security gates remain in place.
-- New iOS viewport XCTest cases added, NOT EXECUTED here.
-- Swift call-site/model/initializer and terminal package integration source review performed.
-
-VALIDATION PASS 2 (packaged artifact):
-- Archive CRC/path/protected-workflow checks.
-- Overlay onto fresh user attachment; compare source bytes against development tree.
-- Run server tests, static integrity checks and Python CI again from the overlaid tree.
-- No Xcode/Swift compiler/iOS SDK available: iOS build, Simulator/device UI, TestFlight,
-  live two-phone receipts, privacy lifecycle and APNs end-to-end are NOT verified.
-  Do not treat source tests as a successful iOS build or production security audit.
+VALIDATION PASS 2 (PACKAGED ZIP):
+- CRC/path/protected-workflow checks and byte comparison after overlay on a fresh attachment copy.
+- Node suite, integrity check and Python CI rerun from the overlaid copy.
+- No Swift compiler/Xcode/iOS SDK available: no successful iOS build, TestFlight, device visual QA,
+  gesture behavior, animation smoothness, lifecycle or real two-phone end-to-end claim.
+- In particular, iPhone 11 / 13 mini layout and pull-to-viewer threshold behavior still need device testing.
 
 INSTALL:
-1. Upload only console-update-block3-conversations.zip to repository root for the existing unpacker.
-   This archive includes all three blocks. No wrapper directory, deletion manifest or workflow changes.
-2. After successful unpacking, manually run Actions > Console — Deploy Realtime Server on updated main.
-   Bot GITHUB_TOKEN commits do not automatically trigger other push workflows.
-3. After server deployment succeeds, manually run the existing TestFlight build workflow.
-4. On iPhone 11 / 13 mini with two actual accounts: check receipt progression, unread counts,
-   scroll-offscreen/no-read, terminal/wallet/modal no-read, background/lock, typing expiry,
-   archive/pin/delete/new-message recovery, persona-per-chat/one-off sending, private invite restriction.
+Upload only console-update-block4-identities.zip in repository root for the existing unpacker.
+This package includes blocks 1–4 with relative source paths. No workflows or deletion manifest.
+After unpacking, manually run Actions > Console — Deploy Realtime Server on updated main.
+After server deployment succeeds, run the existing TestFlight build workflow.
+Bot GITHUB_TOKEN unpack commits do not automatically trigger other push workflows.
+The new privacy client requires the updated server's /v4/profile/privacy endpoint.
 
-3 BLOCKS REMAIN:
-4. Identity: pull-down circle-to-square/fullscreen viewer, animated neon edge, full accent palette,
-   public/private/hidden controls and persona-specific visual preferences.
-5. Appearance: live preview, native animated/static/photo wallpaper galleries, categories and presets,
-   motion/blur/bubble/radius/transparency/read-receipt/typing-style controls and custom typing animation.
-6. Privacy + device connection: receipt/typing/preview opt-out, silent send, Face ID chat lock,
+DEVICE CHECKS STILL REQUIRED:
+iPhone 11 / 13 mini: slow pull/release/reverse morph, strong pull, tap/fullscreen/close,
+landscape and Dynamic Type, Reduce Motion/low power, carousel swipes/quick buttons,
+two personas with different rings/colors/bubbles/wallpapers, appearance override/reset/migration,
+all three privacy modes using another account, existing chat continuity and privacy after profile edits.
+
+2 BLOCKS REMAIN:
+5. Appearance overhaul: live chat preview, animated/static/photo wallpaper galleries and categories,
+   all named presets, motion/blur/bubble/radius/transparency/read-receipt/typing-style controls.
+6. Privacy + real device connection: receipt/typing/preview opt-out, silent send, Face ID chat lock,
    disappearing messages, export/clear/verify keys, actual supported Touch/Nearby transport,
-   real connection animations/haptics and reaction animation; voice animation when voice is implemented.
+   real connection animations/haptics and reaction animation; voice animation when voice exists.

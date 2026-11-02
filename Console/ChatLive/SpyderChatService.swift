@@ -18,6 +18,7 @@ private struct SpyderChatIdentity: Codable {
     var bio: String? = nil
     var status: String? = nil
     var avatar: SpyderPersonaAvatar? = nil
+    var privacyMode: SpyderPersonaPrivacy? = nil
     var token: String { "\(id).\(secret)" }
 }
 
@@ -32,6 +33,7 @@ struct SpyderPersonaAvatar: Codable, Hashable {
 }
 
 struct SpyderChatPerson: Identifiable, Codable, Hashable {
+    var privacy_mode: SpyderPersonaPrivacy? = nil
     let id: String
     let name: String
     let username: String?
@@ -125,6 +127,8 @@ private enum SpyderChatNetworkError: LocalizedError {
         case .rejected(let status, let code):
             switch code {
             case "unknown_contacts_limited": "Пользователь ограничил неизвестных. Попроси его QR или ссылку приглашения."
+            case "username_required": "Сначала задай @username в личных данных, затем включи Public."
+            case "recipient_hidden": "Пользователь закрыл новые подключения."
             case "blocked": "Подключение к этому контакту недоступно."
             case "recipient_private", "invalid_recipient": "Контакт не найден или недоступен по @username. Используй его код приглашения."
             case "rate_limited": "Слишком много попыток. Попробуй позже."
@@ -137,6 +141,8 @@ private enum SpyderChatNetworkError: LocalizedError {
 
 @MainActor
 final class SpyderChatStore: ObservableObject {
+    @Published private(set) var personaPrivacy: SpyderPersonaPrivacy = .private
+    @Published private(set) var personaStyle = SpyderPersonaStylePreferences()
     @Published private(set) var conversations: [SpyderConversationSummary] = []
     @Published private(set) var conversationPreviews: [String: String] = [:]
     private var encryptedCache: [String: [String: SpyderEncryptedMessage]] = [:]
@@ -212,10 +218,9 @@ final class SpyderChatStore: ObservableObject {
         myBio = record.bio ?? ""
         myStatus = record.status ?? ""
         myAvatar = record.avatar
-        if persistsSelection, let avatar = record.avatar {
-            UserDefaults.standard.set(avatar.style, forKey: SpyderMotionKeys.avatar)
-            UserDefaults.standard.set(avatar.accent, forKey: SpyderMotionKeys.accent)
-        }
+        personaPrivacy = record.privacyMode ?? .private
+        personaStyle = SpyderPersonaStyleStore.load(persona: record.id,
+            server: record.server ?? SpyderChatEndpoint.production)
         personaKind = record.kind ?? "public"
         inviteCode = record.inviteCode
         encryptionReady = false
@@ -259,6 +264,7 @@ final class SpyderChatStore: ObservableObject {
                 try? persistPersonaIndex()
             }
             // Legacy E2EE keys always belong to the original identity.
+            SpyderChatAppearanceStore.migrateLegacy(to: original.id)
             try? SpyderMessageCrypto.bindLegacyPersona(original.id)
             let desired = personaID ?? UserDefaults.standard.string(forKey: SpyderChatKeychain.activeKey) ?? original.id
             let loaded = desired == original.id ? original : personaIDs.dropFirst().compactMap { id -> SpyderChatIdentity? in
@@ -445,10 +451,11 @@ final class SpyderChatStore: ObservableObject {
         await refresh()
     }
 
-    func personaSummary(_ id: String) -> (name: String, username: String, kind: String, bio: String, status: String, avatar: SpyderPersonaAvatar?)? {
+    func personaSummary(_ id: String) -> (name: String, username: String, kind: String, bio: String, status: String, avatar: SpyderPersonaAvatar?, privacy: SpyderPersonaPrivacy, style: SpyderPersonaStylePreferences)? {
         guard let data = SpyderChatKeychain.load(account: identityAccount(for: id)),
               let item = try? JSONDecoder().decode(SpyderChatIdentity.self, from: data) else { return nil }
-        return (item.name, item.username ?? "", item.kind ?? "public", item.bio ?? "", item.status ?? "", item.avatar)
+        return (item.name, item.username ?? "", item.kind ?? "public", item.bio ?? "", item.status ?? "", item.avatar,
+            item.privacyMode ?? .private, SpyderPersonaStyleStore.load(persona: id, server: item.server ?? serverAddress))
     }
 
     /// Profile fields are visible to accepted contacts. Server-side profile data
@@ -663,6 +670,7 @@ final class SpyderChatStore: ObservableObject {
     }
 
     func refresh() async {
+        reloadLocalPersonaMetadata()
         guard !refreshing else { return }
         let expectedIdentity = identity?.id
         guard hasIdentity else { await probeServer(); return }
@@ -678,10 +686,16 @@ final class SpyderChatStore: ObservableObject {
             contactPreferences = result.preferences ?? [:]
             requests = result.requests
             inviteCode = result.invite_code
-            struct Privacy: Decodable { let discoverable: Bool }
-            let privacy: Privacy = try await perform("/v2/profile/privacy")
+            struct Privacy: Decodable { let mode: SpyderPersonaPrivacy; let discoverable: Bool }
+            let privacy: Privacy = try await perform("/v4/profile/privacy")
             guard expectedIdentity == identity?.id else { return }
             discoverable = privacy.discoverable
+            personaPrivacy = privacy.mode
+            if var current = identity, current.privacyMode != privacy.mode {
+                current.privacyMode = privacy.mode
+                try saveIdentity(current)
+                identity = current
+            }
             if persistsSelection { await retryPushUnregister() }
             connected = true
             serverStatus = nil
@@ -699,15 +713,51 @@ final class SpyderChatStore: ObservableObject {
     }
 
     func updateDiscovery(_ enabled: Bool) async {
-        let expectedID = identity?.id
-        guard personaKind != "private" || !enabled else { return }
+        _ = await setPersonaPrivacy(enabled ? .public : .private)
+    }
+
+    @discardableResult
+    func setPersonaPrivacy(_ mode: SpyderPersonaPrivacy) async -> Bool {
+        guard let own = identity else { return false }
         do {
-            struct Privacy: Codable { let discoverable: Bool }
-            let response: Privacy = try await perform("/v2/profile/privacy", method: "POST",
-                payload: JSONEncoder().encode(Privacy(discoverable: enabled)))
-            guard expectedID == identity?.id else { return }
-            discoverable = response.discoverable
-        } catch { errorMessage = error.localizedDescription }
+            struct Privacy: Codable { let mode: SpyderPersonaPrivacy; let discoverable: Bool? }
+            let result: Privacy = try await perform("/v4/profile/privacy", method: "POST",
+                payload: JSONEncoder().encode(Privacy(mode: mode, discoverable: nil)))
+            guard identity?.id == own.id, var current = identity else { return false }
+            personaPrivacy = result.mode; discoverable = result.discoverable ?? false
+            current.privacyMode = result.mode
+            try saveIdentity(current); identity = current
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
+    }
+
+    func savePersonaStyle(_ value: SpyderPersonaStylePreferences,
+                          motion: SpyderAvatarMotion, accent: SpyderSignalAccent) async -> Bool {
+        guard let own = identity else { return false }
+        guard await updateProfile(bio: myBio, status: myStatus, motion: motion, accent: accent),
+              identity?.id == own.id else { return false }
+        let style = value.normalized
+        SpyderPersonaStyleStore.save(style, persona: own.id, server: own.server ?? serverAddress)
+        personaStyle = style
+        var appearance = SpyderChatAppearanceStore.load(persona: own.id)
+        appearance.wallpaper = style.wallpaper
+        SpyderChatAppearanceStore.save(appearance, persona: own.id)
+        return true
+    }
+
+    private func reloadLocalPersonaMetadata() {
+        if let data = SpyderChatKeychain.load(account: SpyderChatKeychain.indexAccount),
+           let list = try? JSONDecoder().decode([String].self, from: data), list.first == primaryID,
+           list != personaIDs { personaIDs = Array(list.prefix(8)) }
+        guard let own = identity,
+              let data = SpyderChatKeychain.load(account: identityAccount(for: own.id)),
+              let record = try? JSONDecoder().decode(SpyderChatIdentity.self, from: data), record.id == own.id,
+              SpyderChatEndpoint.normalized(record.server ?? serverAddress) == SpyderChatEndpoint.normalized(serverAddress) else { return }
+        identity = record
+        myName = record.name; myUsername = record.username ?? ""
+        myBio = record.bio ?? ""; myStatus = record.status ?? ""; myAvatar = record.avatar
+        personaPrivacy = record.privacyMode ?? .private
+        personaStyle = SpyderPersonaStyleStore.load(persona: record.id, server: record.server ?? serverAddress)
     }
 
     func resumeDecryption() { decryptionAllowed = true }
@@ -723,7 +773,6 @@ final class SpyderChatStore: ObservableObject {
 
     func claimUsername(_ value: String) async -> Bool {
         let expectedID = identity?.id
-        guard personaKind != "private" else { errorMessage = "Приватные личности не имеют публичного username"; return false }
         do {
             struct Payload: Encodable { let username: String }
             struct Ack: Decodable { let username: String }

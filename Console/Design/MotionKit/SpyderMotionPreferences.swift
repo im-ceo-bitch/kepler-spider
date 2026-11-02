@@ -10,16 +10,21 @@ enum SpyderMotionKeys {
     static let introSeen = "spyder.motion.introSeen"
 }
 
-enum SpyderSignalAccent: String, CaseIterable, Identifiable {
+enum SpyderSignalAccent: String, CaseIterable, Identifiable, Codable {
     case red, blue, violet, cyan, magenta, lime, amber, emerald, orange, ice, pink, ultraviolet
+    case gold, silver, copper, white
 
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .red: "Signal Red"
+        case .gold: "Signal Gold"
+        case .silver: "Chrome Silver"
+        case .copper: "Copper"
+        case .white: "Mono White"
+        case .red: "Crimson Red"
         case .blue: "Electric Blue"
         case .violet: "Neon Violet"
-        case .cyan: "Cyber Cyan"
+        case .cyan: "Ice Cyan"
         case .magenta: "Magenta"
         case .lime: "Neon Lime"
         case .amber: "Amber"
@@ -32,6 +37,10 @@ enum SpyderSignalAccent: String, CaseIterable, Identifiable {
     }
     var color: Color {
         switch self {
+        case .gold: Color(red: 0.97, green: 0.78, blue: 0.29)
+        case .silver: Color(red: 0.76, green: 0.81, blue: 0.87)
+        case .copper: Color(red: 0.81, green: 0.49, blue: 0.32)
+        case .white: Color(white: 0.96)
         case .red: Color(red: 0.86, green: 0.025, blue: 0.16)
         case .blue: Color(red: 0.20, green: 0.47, blue: 0.97)
         case .violet: Color(red: 0.62, green: 0.34, blue: 1.0)

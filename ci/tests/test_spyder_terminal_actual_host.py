@@ -15,7 +15,7 @@ class ActualTerminalHostChecks(unittest.TestCase):
     def test_real_host_uses_current_chat_and_data(self):
         code = read('Console/Features/Chats/SpyderTerminalChatContainer.swift')
         self.assertIn('request.context.conversationID == peerID', code)
-        self.assertIn('SpyderChatAppearanceStore.save(appearance, peer: peerID)', code)
+        self.assertIn('SpyderChatAppearanceStore.save(appearance, peer: peerID, persona: chat.activePersonaID)', code)
         self.assertIn('chat.contacts.contains(where: { $0.id == peerID })', code)
         self.assertIn('await chat.sendMessage(to: peerID, text: message)', code)
         self.assertIn('review: { [weak chat] request in', code)

@@ -41,33 +41,54 @@ enum SpyderChatAppearanceStore {
     private static let globalKey = "spyder.chat.appearance.global.v1"
     private static let peerKey = "spyder.chat.appearance.perPeer.v1"
 
-    static func load(peer: String? = nil) -> SpyderChatAppearance {
-        if let peer, let data = UserDefaults.standard.data(forKey: peerKey),
+    private static func scoped(_ key: String, persona: String?) -> String {
+        persona.map { key + ".persona." + $0 } ?? key
+    }
+
+    static func migrateLegacy(to primaryPersona: String, defaults: UserDefaults = .standard) {
+        let marker = "spyder.chat.appearance.migrated.v2"
+        guard !defaults.bool(forKey: marker) else { return }
+        for key in [globalKey, peerKey] {
+            let target = scoped(key, persona: primaryPersona)
+            if defaults.data(forKey: target) == nil,
+               let data = defaults.data(forKey: key) { defaults.set(data, forKey: target) }
+        }
+        SpyderLocalChatReactions.migrateLegacy(to: primaryPersona, defaults: defaults)
+        defaults.set(true, forKey: marker)
+    }
+
+    static func load(peer: String? = nil, persona: String? = nil, defaults: UserDefaults = .standard) -> SpyderChatAppearance {
+        let globalKey = scoped(Self.globalKey, persona: persona)
+        let peerKey = scoped(Self.peerKey, persona: persona)
+        if let peer, let data = defaults.data(forKey: peerKey),
            let entries = try? JSONDecoder().decode([String: SpyderChatAppearance].self, from: data),
            let value = entries[peer] { return value }
-        guard let data = UserDefaults.standard.data(forKey: globalKey),
+        guard let data = defaults.data(forKey: globalKey),
               let value = try? JSONDecoder().decode(SpyderChatAppearance.self, from: data) else {
             return SpyderChatAppearance()
         }
         return value
     }
 
-    static func save(_ value: SpyderChatAppearance, peer: String? = nil) {
+    static func save(_ value: SpyderChatAppearance, peer: String? = nil, persona: String? = nil, defaults: UserDefaults = .standard) {
+        let globalKey = scoped(Self.globalKey, persona: persona)
+        let peerKey = scoped(Self.peerKey, persona: persona)
         guard let peer else {
-            if let data = try? JSONEncoder().encode(value) { UserDefaults.standard.set(data, forKey: globalKey) }
+            if let data = try? JSONEncoder().encode(value) { defaults.set(data, forKey: globalKey) }
             return
         }
-        var entries = (UserDefaults.standard.data(forKey: peerKey)
+        var entries = (defaults.data(forKey: peerKey)
             .flatMap { try? JSONDecoder().decode([String: SpyderChatAppearance].self, from: $0) }) ?? [:]
         entries[peer] = value
-        if let data = try? JSONEncoder().encode(entries) { UserDefaults.standard.set(data, forKey: peerKey) }
+        if let data = try? JSONEncoder().encode(entries) { defaults.set(data, forKey: peerKey) }
     }
 
-    static func reset(peer: String) {
-        guard let data = UserDefaults.standard.data(forKey: peerKey),
+    static func reset(peer: String, persona: String? = nil, defaults: UserDefaults = .standard) {
+        let peerKey = scoped(Self.peerKey, persona: persona)
+        guard let data = defaults.data(forKey: peerKey),
               var entries = try? JSONDecoder().decode([String: SpyderChatAppearance].self, from: data) else { return }
         entries.removeValue(forKey: peer)
-        if let data = try? JSONEncoder().encode(entries) { UserDefaults.standard.set(data, forKey: peerKey) }
+        if let data = try? JSONEncoder().encode(entries) { defaults.set(data, forKey: peerKey) }
     }
 }
 
@@ -77,14 +98,21 @@ enum SpyderLocalChatReactions {
     private static let key = "spyder.chat.localReactions.v1"
     static let choices = ["❤️", "🔥", "👍", "😂", "😮", "👏"]
 
-    static func load(peer: String) -> [String: String] {
-        guard let data = UserDefaults.standard.data(forKey: key),
+    static func migrateLegacy(to persona: String, defaults: UserDefaults = .standard) {
+        let target = key + ".persona." + persona
+        if defaults.data(forKey: target) == nil,
+           let data = defaults.data(forKey: key) { defaults.set(data, forKey: target) }
+    }
+    static func load(peer: String, persona: String? = nil, defaults: UserDefaults = .standard) -> [String: String] {
+        let key = persona.map { Self.key + ".persona." + $0 } ?? Self.key
+        guard let data = defaults.data(forKey: key),
               let all = try? JSONDecoder().decode([String: [String: String]].self, from: data) else { return [:] }
         return all[peer] ?? [:]
     }
-    static func toggle(peer: String, messageID: String, emoji: String) -> [String: String] {
-        guard choices.contains(emoji), !peer.isEmpty, !messageID.isEmpty else { return load(peer: peer) }
-        var all = (UserDefaults.standard.data(forKey: key)
+    static func toggle(peer: String, messageID: String, emoji: String, persona: String? = nil, defaults: UserDefaults = .standard) -> [String: String] {
+        let key = persona.map { Self.key + ".persona." + $0 } ?? Self.key
+        guard choices.contains(emoji), !peer.isEmpty, !messageID.isEmpty else { return load(peer: peer, persona: persona, defaults: defaults) }
+        var all = (defaults.data(forKey: key)
             .flatMap { try? JSONDecoder().decode([String: [String: String]].self, from: $0) }) ?? [:]
         var current = all[peer] ?? [:]
         if current[messageID] == emoji { current.removeValue(forKey: messageID) }
@@ -92,7 +120,7 @@ enum SpyderLocalChatReactions {
         // Cap metadata stored on device. Do not persist plaintext or message bodies.
         if current.count > 200 { current = [messageID: current[messageID]].compactMapValues { $0 } }
         all[peer] = current
-        if let data = try? JSONEncoder().encode(all) { UserDefaults.standard.set(data, forKey: key) }
+        if let data = try? JSONEncoder().encode(all) { defaults.set(data, forKey: key) }
         return current
     }
 }
@@ -261,13 +289,14 @@ struct SpyderChatWallpaperView: View {
 }
 
 struct SpyderChatAppearanceSettingsView: View {
+    @EnvironmentObject private var chat: SpyderChatStore
     let peerID: String?
     @Environment(\.dismiss) private var dismiss
     @AppStorage(SpyderMotionKeys.accent) private var accentRaw = SpyderSignalAccent.red.rawValue
     @State private var appearance = SpyderChatAppearance()
     @State private var loaded = false
 
-    private var accent: Color { (SpyderSignalAccent(rawValue: accentRaw) ?? .red).color }
+    private var accent: Color { (chat.personaStyle.bubbleAccent ?? chat.myAvatar?.color ?? .red).color }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -318,8 +347,8 @@ struct SpyderChatAppearanceSettingsView: View {
                         .font(.footnote).foregroundStyle(WalletTheme.secondary)
                     if let peerID {
                         Button("Вернуть общее оформление", role: .destructive) {
-                            SpyderChatAppearanceStore.reset(peer: peerID)
-                            appearance = SpyderChatAppearanceStore.load()
+                            SpyderChatAppearanceStore.reset(peer: peerID, persona: chat.activePersonaID)
+                            appearance = SpyderChatAppearanceStore.load(persona: chat.activePersonaID)
                             loaded = false
                             dismiss()
                         }
@@ -332,12 +361,12 @@ struct SpyderChatAppearanceSettingsView: View {
             .navigationTitle("Оформление чатов")
             .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            appearance = SpyderChatAppearanceStore.load(peer: peerID)
+            appearance = SpyderChatAppearanceStore.load(peer: peerID, persona: chat.activePersonaID)
             loaded = true
         }
     }
 
     private func save() {
-        if loaded { SpyderChatAppearanceStore.save(appearance, peer: peerID) }
+        if loaded { SpyderChatAppearanceStore.save(appearance, peer: peerID, persona: chat.activePersonaID) }
     }
 }

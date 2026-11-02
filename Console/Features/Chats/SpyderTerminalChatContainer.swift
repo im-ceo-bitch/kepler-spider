@@ -104,14 +104,14 @@ private final class SpyderTerminalChatBindings: ObservableObject {
                 en: "Matches in locally loaded messages: \(matched.count)"))
         }
         try? host.register("chat.background.change") { [weak self, weak chat] request in
-            _ = try Self.validatePeer(request, peerID: peerID, chat: chat)
+            let chat = try Self.validatePeer(request, peerID: peerID, chat: chat)
             if let name = request.parameters["background"] {
                 guard let wallpaper = Self.wallpaper(for: name) else {
                     throw TerminalHostError.invalidParameter("background (Chrome, Cyberpunk, Thunder)")
                 }
-                var appearance = SpyderChatAppearanceStore.load(peer: peerID)
+                var appearance = SpyderChatAppearanceStore.load(peer: peerID, persona: chat.activePersonaID)
                 appearance.wallpaper = wallpaper
-                SpyderChatAppearanceStore.save(appearance, peer: peerID)
+                SpyderChatAppearanceStore.save(appearance, peer: peerID, persona: chat.activePersonaID)
                 NotificationCenter.default.post(name: .spyderTerminalChatAppearanceChanged,
                                                 object: nil, userInfo: ["peerID": peerID])
                 return TerminalActionResult(message: Self.localize(request, ru: "Фон изменён", en: "Background updated") + ": \(wallpaper.title)")
@@ -120,14 +120,14 @@ private final class SpyderTerminalChatBindings: ObservableObject {
             return TerminalActionResult(message: Self.localize(request, ru: "Открыт выбор фона чата", en: "Chat background picker opened"))
         }
         try? host.register("chat.theme.set") { [weak chat] request in
-            _ = try Self.validatePeer(request, peerID: peerID, chat: chat)
+            let chat = try Self.validatePeer(request, peerID: peerID, chat: chat)
             guard let name = request.parameters["theme"],
                   let wallpaper = Self.wallpaper(for: name) else {
                 throw TerminalHostError.invalidParameter("theme (Chrome, Cyberpunk, Thunder)")
             }
-            var appearance = SpyderChatAppearanceStore.load(peer: peerID)
+            var appearance = SpyderChatAppearanceStore.load(peer: peerID, persona: chat.activePersonaID)
             appearance.wallpaper = wallpaper
-            SpyderChatAppearanceStore.save(appearance, peer: peerID)
+            SpyderChatAppearanceStore.save(appearance, peer: peerID, persona: chat.activePersonaID)
             NotificationCenter.default.post(name: .spyderTerminalChatAppearanceChanged,
                                             object: nil, userInfo: ["peerID": peerID])
             return TerminalActionResult(message: Self.localize(request, ru: "Тема чата изменена", en: "Chat theme updated") + ": \(wallpaper.title)")

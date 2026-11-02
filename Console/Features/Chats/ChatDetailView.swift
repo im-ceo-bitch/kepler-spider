@@ -56,7 +56,7 @@ struct ChatDetailView: View {
     private var visiblePersonaName: String { nextPersonaID.flatMap { chat.personaSummary($0)?.name } ?? chat.myName }
     private var messages: [SpyderServerMessage] { chat.messageByPeer[contact.id] ?? [] }
     private var peerAvatar: SpyderPersonaAvatar? { chat.contacts.first(where: { $0.id == contact.id })?.avatar }
-    private var accent: Color { (SpyderSignalAccent(rawValue: accentRaw) ?? .red).color }
+    private var accent: Color { (chat.personaStyle.bubbleAccent ?? chat.myAvatar?.color ?? .red).color }
     private var shouldAnimate: Bool { appearance.animateMessages && motionEnabled && !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled }
     private var canSend: Bool { chat.encryptionReady && !sending && !changingPersona && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -67,7 +67,7 @@ struct ChatDetailView: View {
                     entries: $terminalEntries,
                     onWallpaper: { wallpaper in
                         appearance.wallpaper = wallpaper
-                        SpyderChatAppearanceStore.save(appearance, peer: contact.id)
+                        SpyderChatAppearanceStore.save(appearance, peer: contact.id, persona: chat.activePersonaID)
                     },
                     onBackgroundPicker: { showingAppearance = true },
                     onAction: onAction,
@@ -111,7 +111,7 @@ struct ChatDetailView: View {
         } message: { Text(chat.errorMessage ?? "") }
         .task(id: "\(chat.activePersonaID ?? "")-\(scenePhase == .active)-\(isVisible)-\(terminalActive)-\(pageVisible)-\(sectionActive)") {
             reloadAppearance()
-            reactions = SpyderLocalChatReactions.load(peer: contact.id)
+            reactions = SpyderLocalChatReactions.load(peer: contact.id, persona: chat.activePersonaID)
             guard sectionActive, pageVisible, scenePhase == .active, isVisible, !terminalActive else { return }
             chat.resumeDecryption()
             await chat.loadMessages(peer: contact.id)
@@ -311,7 +311,7 @@ struct ChatDetailView: View {
                         ForEach(SpyderLocalChatReactions.choices, id: \.self) { emoji in
                             Button(emoji) {
                                 reactions = SpyderLocalChatReactions.toggle(
-                                    peer: contact.id, messageID: message.id, emoji: emoji)
+                                    peer: contact.id, messageID: message.id, emoji: emoji, persona: chat.activePersonaID)
                                 UISelectionFeedbackGenerator().selectionChanged()
                             }
                         }
@@ -449,7 +449,7 @@ struct ChatDetailView: View {
     }
 
     private func reloadAppearance() {
-        appearance = SpyderChatAppearanceStore.load(peer: contact.id)
+        appearance = SpyderChatAppearanceStore.load(peer: contact.id, persona: chat.activePersonaID)
     }
 
     private func send() {
