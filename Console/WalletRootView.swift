@@ -48,10 +48,21 @@ struct WalletRootView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if atRoot { bottomBar }
         }
-        .sheet(item: $presented) { modal in
+        .sheet(item: Binding(get: { presented == .touch ? nil : presented }, set: { value in
+            if presented != .touch { presented = value }
+        })) { modal in
             modalView(modal)
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(30)
+        }
+        .fullScreenCover(isPresented: Binding(get: { presented == .touch }, set: { value in
+            if !value && presented == .touch { presented = nil }
+        })) {
+            WalletTouchView { contact in
+                presented = nil
+                selectedTab = .chats
+                networkPath.append(.chat(contact))
+            }
         }
         .sheet(isPresented: $showingLinkInvite) {
             SpyderInvitePage(onOpen: { person in
@@ -203,10 +214,10 @@ struct WalletRootView: View {
             WalletReceiveView(preselected: sendChain ?? .ethereum)
                 .presentationDetents([.medium, .large])
         case .touch:
-            WalletTouchView(onConnect: { _ in
-                // Demo-only connection; no chat contact is added automatically.
+            WalletTouchView(onConnect: { contact in
                 presented = nil
                 selectedTab = .chats
+                networkPath.append(.chat(contact))
             })
         case .profile:
             SpyderIdentityHubView() // Legacy external action fallback.

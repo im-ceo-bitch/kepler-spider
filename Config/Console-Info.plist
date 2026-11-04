@@ -36,6 +36,12 @@
 	<string>$(SPYDER_CHAT_SERVER_URL)</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Face ID защищает доступ к Spyder Wallet и секретной фразе восстановления.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Spyder Touch находит устройства рядом, чтобы по вашему подтверждению обменяться приглашениями и открыть чат.</string>
+	<key>NSBonjourServices</key>
+	<array><string>_spyder-touch2._tcp</string></array>
+	<key>NSNearbyInteractionUsageDescription</key>
+	<string>Spyder Touch измеряет расстояние до второго iPhone, чтобы при сближении показать запрос подключения к чату.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

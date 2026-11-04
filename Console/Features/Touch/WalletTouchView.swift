@@ -1,114 +1,205 @@
 import SwiftUI
 import UIKit
 
+@MainActor
 struct WalletTouchView: View {
+    @EnvironmentObject private var chat: SpyderChatStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @StateObject private var touch = SpyderTouchService()
     let onConnect: (WalletContact) -> Void
-    @State private var simulationActive = false
-    @State private var animatePulse = false
+    @State private var owner: String?
+    @State private var server = ""
+    @State private var ownCode = ""
+    @State private var visible = false
+    @State private var connecting = false
+    @State private var connected: WalletContact?
+    @State private var notice: String?
+    @State private var promptReady = false
+    @State private var peerAvatar: SpyderPersonaAvatar?
+    @State private var completionRoute: Task<Void, Never>?
+    @State private var opened = false
+    @State private var attempt = UUID()
 
-    var body: some View {
-        VStack(spacing: 22) {
-            HStack {
-                SpyderNavigationButton(symbol: "xmark", label: "Закрыть", action: { dismiss() })
-                Spacer()
-                Text("SPYDER TOUCH")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .tracking(1.5)
-                    .foregroundStyle(WalletTheme.secondary)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-            .spyderReveal(0.01)
-
-            touchCanvas
-                .padding(.horizontal, 20)
-                .spyderReveal(0.06)
-
-            VStack(spacing: 9) {
-                Text(simulationActive ? "Контакт найден" : "Поднесите устройства")
-                    .font(.system(size: 27, weight: .bold))
-                    .foregroundStyle(WalletTheme.ink)
-                    .contentTransition(.opacity)
-                    .multilineTextAlignment(.center)
-                Text(simulationActive ? "Alex · демонстрационный контакт" : "Поднесите два телефона друг к другу. Для реального перевода всегда требуется подтверждение с обеих сторон.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(WalletTheme.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .contentTransition(.opacity)
-            }
-            .spyderReveal(0.13)
-
-            Spacer(minLength: 10)
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                if simulationActive {
-                    onConnect(WalletContact.samples[0])
-                } else {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
-                        simulationActive = true
-                    }
-                }
-            } label: {
-                Text(simulationActive ? "Открыть чат с Alex" : "Демонстрация обнаружения")
-                    .spyderPrimaryButton()
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 20)
-            .spyderReveal(0.2)
-            WalletDemoLabel()
-                .padding(.bottom, 8)
-        }
-        .padding(.bottom, 22)
-        .background(WalletTheme.canvas.ignoresSafeArea())
-        .onAppear {
-            if !reduceMotion { animatePulse = true }
-        }
-        .onDisappear { animatePulse = false }
+    private var visualStage: SpyderTouchConnectionVisual.Stage {
+        if connected != nil { return .connected }
+        if connecting || [.request, .waiting, .exchanged].contains(touch.phase) { return .encounter }
+        return .searching
     }
-
-    private var touchCanvas: some View {
-        GeometryReader { geometry in
-            let center = min(geometry.size.width, geometry.size.height)
-            ZStack {
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    .fill(Color(red: 0.055, green: 0.055, blue: 0.063))
-                ForEach(0..<3) { index in
-                    Circle()
-                        .stroke(.white.opacity(0.20 - Double(index) * 0.04), lineWidth: 1)
-                        .frame(width: center * (0.40 + CGFloat(index) * 0.15))
-                        .scaleEffect(animatePulse ? 1.12 : 0.94)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 2.2 + Double(index) * 0.3).repeatForever(autoreverses: true), value: animatePulse)
-                }
-                Image("SpyderLaunchLogo")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 61, height: 61)
-                    .foregroundStyle(Color.white.opacity(0.92))
-                    .accessibilityHidden(true)
-                HStack {
-                    Image(systemName: "iphone.gen3")
-                    Spacer()
-                    Image(systemName: "iphone.gen3")
-                }
-                .font(.system(size: 51, weight: .ultraLight))
-                .foregroundStyle(.white.opacity(0.83))
-                .padding(.horizontal, 53)
-                if simulationActive {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 40, weight: .light))
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(Color.white, Color(red: 0.12, green: 0.12, blue: 0.13))
-                        .transition(.scale.combined(with: .opacity))
+    var body: some View {
+        NavigationStack {
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(spacing: 18) {
+                        Spacer(minLength: 12)
+                        SpyderTouchConnectionVisual(stage: visualStage,
+                            ownAvatar: chat.myAvatar, ownSeed: owner ?? "",
+                            peerAvatar: peerAvatar, peerSeed: connected?.id)
+                        VStack(spacing: 9) {
+                            Text(title).font(.system(size: 29, weight: .semibold)).multilineTextAlignment(.center)
+                            Text(subtitle).font(.callout).foregroundStyle(WalletTheme.secondary)
+                                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .contentTransition(.opacity)
+                        Text(chat.myName).font(.subheadline.weight(.medium)).foregroundStyle(WalletTheme.secondary)
+                        if (touch.phase == .request || touch.phase == .waiting) && promptReady {
+                            connectionRequest
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
+                        if connecting { ProgressView("Создаём чат…").padding(.top, 12) }
+                        if connected != nil {
+                            Button("Открыть чат") { routeToChat() }
+                                .spyderPrimaryButton().buttonStyle(.plain).padding(.top, 12)
+                        }
+                        if touch.ambiguous {
+                            Text("Рядом несколько iPhone. Поднесите только тот, с которым хотите подключиться.")
+                                .font(.callout).multilineTextAlignment(.center)
+                        }
+                        if let message = notice ?? touch.error {
+                            Text(message).font(.callout).multilineTextAlignment(.center)
+                        }
+                        if touch.phase == .failed {
+                            Button("Открыть настройки Spyder") {
+                                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                            }.font(.subheadline)
+                        }
+                        if connected == nil && !connecting && [.idle, .failed, .exchanged].contains(touch.phase) {
+                            Button("Повторить поиск") { start() }.buttonStyle(.bordered)
+                        }
+                        Spacer(minLength: 18)
+                        if visualStage == .searching {
+                            Text("Откройте Touch на обоих iPhone.\nВключите Wi-Fi и разрешите поиск поблизости.")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary).multilineTextAlignment(.center)
+                        }
+                    }
+                    .frame(maxWidth: 430).frame(maxWidth: .infinity)
+                    .padding(.horizontal, 26).padding(.bottom, 24)
+                    .frame(minHeight: geometry.size.height)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
+            .background(Color.white.ignoresSafeArea()).foregroundStyle(WalletTheme.ink)
+            .navigationTitle("Spyder Touch").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) {
+                Button("Закрыть") { cancel(); dismiss() }
+            } }
         }
-        .frame(height: 285)
-        .accessibilityLabel(simulationActive ? "Контакт найден — демонстрация" : "Демонстрация подключения устройств")
+        .overlay { SpyderTouchEdgeWave(encounter: visualStage != .searching) }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: promptReady)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: visualStage)
+        .task { visible = true; start() }
+        .task(id: visualStage) {
+            promptReady = false
+            guard visualStage == .encounter else { return }
+            if !reduceMotion {
+                do { try await Task.sleep(nanoseconds: 750_000_000) } catch { return }
+            }
+            guard !Task.isCancelled, visible, visualStage == .encounter else { return }
+            promptReady = true
+        }
+        .onDisappear { visible = false; cancel() }
+        .onChange(of: touch.receivedCode) { _, code in if let code { connect(code) } }
+        .onChange(of: touch.phase) { _, phase in
+            if phase == .request && scenePhase == .active { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
+        }
+        .onChange(of: chat.activePersonaID) { _, _ in contextChanged() }
+        .onChange(of: chat.serverAddress) { _, _ in contextChanged() }
+        .onChange(of: chat.inviteCode) { _, _ in contextChanged() }
+        .onChange(of: scenePhase) { _, phase in
+            touch.setActive(phase == .active)
+            if phase != .active { completionRoute?.cancel(); completionRoute = nil }
+            if phase == .background {
+                cancel()
+                if connected == nil { notice = "Поиск остановлен. Вернувшись, нажми «Повторить поиск»." }
+            }
+        }
+    }
+    private var title: String {
+        if connected != nil { return "Вы подключены" }
+        if connecting { return "Создаём чат" }
+        if touch.phase == .waiting { return "Соединяем iPhone" }
+        if touch.phase == .request { return "iPhone рядом" }
+        return "Поднесите iPhone"
+    }
+    private var subtitle: String {
+        if let connected { return connected.name + " теперь в ваших чатах" }
+        if connecting { return "Завершаем подключение" }
+        if touch.phase == .waiting { return "Подтвердите подключение на втором экране" }
+        if touch.phase == .request { return "Сверьте код и подключитесь друг к другу" }
+        return "Поднесите телефоны верхними краями\nи задержите рядом"
+    }
+    private var connectionRequest: some View {
+        VStack(spacing: 15) {
+            if let comparison = touch.comparison {
+                Text(comparison).font(.system(size: 29, weight: .medium, design: .monospaced)).tracking(7)
+                    .accessibilityLabel("Код проверки " + comparison.map(String.init).joined(separator: " "))
+            }
+            Text("Код должен совпадать на обоих iPhone.")
+                .font(.footnote).foregroundStyle(WalletTheme.secondary).multilineTextAlignment(.center)
+            if touch.phase == .waiting {
+                ProgressView().padding(.vertical, 6)
+                Button("Отменить", role: .cancel) { cancel() }.font(.subheadline)
+            } else {
+                Button("Подключиться") { if scenePhase == .active && promptReady { touch.approve() } }
+                    .spyderPrimaryButton().buttonStyle(.plain).disabled(scenePhase != .active)
+                Button("Не сейчас", role: .cancel) { touch.decline() }
+                    .font(.subheadline).foregroundStyle(WalletTheme.secondary)
+            }
+            Text("Вы делитесь приглашением личности «" + chat.myName + "». Деньги не отправляются.")
+                .font(.caption).foregroundStyle(WalletTheme.secondary).multilineTextAlignment(.center)
+        }.padding(.top, 10)
+    }
+    private func routeToChat() {
+        guard let connected, visible, scenePhase == .active, !opened else { return }
+        opened = true
+        completionRoute?.cancel(); completionRoute = nil
+        touch.stop(); onConnect(connected)
+    }
+    private func start() {
+        cancel(); connected = nil; peerAvatar = nil; opened = false; notice = nil
+        guard chat.hasIdentity, chat.activePersonaID != nil,
+              let normalized = SpyderChatEndpoint.normalized(chat.serverAddress) else {
+            notice = "Сначала создай личность и подключись к серверу Spyder."; return
+        }
+        owner = chat.activePersonaID; server = normalized; ownCode = chat.inviteCode
+        touch.start(server: normalized, code: ownCode)
+        touch.setActive(scenePhase == .active)
+    }
+    private func cancel() {
+        attempt = UUID(); completionRoute?.cancel(); completionRoute = nil
+        touch.stop(); connecting = false; promptReady = false
+    }
+    private func contextChanged() {
+        cancel(); connected = nil; notice = "Личность или настройки приглашения изменились. Повтори поиск."
+    }
+    private func connect(_ code: String) {
+        guard visible, scenePhase == .active, !connecting, connected == nil,
+              chat.activePersonaID == owner, chat.inviteCode == ownCode,
+              SpyderChatEndpoint.normalized(chat.serverAddress) == server,
+              code != ownCode else { return }
+        connecting = true
+        let run = attempt
+        Task { @MainActor in
+            let success = await chat.invite(code)
+            guard visible, scenePhase == .active, run == attempt,
+                  chat.activePersonaID == owner,
+                  SpyderChatEndpoint.normalized(chat.serverAddress) == server else { return }
+            connecting = false
+            guard success, let person = chat.lastConnectedPerson else {
+                notice = chat.errorMessage ?? "Не удалось создать чат. Проверь интернет и повтори подключение."
+                return
+            }
+            peerAvatar = person.avatar
+            connected = WalletContact(id: person.id, name: person.name,
+                handle: person.username.map { "@" + $0 } ?? "", letter: String(person.name.prefix(1)), preview: "", time: "")
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            completionRoute = Task { @MainActor in
+                do { try await Task.sleep(nanoseconds: reduceMotion ? 300_000_000 : 1_200_000_000) } catch { return }
+                guard !Task.isCancelled, visible, run == attempt, scenePhase == .active,
+                      chat.activePersonaID == owner else { return }
+                routeToChat()
+            }
+            await chat.loadInviteSettings()
+        }
     }
 }

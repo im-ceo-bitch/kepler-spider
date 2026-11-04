@@ -9,4 +9,7 @@ xcodebuild test -project Console.xcodeproj -scheme Console \
   -only-testing:ConsoleTests/WalletUSDTSigningIntegrationTests \
   -only-testing:ConsoleTests/SpyderChatPaymentTests \
   -only-testing:ConsoleTests/WalletRecoveryParityTests \
+  -only-testing:ConsoleTests/SpyderTouchHandshakeTests \
+  -only-testing:ConsoleTests/SpyderTouchFrameTests \
+  -only-testing:ConsoleTests/SpyderTouchProximityTests \
   CODE_SIGNING_ALLOWED=NO

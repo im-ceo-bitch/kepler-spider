@@ -49,6 +49,7 @@ struct SpyderInvitePage: View {
     @State private var notice: String?
     @State private var connectedPeer: SpyderChatPerson?
     @State private var qrImage: UIImage?
+    @State private var showingTouch = false
 
     var body: some View {
         NavigationStack {
@@ -57,6 +58,11 @@ struct SpyderInvitePage: View {
                     Text("Приглашение от текущей личности")
                         .font(.caption).foregroundStyle(WalletTheme.secondary)
                     Text(chat.myName).font(.title2.bold())
+                    Button { showingTouch = true } label: {
+                        Label("Spyder Touch · подключиться рядом", systemImage: "iphone.radiowaves.left.and.right")
+                            .frame(maxWidth: .infinity)
+                    }.buttonStyle(.borderedProminent).tint(.black)
+                    .disabled(!chat.hasIdentity)
                     if let image = qrImage {
                         Image(uiImage: image).interpolation(.none).resizable().scaledToFit()
                             .frame(width: 220, height: 220)
@@ -143,6 +149,12 @@ struct SpyderInvitePage: View {
             }
             .background(WalletTheme.canvas.ignoresSafeArea())
             .navigationTitle("Пригласить")
+            .fullScreenCover(isPresented: $showingTouch) {
+                WalletTouchView { contact in
+                    showingTouch = false
+                    onOpen(contact)
+                }.environmentObject(chat)
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
             .task {
