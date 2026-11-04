@@ -17,6 +17,7 @@ struct ConsoleApp: App {
     @StateObject private var publicAssets = WalletPublicAssetsStore()
     @StateObject private var marketData = WalletMarketStore()
     @StateObject private var liveMarket = WalletLiveMarketStore()
+    @StateObject private var transfers = WalletUSDTTransferStore()
     @StateObject private var walletHistory = WalletActivityStore()
     @StateObject private var addressBook = WalletAddressBookStore()
     @StateObject private var spyderChat = SpyderChatStore()
@@ -43,6 +44,7 @@ struct ConsoleApp: App {
                 .environmentObject(liveMarket)
                 .environmentObject(walletHistory)
                 .environmentObject(addressBook)
+                .environmentObject(transfers)
                 .environmentObject(spyderChat)
                 .environmentObject(legacyChat)
                 .environmentObject(spiderDevnet)
@@ -60,6 +62,14 @@ struct ConsoleApp: App {
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
                 await liveMarket.run()
+            }
+            .task(id: "transfers-\(scenePhase == .active)-\(walletAccess.unlocked)-\(walletAccess.activeWalletID)") {
+                guard scenePhase == .active, walletAccess.unlocked else { return }
+                while !Task.isCancelled {
+                    await transfers.refresh(walletID: walletAccess.activeWalletID)
+                    await transfers.announce(chat: spyderChat)
+                    do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                }
             }
             .onReceive(marketData.$quotes) { quotes in
                 publicAssets.applyMarketQuotes(quotes)
@@ -98,6 +108,7 @@ struct ConsoleApp: App {
                 }
                 if phase == .background {
                     liveMarket.stop()
+                    transfers.cancelAuthorization()
                     walletAccess.lock()
                     walletChains.clear()
                     walletHistory.clear()

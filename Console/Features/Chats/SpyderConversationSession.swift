@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 struct SpyderConversationSession: View {
     @State private var showingContact = false
+    @EnvironmentObject private var transfers: WalletUSDTTransferStore
     @StateObject private var session: SpyderChatStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.spyderChatSectionActive) private var sectionActive
@@ -37,7 +38,7 @@ struct SpyderConversationSession: View {
             }
             .task { await session.refresh() }
             .onChange(of: scenePhase) { _, phase in
-                if phase != .active {
+                if phase == .background || (phase == .inactive && !transfers.busy) {
                     session.clearDecryptedCache()
                     Task { await session.updatePresence(active: false) }
                 }

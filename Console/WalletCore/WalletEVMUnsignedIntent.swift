@@ -19,7 +19,7 @@ enum WalletEVMSigningError: LocalizedError {
 
 /// Immutable, wallet-bound unsigned intent built only from a fresh, verified RPC quote.
 /// None of these properties are secret. No custom contract call or token address is accepted.
-struct WalletEVMUnsignedIntent: Equatable {
+struct WalletEVMUnsignedIntent: Equatable, Codable, Sendable {
     let asset: WalletEVMAsset
     let sender: String
     let recipient: String

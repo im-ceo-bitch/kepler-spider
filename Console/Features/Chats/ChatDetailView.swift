@@ -166,10 +166,20 @@ struct ChatDetailView: View {
     private func messageRow(_ message: SpyderServerMessage) -> some View {
         let outgoing = chat.isOutgoing(message)
         let payment = message.verified ? SpyderPaymentEnvelope.decode(message.text) : nil
+        let transfer = message.verified ? SpyderTransferEnvelope.decode(message.text) : nil
         return HStack(alignment: .bottom, spacing: 0) {
             if outgoing { Spacer(minLength: 44) }
             VStack(alignment: .leading, spacing: 7) {
-                if let payment {
+                if let transfer {
+                    if hasEarlierTransfer(transfer.txHash, before: message.id) {
+                        Text("Повторная ссылка на тот же перевод").font(.caption).foregroundStyle(.secondary)
+                    } else if transfer.matches(messages: messages, sender: message.sender_id, receiver: message.recipient_id, server: chat.serverAddress) {
+                        SpyderTransferStatusView(transfer: transfer, enabled: readable, outgoing: outgoing)
+                    } else {
+                        Text("Перевод требует проверки реквизитов").font(.subheadline)
+                        Text("Не удалось связать платёж с подтверждённым адресом этой переписки.").font(.caption).foregroundStyle(.secondary)
+                    }
+                } else if let payment {
                     Label(payment.kind == .request ? "Запрос реквизитов" : "Реквизиты для перевода",
                           systemImage: payment.kind == .request ? "arrow.down.left" : "wallet.bifold")
                         .font(.subheadline.weight(.semibold))
@@ -208,6 +218,13 @@ struct ChatDetailView: View {
                 value: !outgoing && message.verified ? [message.id: geometry.frame(in: .global)] : [:])
         })
     }
+    private func hasEarlierTransfer(_ hash: String, before messageID: String) -> Bool {
+        messages.prefix(while: { $0.id != messageID }).contains { message in
+            guard message.verified, let transfer = SpyderTransferEnvelope.decode(message.text), transfer.txHash == hash else { return false }
+            return transfer.matches(messages: messages, sender: message.sender_id, receiver: message.recipient_id, server: chat.serverAddress)
+        }
+    }
+
     private var personaPicker: some View {
         NavigationStack {
             List {

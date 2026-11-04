@@ -15,6 +15,7 @@ enum SpyderPaymentAsset: String, Codable, CaseIterable, Identifiable, Hashable {
 struct SpyderPaymentEnvelope: Codable, Equatable {
     enum Kind: String, Codable, Equatable { case request, address }
     static let prefix = "spyder:payment:v1:"
+    var ownershipSignature: String? = nil
     let kind: Kind
     let requestID: UUID
     let asset: SpyderPaymentAsset
@@ -71,6 +72,8 @@ struct SpyderPaymentEnvelope: Codable, Equatable {
         return nil
     }
     static func preview(_ text: String) -> String {
+        if let transfer = SpyderTransferEnvelope.decode(text) { return "Перевод · " + transfer.intent.amount + " USDT" }
+        if text.hasPrefix(SpyderTransferEnvelope.prefix) { return "Данные перевода требуют проверки" }
         if let payment = decode(text) {
             return payment.kind == .request ? "Запрос реквизитов · " + payment.asset.ticker : "Реквизиты · " + payment.asset.ticker
         }

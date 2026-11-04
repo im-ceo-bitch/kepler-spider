@@ -56,7 +56,7 @@ class Stage6Checks(unittest.TestCase):
         self.assertIn('#if SPYDER_EVM_RELAY_TESTS', journal)
         self.assertNotIn('eth_sendRawTransaction', send)
         self.assertNotIn('WalletEVMBroadcastStaging', send)
-        self.assertIn('WalletEVMSignedEnvelopeGuard.fingerprints', signer)
+        self.assertIn('WalletEthereumSignature.verify(raw:', signer)
         self.assertIn('try validate(raw: raw, intent: intent)', (CORE/'WalletEVMSignedEnvelopeGuard.swift').read_text())
         self.assertNotIn('URLSession', signer)
         self.assertTrue((ROOT/'Tests/WalletRecoveryParityTests.swift').exists())

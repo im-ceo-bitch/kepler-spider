@@ -41,18 +41,18 @@ class LiveReleaseChecks(unittest.TestCase):
             )
         self.assertNotIn('WalletDemoLabel()', body)
 
-    def test_mainnet_send_preview_cannot_broadcast(self):
+    def test_mainnet_ui_has_no_direct_broadcaster_and_requires_review(self):
         root = source('Console/WalletRootView.swift')
         flow = source('Console/Features/Wallet/WalletSendFlowView.swift')
         self.assertRegex(root, r'case\s+\.send:\s*WalletSendFlowView\(preselected:\s*sendChain\)')
         self.assertIn('showUnavailable = true', flow)
-        self.assertIn('Отправка пока недоступна', flow)
+        self.assertIn('Подтвердить и отправить USDT', flow)
         self.assertIn('Отправка ещё не включена', flow)
         # Do not mistake a visible send form for a complete signing engine.
         for api in ('eth_sendRawTransaction', 'sendRawTransaction', 'sendTransaction',
                     'sendAndConfirmTransaction', 'broadcastTransaction', 'URLSession.shared.data(for:'):
             self.assertNotIn(api, flow, f'Mainnet preview unexpectedly references {api}')
-        self.assertIn('.disabled(!validToReview || quoteLoading)', flow) # preflight must also gate loading state
+        self.assertIn('.disabled(transfers.busy || (submitted == nil && (!validToReview || quoteLoading)))', flow) # preflight must also gate loading state
 
     def test_market_prices_include_tokens_and_partial_banner(self):
         market = source('Console/WalletCore/WalletPublicAssets.swift')

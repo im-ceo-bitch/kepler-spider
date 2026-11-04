@@ -128,6 +128,20 @@ enum WalletEVMSignedEnvelopeGuard {
                                      signingDigest: WalletEVMKeccak256.hex(unsigned))
     }
 
+    /// Recoverable compact signature r || s || yParity, with canonical scalar padding.
+    static func recoverySignature(raw: Data, intent: WalletEVMUnsignedIntent) throws -> Data {
+        try validate(raw: raw, intent: intent)
+        var index = 0
+        let tree = try parse(Array(raw.dropFirst()), &index, 0)
+        guard case .list(let fields) = tree, fields.count == 12,
+              let parity = try number(scalar(fields[9])), parity <= 1 else {
+            throw WalletEVMEnvelopeError.invalidSignature
+        }
+        let r = try scalar(fields[10]), s = try scalar(fields[11])
+        return Data(repeating: 0, count: 32 - r.count) + r +
+            Data(repeating: 0, count: 32 - s.count) + s + Data([UInt8(parity)])
+    }
+
     // Pure RLP inspection without a signature validity claim.
     static func validate(raw: Data, intent: WalletEVMUnsignedIntent) throws {
         guard raw.count >= 70 && raw.count <= 2_048 && raw.first == 2 else {

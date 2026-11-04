@@ -50,7 +50,7 @@ struct CheckOutgoing {
             case "eth_chainId": result = chain
             case "eth_getTransactionByHash": result = noTx ? nil : (txData ?? tx(intent))
             case "eth_getTransactionReceipt": result = receiptData ?? receipt(intent)
-            case "eth_getBlockByNumber": result = ["hash": block]
+            case "eth_getBlockByNumber": result = ["hash": block, "timestamp": "0x6553f100"]
             case "eth_blockNumber": result = head
             default: result = nil
             }
@@ -110,6 +110,20 @@ struct CheckOutgoing {
             return result
         }))
         await expect(.inconsistentProviders) { try await mixed.reconcile(txHash: hash, intent: usdt) }
-        print("WalletEVMOutgoingTracker: 17 core scenarios passed")
+        let validTime = try await tracker(mock(usdt)).reconcile(txHash: hash, intent: usdt, notBefore: 1700000000)
+        if case .confirmed = validTime {} else { fatalError("timestamp-bound valid transfer") }
+        await expect(.inconsistentProviders) {
+            try await tracker(mock(usdt)).reconcile(txHash: hash, intent: usdt, notBefore: 1700001000)
+        }
+        let missingTimestamp = mock(usdt, mutator: { _, method, result in
+            method == "eth_getBlockByNumber" ? ["hash": blockHash] : result
+        })
+        await expect(.inconsistentProviders) {
+            try await tracker(missingTimestamp).reconcile(txHash: hash, intent: usdt, notBefore: 1700000000)
+        }
+        await expect(.invalidIntent) {
+            try await tracker(mock(usdt)).reconcile(txHash: hash, intent: usdt, notBefore: Int.max)
+        }
+        print("WalletEVMOutgoingTracker: 21 core scenarios passed")
     }
 }

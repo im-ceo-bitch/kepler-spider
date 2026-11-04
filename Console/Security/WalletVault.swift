@@ -114,8 +114,15 @@ enum WalletVault {
     }
 
     static func revealForBackup(id: String = legacyID) throws -> [String] {
-        let context = LAContext()
-        context.localizedReason = "Подтвердите доступ к секретной фразе Spyder Wallet"
+        try readWords(id: id, reason: "Подтвердите доступ к секретной фразе Spyder Wallet", context: LAContext())
+    }
+
+    static func revealForSigning(id: String, reason: String, context: LAContext) throws -> [String] {
+        try readWords(id: id, reason: reason, context: context)
+    }
+
+    private static func readWords(id: String, reason: String, context: LAContext) throws -> [String] {
+        context.localizedReason = reason
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -123,7 +130,7 @@ enum WalletVault {
             kSecMatchLimit as String: kSecMatchLimitOne,
             kSecReturnData as String: true,
             kSecUseAuthenticationContext as String: context,
-            kSecUseOperationPrompt as String: "Открыть секретную фразу"
+            kSecUseOperationPrompt as String: reason
         ]
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)

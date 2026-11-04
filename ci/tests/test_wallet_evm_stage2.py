@@ -25,7 +25,7 @@ class EVMStage2Tests(unittest.TestCase):
     def test_offline_signer_fails_closed_by_default(self):
         signer = (CORE/'WalletEVMOfflineSigner.swift').read_text()
         flow = (ROOT/'Console/Features/Wallet/WalletSendFlowView.swift').read_text()
-        self.assertIn('WalletVault.revealForBackup(id: walletID)', signer)
+        self.assertIn('WalletVault.revealForSigning(id: walletID,', signer)
         self.assertIn('derived.caseInsensitiveCompare(intent.sender)', signer)
         self.assertIn('intent.ensureFresh()', signer)
         self.assertIn('AnySigner.sign(input: signingInput, coin: .ethereum)', signer)
@@ -35,7 +35,7 @@ class EVMStage2Tests(unittest.TestCase):
         for prohibited in ('eth_sendRawTransaction', 'eth_sendTransaction', 'URLSession', 'UserDefaults', 'UIPasteboard'):
             self.assertNotIn(prohibited, signer)
         self.assertIn('showUnavailable = true', flow)
-        self.assertIn('Отправка пока недоступна', flow)
+        self.assertIn('canSendUSDT', flow)
 
     def test_signed_vector_runs_only_in_xcode_and_no_real_secrets(self):
         test = (ROOT/'Tests/WalletEVMSigningTests.swift').read_text()

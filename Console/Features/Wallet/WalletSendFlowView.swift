@@ -1,13 +1,13 @@
 import SwiftUI
 import UIKit
 
-/// UX / validation foundation for native mainnet transfers.
-/// A real broadcast is intentionally unavailable until per-chain signing, replay
-/// protection, UTXO selection, RPC failover, and automated transaction tests pass.
-/// Never show a fake tx hash or pretend that a transfer was submitted.
+/// Reviewed USDT ERC-20 chat transfers use the isolated signer and durable publication service.
+/// ETH/USDC and generic manual-address sends remain read-only previews.
 struct WalletSendFlowView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @EnvironmentObject private var transfers: WalletUSDTTransferStore
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var access: WalletAccess
     @EnvironmentObject private var chat: SpyderChatStore
     @EnvironmentObject private var chains: WalletChainStore
@@ -23,6 +23,10 @@ struct WalletSendFlowView: View {
     @State private var amount = ""
     @State private var reviewing = false
     @State private var showUnavailable = false
+    @State private var confirmUSDT = false
+    @State private var approvedWalletID: String?
+    @State private var submitted: WalletUSDTTransferRecord?
+    @State private var pageVisible = false
     @State private var showAddressBook = false
     @State private var showSaveRecipient = false
     let preselected: SpyderChain?
@@ -38,6 +42,24 @@ struct WalletSendFlowView: View {
               normalizedRecipient == context.payment.address else { return false }
         return SpyderPaymentEnvelope.recipient(in: chat.messageByPeer[context.peerID] ?? [],
             peer: context.peerID, owner: context.ownerID, asset: context.payment.asset) == context.payment
+    }
+
+    private var canSendUSDT: Bool {
+        guard let context = chatRecipient, context.payment.asset == .usdtEthereum,
+              selected == .ethereum, evmAsset == .usdt, approvedWalletID == access.activeWalletID,
+              let quote = evmQuote, quote.matches(sender: chains.address(for: .ethereum) ?? "",
+                recipient: normalizedRecipient, amount: amount.replacingOccurrences(of: ",", with: "."), asset: .usdt),
+              recipientContextValid, submitted == nil else { return false }
+        return WalletEthereumSignature.verifyOwnership(context.payment, requester: context.ownerID,
+            receiver: context.peerID, server: chat.serverAddress)
+    }
+
+    private var primaryButtonTitle: String {
+        if transfers.busy { return "Подтверждение и отправка…" }
+        if submitted != nil { return "Вернуться в чат" }
+        if quoteLoading { return "Проверка сети…" }
+        if reviewing { return canSendUSDT ? "Подтвердить и отправить USDT" : "Обновить реквизиты или расчёт" }
+        return "Проверить перевод"
     }
 
     private var normalizedRecipient: String { recipient.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -61,11 +83,13 @@ struct WalletSendFlowView: View {
     }
 
     private func clearQuote() {
+        if transfers.busy { transfers.cancelAuthorization() }
         quoteGeneration = UUID()
         evmQuote = nil
         quoteLoading = false
         quoteError = nil
         reviewing = false
+        approvedWalletID = nil
     }
 
     private func prepareReview() {
@@ -94,6 +118,7 @@ struct WalletSendFlowView: View {
                 guard quoteGeneration == currentGeneration, recipientContextValid, access.activeWalletID == walletID,
                       chains.address(for: .ethereum)?.caseInsensitiveCompare(sender) == .orderedSame else { return }
                 evmQuote = prepared
+                approvedWalletID = walletID
                 reviewing = true
                 UISelectionFeedbackGenerator().selectionChanged()
             } catch {
@@ -219,7 +244,9 @@ struct WalletSendFlowView: View {
                                     Label("Сетевая комиссия не рассчитана", systemImage: "exclamationmark.shield")
                                         .font(.footnote).foregroundStyle(.orange)
                                 }
-                                Text("Это предварительный расчёт, а не отправка. Подпись и публикация Mainnet-транзакций пока отключены.")
+                                Text(chatRecipient?.payment.asset == .usdtEthereum
+                                    ? "После подтверждения сумма и получатель будут подписаны на этом устройстве. Перевод необратим; комиссия списывается в ETH."
+                                    : "Для этого актива доступна только подготовка. Подпись и публикация пока отключены.")
                                     .font(.footnote).foregroundStyle(WalletTheme.secondary)
                                 if selected == .ethereum {
                                     Text("Адрес проверен по формату, но EIP-55 checksum пока не проверяется. Перед отправкой сверяйте его с получателем.")
@@ -228,6 +255,15 @@ struct WalletSendFlowView: View {
                             }
                         }
                     }
+                    if let submitted {
+                        WalletCard {
+                            SpyderTransferStatusView(transfer: SpyderTransferEnvelope(requestID: submitted.requestID,
+                                txHash: submitted.txHash, intent: submitted.intent, submittedAt: submitted.submittedAt, binding: submitted.binding, authorizationSignature: submitted.authorizationSignature))
+                        }
+                        Text("Попытка сохранена. Статус проверяется по хешу; повторная отправка автоматически не выполняется.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if let error = transfers.error { Text(error).font(.footnote).foregroundStyle(.red) }
                     if let quoteError {
                         Label(quoteError, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.orange)
@@ -238,25 +274,32 @@ struct WalletSendFlowView: View {
                 }
                 .foregroundStyle(WalletTheme.ink)
                 .padding(20)
+                .disabled(transfers.busy || submitted != nil)
             }
             .safeAreaInset(edge: .bottom) {
                 Button {
-                    if !reviewing { prepareReview() }
+                    if submitted != nil { dismiss() }
+                    else if !reviewing { prepareReview() }
+                    else if canSendUSDT { confirmUSDT = true }
+                    else if chatRecipient?.payment.asset == .usdtEthereum && recipientContextValid { clearQuote(); prepareReview() }
                     else { showUnavailable = true }
                 } label: {
-                    Label(LocalizedStringKey(quoteLoading ? "Проверка сети…" : reviewing ? "Отправка пока недоступна" : "Проверить перевод"), systemImage: reviewing ? "lock.shield" : "arrow.right")
+                    Label(LocalizedStringKey(primaryButtonTitle), systemImage: reviewing ? "lock.shield" : "arrow.right")
                         .spyderPrimaryButton()
                 }
                 .buttonStyle(.plain)
-                .disabled(!validToReview || quoteLoading)
-                .opacity(validToReview && !quoteLoading ? 1 : 0.45)
+                .disabled(transfers.busy || (submitted == nil && (!validToReview || quoteLoading)))
+                .opacity(submitted != nil || (validToReview && !quoteLoading) ? 1 : 0.45)
                 .padding(.horizontal, 20).padding(.vertical, 10)
                 .background(WalletTheme.canvas)
             }
             .background(WalletTheme.canvas.ignoresSafeArea())
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Закрыть") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Закрыть") { dismiss() }.disabled(transfers.busy) } }
         }
+        .interactiveDismissDisabled(transfers.busy)
+        .onDisappear { pageVisible = false; transfers.cancelAuthorization() }
         .onAppear {
+            pageVisible = true
             if let preselected { selected = preselected }
             if let context = chatRecipient {
                 selected = .ethereum; evmAsset = context.payment.asset.evmAsset
@@ -272,6 +315,11 @@ struct WalletSendFlowView: View {
         }
         .onChange(of: access.activeWalletID) { _, _ in clearQuote() }
         .onChange(of: chat.activePersonaID) { _, _ in if chatRecipient != nil { clearQuote() } }
+        .confirmationDialog("Отправить USDT в Ethereum?", isPresented: $confirmUSDT, titleVisibility: .visible) {
+            Button("Подтвердить через Face ID / код") { sendUSDT() }
+        } message: {
+            Text("\(amount) USDT → \(chatRecipient?.name ?? "")\n\(normalizedRecipient)\nМаксимальная комиссия: \(evmQuote?.maxFeeETH ?? "") ETH")
+        }
         .sheet(isPresented: $showAddressBook) {
             WalletAddressBookView(onSelect: { entry in
                 selected = entry.chain
@@ -287,7 +335,30 @@ struct WalletSendFlowView: View {
         .alert("Отправка ещё не включена", isPresented: $showUnavailable) {
             Button("Понятно", role: .cancel) { }
         } message: {
-            Text("Вы не отправили средства. Подпись и публикация Mainnet-транзакций станут доступны после прохождения криптографических и сетевых тестов.")
+            Text("Если это USDT, заново запроси подписанные реквизиты и обнови расчёт комиссии. ETH и USDC пока не отправляются из этого экрана. Вы не отправили средства. Для продолжения нужны действующие реквизиты и свежий расчёт.")
         }
     }
+    private func sendUSDT() {
+        guard canSendUSDT, !transfers.busy, let quote = evmQuote, let recipient = chatRecipient,
+              let sender = chains.address(for: .ethereum) else { return }
+        let walletID = access.activeWalletID, server = chat.serverAddress
+        do {
+            let intent = try WalletEVMUnsignedIntent(quote: quote, expectedSender: sender)
+            Task {
+                let result = await transfers.send(intent: intent, quote: quote, walletID: walletID,
+                    recipient: recipient, server: server, authorize: {
+                        pageVisible && scenePhase == .active && access.unlocked &&
+                        access.activeWalletID == walletID && chat.serverAddress == server && recipientContextValid &&
+                        reviewing && evmQuote == quote && approvedWalletID == walletID
+                    })
+                submitted = result ?? transfers.records.first(where: { $0.walletID == walletID && $0.intent == intent })
+                if submitted != nil {
+                    await transfers.announce(chat: chat)
+                    await assets.refresh(addresses: chains.addresses)
+                }
+                else { clearQuote() }
+            }
+        } catch { quoteError = error.localizedDescription; reviewing = false }
+    }
+
 }

@@ -17,6 +17,7 @@ struct WalletEVMOutgoingEvidence: Equatable {
     let blockHash: String
     let confirmations: UInt64
     let succeeded: Bool
+    var blockTimestamp: UInt64? = nil
 }
 
 enum WalletEVMOutgoingAssessment: Equatable {
@@ -62,7 +63,8 @@ struct WalletEVMOutgoingTracker {
         self.transport = transport
     }
 
-    func reconcile(txHash: String, intent: WalletEVMUnsignedIntent) async throws -> WalletEVMOutgoingAssessment {
+    func reconcile(txHash: String, intent: WalletEVMUnsignedIntent, notBefore: Int? = nil) async throws -> WalletEVMOutgoingAssessment {
+        guard notBefore.map({ $0 >= 0 && $0 <= Int(Date().timeIntervalSince1970) + 300 }) ?? true else { throw WalletEVMOutgoingError.invalidIntent }
         guard Self.isHash(txHash) else { throw WalletEVMOutgoingError.invalidHash }
         guard WalletEVMUnits.isAddress(intent.sender), WalletEVMUnits.isAddress(intent.recipient),
               intent.sender.caseInsensitiveCompare(intent.recipient) != .orderedSame,
@@ -76,7 +78,7 @@ struct WalletEVMOutgoingTracker {
         var errors: [WalletEVMOutgoingError] = []
         for endpoint in endpoints {
             do {
-                switch try await inspect(endpoint, txHash: txHash, intent: intent) {
+                switch try await inspect(endpoint, txHash: txHash, intent: intent, notBefore: notBefore) {
                 case .notSeen: unseen += 1
                 case .pending: pending += 1
                 case .observed(let entry): observations.append(entry)
@@ -91,13 +93,13 @@ struct WalletEVMOutgoingTracker {
                 guard first.blockHash.caseInsensitiveCompare(next.blockHash) == .orderedSame,
                       first.blockNumber == next.blockNumber,
                       first.succeeded == next.succeeded,
-                      first.nonce == next.nonce else { throw WalletEVMOutgoingError.inconsistentProviders }
+                      first.nonce == next.nonce, first.blockTimestamp == next.blockTimestamp else { throw WalletEVMOutgoingError.inconsistentProviders }
             }
             let lowest = observations.map(\.confirmations).min() ?? 0
             let evidence = WalletEVMOutgoingEvidence(txHash: first.txHash, sender: first.sender,
                 recipient: first.recipient, asset: first.asset, amountBaseUnits: first.amountBaseUnits,
                 nonce: first.nonce, blockNumber: first.blockNumber, blockHash: first.blockHash,
-                confirmations: lowest, succeeded: first.succeeded)
+                confirmations: lowest, succeeded: first.succeeded, blockTimestamp: first.blockTimestamp)
             // Two consistent RPC answers and 12 confirmations are necessary for a final UI status.
             if observations.count >= 2 && lowest >= Self.confirmationsRequired {
                 return evidence.succeeded ? .confirmed(evidence) : .reverted(evidence)
@@ -111,7 +113,7 @@ struct WalletEVMOutgoingTracker {
 
     private enum Observation { case notSeen, pending, observed(WalletEVMOutgoingEvidence) }
 
-    private func inspect(_ endpoint: URL, txHash: String, intent: WalletEVMUnsignedIntent) async throws -> Observation {
+    private func inspect(_ endpoint: URL, txHash: String, intent: WalletEVMUnsignedIntent, notBefore: Int?) async throws -> Observation {
         guard Self.quantity(try await string(endpoint, "eth_chainId", [])) == 1 else {
             throw WalletEVMOutgoingError.wrongNetwork
         }
@@ -150,6 +152,14 @@ struct WalletEVMOutgoingTracker {
               let head = Self.quantity(try await string(endpoint, "eth_blockNumber", [])), head >= mined else {
             throw WalletEVMOutgoingError.inconsistentProviders
         }
+        let blockTime = (canonical["timestamp"] as? String).flatMap(Self.quantity)
+        if let notBefore {
+            guard let seconds = blockTime,
+                  seconds >= UInt64(max(0, notBefore - 300)),
+                  seconds <= UInt64(Date().timeIntervalSince1970) + 300 else {
+                throw WalletEVMOutgoingError.mismatchedTransaction
+            }
+        }
         // ERC-20 success must prove the actual token transfer, not merely successful execution.
         if statusCode == 1 && intent.asset != .eth {
             guard let logs = receipt["logs"] as? [[String: Any]],
@@ -170,7 +180,7 @@ struct WalletEVMOutgoingTracker {
         return .observed(WalletEVMOutgoingEvidence(txHash: txHash.lowercased(), sender: intent.sender,
             recipient: intent.recipient, asset: intent.asset, amountBaseUnits: intent.baseUnits,
             nonce: intent.nonce, blockNumber: mined, blockHash: blockHash.lowercased(),
-            confirmations: head - mined + 1, succeeded: statusCode == 1))
+            confirmations: head - mined + 1, succeeded: statusCode == 1, blockTimestamp: blockTime))
     }
 
     private static func isHash(_ value: String) -> Bool {

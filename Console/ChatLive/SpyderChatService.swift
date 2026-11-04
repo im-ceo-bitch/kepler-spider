@@ -934,7 +934,7 @@ final class SpyderChatStore: ObservableObject {
         }
     }
 
-    func sendMessage(to peer: String, text: String) async -> Bool {
+    func sendMessage(to peer: String, text: String, clientID: String = UUID().uuidString.lowercased()) async -> Bool {
         let clean = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2000))
         guard !clean.isEmpty, let own = identity else { return false }
         do {
@@ -942,7 +942,6 @@ final class SpyderChatStore: ObservableObject {
             guard own.id == identity?.id else { return false }
             let keys = try await fetchPeerKeys(peer)
             guard own.id == identity?.id else { return false }
-            let clientID = UUID().uuidString.lowercased()
             let cipher = try SpyderMessageCrypto.seal(clean, sender: own.id, recipient: peer,
                                                        peerKeys: keys, clientID: clientID, personaID: own.id)
             struct Ack: Decodable { let status: String }

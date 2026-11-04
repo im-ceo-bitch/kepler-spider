@@ -60,7 +60,7 @@ class Stage7Verification(unittest.TestCase):
         guard = (CORE/'WalletEVMSignedEnvelopeGuard.swift').read_text()
         send = (ROOT/'Console/Features/Wallet/WalletSendFlowView.swift').read_text()
         spec = (ROOT/'project.yml').read_text()
-        self.assertIn('WalletEVMSignedEnvelopeGuard.fingerprints', signer)
+        self.assertIn('WalletEthereumSignature.verify(raw:', signer)
         self.assertIn('WalletEVMKeccak256.hex(raw)', guard)
         self.assertIn('WalletEVMKeccak256.hex(unsigned)', guard)
         self.assertNotIn('eth_sendRawTransaction', send)

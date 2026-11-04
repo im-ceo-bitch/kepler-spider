@@ -1,10 +1,13 @@
 import SwiftUI
+import LocalAuthentication
 
 @MainActor
 struct SpyderChatPaymentView: View {
+    @EnvironmentObject private var transfers: WalletUSDTTransferStore
     @EnvironmentObject private var chat: SpyderChatStore
     @EnvironmentObject private var chains: WalletChainStore
     @EnvironmentObject private var access: WalletAccess
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     let contact: WalletContact
     var incomingRequest: SpyderPaymentEnvelope? = nil
@@ -16,15 +19,24 @@ struct SpyderChatPaymentView: View {
     @State private var reviewRecipient: SpyderChatRecipient?
     @State private var notice: String?
     @State private var clock = Date()
+    @State private var addressContext: LAContext?
+    @State private var addressGeneration = UUID()
+    @State private var pageVisible = false
 
     private var messages: [SpyderServerMessage] { chat.messageByPeer[contact.id] ?? [] }
     private var recipient: SpyderPaymentEnvelope? {
         SpyderPaymentEnvelope.recipient(in: messages, peer: contact.id, owner: chat.activePersonaID ?? "",
             asset: asset, now: Int(clock.timeIntervalSince1970))
     }
+    private var ownershipVerified: Bool {
+        guard let reply = recipient, let owner = chat.activePersonaID else { return false }
+        return WalletEthereumSignature.verifyOwnership(reply, requester: owner, receiver: contact.id, server: chat.serverAddress)
+    }
     private var canShare: Bool {
-        access.unlocked && chains.verifiedForReceiving && chains.verifiedWalletID == access.activeWalletID &&
-        chains.address(for: .ethereum) != nil && incomingRequest?.isValid(now: Int(clock.timeIntervalSince1970)) == true
+        guard access.unlocked, incomingRequest?.isValid(now: Int(clock.timeIntervalSince1970)) == true else { return false }
+        // For USDT, the signer derives and proves the address in one user-presence operation.
+        if incomingRequest?.asset == .usdtEthereum { return true }
+        return chains.verifiedForReceiving && chains.verifiedWalletID == access.activeWalletID && chains.address(for: .ethereum) != nil
     }
     private var recipientContext: SpyderChatRecipient? {
         guard let payment = recipient, let owner = chat.activePersonaID else { return nil }
@@ -49,7 +61,7 @@ struct SpyderChatPaymentView: View {
                         }
                         Text(asset.network).foregroundStyle(.secondary)
                     }
-                    Text("Сейчас доступна подготовка переводов в сети Ethereum. Подпись и отправка средств ещё не включены.")
+                    Text("Отправка доступна для USDT ERC-20. ETH и USDC пока доступны только для подготовки реквизитов и комиссии.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 if let request = incomingRequest {
@@ -72,12 +84,16 @@ struct SpyderChatPaymentView: View {
                 } else {
                     Section("Получатель") {
                         if let reply = recipient, let address = reply.address {
-                            Label("Реквизиты получены от собеседника", systemImage: "checkmark.shield")
+                            Label(ownershipVerified ? "Владение адресом подтверждено подписью" : "Реквизиты получены от собеседника", systemImage: "checkmark.shield")
+                            if asset == .usdtEthereum && !ownershipVerified {
+                                Text("Для отправки USDT запроси реквизиты заново. Собеседник должен подтвердить адрес в обновлённом приложении.")
+                                    .font(.footnote).foregroundStyle(.orange)
+                            }
                             Text(address).font(.footnote.monospaced()).textSelection(.enabled)
                             Text("Подпись чата подтверждает отправителя реквизитов. Сверь отпечаток ключей с человеком перед первым переводом.")
                                 .font(.footnote).foregroundStyle(.secondary)
                             Button("Выбрать сумму и проверить комиссию") { reviewRecipient = recipientContext; preparing = reviewRecipient != nil }
-                                .disabled(!access.unlocked)
+                                .disabled(!access.unlocked || (asset == .usdtEthereum && !ownershipVerified))
                         } else {
                             Text("Запроси реквизиты. Собеседник подтвердит адрес своего кошелька; вручную копировать его не потребуется.")
                                 .font(.subheadline)
@@ -88,6 +104,14 @@ struct SpyderChatPaymentView: View {
                         }.disabled(sending || !chat.encryptionReady)
                     }
                 }
+                if !transfers.records.filter({ $0.ownerID == chat.activePersonaID && $0.peerID == contact.id }).isEmpty {
+                    Section("Мои последние переводы") {
+                        ForEach(Array(transfers.records.filter { $0.ownerID == chat.activePersonaID && $0.peerID == contact.id }.suffix(5).reversed())) { record in
+                            SpyderTransferStatusView(transfer: SpyderTransferEnvelope(requestID: record.requestID,
+                                txHash: record.txHash, intent: record.intent, submittedAt: record.submittedAt, binding: record.binding, authorizationSignature: record.authorizationSignature), enabled: !preparing)
+                        }
+                    }
+                }
                 if let notice { Section { Text(notice).font(.footnote) } }
                 if let error = chat.errorMessage { Section { Text(error).foregroundStyle(.red).font(.footnote) } }
             }
@@ -96,12 +120,17 @@ struct SpyderChatPaymentView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Закрыть") { dismiss() } } }
             .onChange(of: asset) { _, _ in preparing = false; notice = nil }
             .onChange(of: access.activeWalletID) { _, id in
+                cancelAddressAuthorization()
                 confirmShare = false; preparing = false; chains.selectAccount(id)
             }
-            .onChange(of: chat.activePersonaID) { _, _ in dismiss() }
+            .onChange(of: chat.activePersonaID) { _, _ in cancelAddressAuthorization(); dismiss() }
+            .onChange(of: scenePhase) { _, phase in if phase == .background { cancelAddressAuthorization() } }
+            .onAppear { pageVisible = true }
+            .onDisappear { pageVisible = false; cancelAddressAuthorization() }
             .task {
                 asset = initialAsset
                 chains.selectAccount(access.activeWalletID)
+                await transfers.reload()
                 while !Task.isCancelled {
                     clock = Date()
                     do { try await Task.sleep(for: .seconds(1)) } catch { break }
@@ -118,11 +147,36 @@ struct SpyderChatPaymentView: View {
             }
             .confirmationDialog("Передать адрес текущего кошелька?", isPresented: $confirmShare, titleVisibility: .visible) {
                 Button("Поделиться адресом") {
-                    guard canShare, let request = incomingRequest, let address = chains.address(for: .ethereum),
-                          let reply = SpyderPaymentEnvelope.response(to: request, address: address) else { return }
-                    send(reply)
+                    guard canShare, let request = incomingRequest else { return }
+                    if request.asset == .usdtEthereum { signAndShare(request) }
+                    else if let address = chains.address(for: .ethereum), let reply = SpyderPaymentEnvelope.response(to: request, address: address) { send(reply) }
                 }
             } message: { Text("Собеседник сможет связать этот публичный адрес с твоей личностью чата и посмотреть его операции в блокчейне.") }
+        }
+    }
+    private func cancelAddressAuthorization() {
+        addressGeneration = UUID(); addressContext?.invalidate(); addressContext = nil; sending = false
+    }
+    private func signAndShare(_ reply: SpyderPaymentEnvelope) {
+        guard !sending, let receiver = chat.activePersonaID else { return }
+        sending = true
+        let action = UUID(); addressGeneration = action
+        let walletID = access.activeWalletID, server = chat.serverAddress
+        let context = LAContext(); addressContext = context
+        context.touchIDAuthenticationAllowableReuseDuration = 0
+        Task {
+            defer { if addressGeneration == action { sending = false; addressContext = nil } }
+            do {
+                let signed = try await Task.detached(priority: .userInitiated) {
+                    try WalletEVMOfflineSigner.signReceivingAddress(reply, requester: contact.id, receiver: receiver,
+                        server: server, walletID: walletID, context: context)
+                }.value
+                guard pageVisible, addressGeneration == action, access.unlocked, access.activeWalletID == walletID, chat.activePersonaID == receiver,
+                      chat.serverAddress == server, scenePhase != .background, let payload = signed.payload else { return }
+                if await chat.sendMessage(to: contact.id, text: payload) {
+                    notice = "Адрес подтверждён подписью кошелька и отправлен собеседнику. Средства не переводились."
+                }
+            } catch { if addressGeneration == action { notice = error.localizedDescription } }
         }
     }
     private func send(_ envelope: SpyderPaymentEnvelope) {

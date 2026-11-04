@@ -6,7 +6,7 @@ import FoundationNetworking
 // Block 7, stage 1: READ-ONLY Ethereum mainnet preflight.
 // Nothing in this file has access to seed words, private keys or an RPC broadcast method.
 // A quote is informational and MUST NOT be treated as an authorization to send.
-enum WalletEVMAsset: String, CaseIterable, Identifiable {
+enum WalletEVMAsset: String, CaseIterable, Identifiable, Codable, Sendable {
     case eth = "ETH", usdt = "USDT", usdc = "USDC"
     var id: String { rawValue }
     var decimals: Int { self == .eth ? 18 : 6 }
