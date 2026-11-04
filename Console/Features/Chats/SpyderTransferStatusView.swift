@@ -10,22 +10,30 @@ struct SpyderTransferStatusView: View {
     @State private var error: String?
     @State private var checkedAt: Date?
 
-    private var status: String {
+    private var status: LocalizedStringKey {
         if error != nil { return "Проверка сети недоступна" }
         switch assessment {
         case .confirmed: return outgoing ? "Перевод подтверждён в Ethereum" : "Получено в Ethereum"
         case .reverted: return "Транзакция завершилась ошибкой"
-        case .observed(let proof, let providers): return "В блоке · \(proof.confirmations) подтверждений · \(providers)/2 источников"
+        case .observed(let proof, let providers): return "В блоке · \(String(proof.confirmations)) подтверждений · \(String(providers))/2 источников"
         case .pending: return "Ожидает включения в блок"
         case .notSeen: return "Результат отправки пока неизвестен"
         case nil: return "Проверяем транзакцию…"
         }
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Label(transfer.intent.amount + " USDT", systemImage: outgoing ? "arrow.up.right" : "arrow.down.left")
-                .font(.headline)
-            Text("Ethereum · ERC-20").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: outgoing ? "arrow.up.right" : "arrow.down.left")
+                    .font(.headline).frame(width: 36, height: 36)
+                    .background(.primary.opacity(0.08), in: Circle())
+                    .accessibilityLabel(outgoing ? "Исходящий перевод" : "Входящий перевод")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(transfer.intent.amount + " USDT")
+                        .font(.title3.weight(.semibold)).monospacedDigit()
+                    Text("Ethereum · ERC-20").font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Text(status).font(.subheadline.weight(.medium))
             if case .reverted = assessment {
                 Text("USDT не переведены. Сеть могла списать комиссию в ETH.").font(.caption).foregroundStyle(.secondary)
@@ -33,12 +41,23 @@ struct SpyderTransferStatusView: View {
                 Text("Не повторяй перевод, пока не выяснен результат этой попытки.").font(.caption).foregroundStyle(.secondary)
             }
             if let error { Text(error).font(.caption).foregroundStyle(.secondary) }
-            if let checkedAt { Text("Проверено: " + checkedAt.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
-            DisclosureGroup("Транзакция и получатель") {
-                Text(transfer.txHash).font(.caption2.monospaced()).textSelection(.enabled)
-                Text(transfer.intent.recipient).font(.caption2.monospaced()).textSelection(.enabled)
-                Link("Открыть в Etherscan", destination: URL(string: "https://etherscan.io/tx/" + transfer.txHash)!)
-            }.font(.caption)
+            if let checkedAt {
+                Text("Проверено в \(checkedAt.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            DisclosureGroup("Детали перевода") {
+                VStack(alignment: .leading, spacing: 10) {
+                    detail("Хеш транзакции", value: transfer.txHash)
+                    detail("Адрес получателя", value: transfer.intent.recipient)
+                    if let url = URL(string: "https://etherscan.io/tx/" + transfer.txHash) {
+                        Link(destination: url) {
+                            Label("Открыть в Etherscan", systemImage: "arrow.up.right.square")
+                        }.frame(minHeight: 44)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
+            }.font(.subheadline).tint(.primary)
         }
         .task(id: "\(transfer.txHash)-\(scenePhase == .active)-\(sectionActive)-\(enabled)") {
             guard enabled, scenePhase == .active, sectionActive else { return }
@@ -51,6 +70,13 @@ struct SpyderTransferStatusView: View {
                 catch { self.error = error.localizedDescription }
                 do { try await Task.sleep(for: .seconds(12)) } catch { return }
             }
+        }
+    }
+
+    private func detail(_ title: LocalizedStringKey, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.caption.monospaced()).textSelection(.enabled)
         }
     }
 }

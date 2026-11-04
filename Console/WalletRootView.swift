@@ -231,17 +231,14 @@ struct WalletRootView: View {
     }
 
     private var bottomBar: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 0) {
             tabButton(.wallet, title: "Кошелёк", symbol: "wallet.pass")
             tabButton(.chats, title: "Чаты", symbol: "message")
         }
-        .padding(5)
-        .background(WalletTheme.surface, in: Capsule())
-        .overlay(Capsule().stroke(WalletTheme.divider, lineWidth: 1))
-        .padding(.horizontal, 22)
-        .padding(.bottom, 8)
-        .padding(.top, 9)
-        .background(WalletTheme.canvas.opacity(0.96))
+        .padding(.horizontal, WalletTheme.pageInset)
+        .padding(.vertical, 3)
+        .background(WalletTheme.canvas)
+        .overlay(alignment: .top) { Divider() }
     }
 
     private func tabButton(_ tab: WalletTab, title: String, symbol: String) -> some View {
@@ -253,14 +250,18 @@ struct WalletRootView: View {
                 selectedTab = tab
             }
         } label: {
-            HStack(spacing: 10) {
-                Image(systemName: symbol).font(.system(size: 19, weight: .medium))
-                Text(LocalizedStringKey(title)).font(.system(size: 16, weight: .medium))
+            VStack(spacing: 3) {
+                Image(systemName: symbol)
+                    .symbolVariant(isSelected ? .fill : .none)
+                    .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
+                    .accessibilityHidden(true)
+                Text(LocalizedStringKey(title))
+                    .font(.caption.weight(isSelected ? .semibold : .regular))
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 52)
-            .foregroundStyle(isSelected ? WalletTheme.contrast : WalletTheme.secondary)
-            .background(isSelected ? WalletTheme.accent : .clear, in: Capsule())
+            .frame(minHeight: 48)
+            .foregroundStyle(isSelected ? WalletTheme.ink : WalletTheme.secondary)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])

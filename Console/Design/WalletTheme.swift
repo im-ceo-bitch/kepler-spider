@@ -1,12 +1,14 @@
 import SwiftUI
 
-// Apple-native adaptive colors. Deliberately no legacy ConsoleTheme or themed assets.
+// Shared palette and layout for the light wallet interface.
 enum WalletTheme {
+    static let pageInset: CGFloat = 20
+    static let cornerRadius: CGFloat = 16
     static let ink = Color(white: 0.08)
-    static let secondary = Color(white: 0.46)
+    static let secondary = Color(white: 0.38)
     static let canvas = Color.white
-    static let surface = Color(white: 0.97)
-    static let divider = Color.black.opacity(0.07)
+    static let surface = Color(white: 0.965)
+    static let divider = Color.black.opacity(0.10)
     static let accent = Color.black
     static let contrast = Color.white
 }
@@ -37,15 +39,14 @@ struct WalletCard<Content: View>: View {
         content
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 25, style: .continuous))
-            .shadow(color: .black.opacity(0.025), radius: 13, y: 4)
+            .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: WalletTheme.cornerRadius, style: .continuous))
     }
 }
 
 struct WalletDemoLabel: View {
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: "checkmark.shield")
+            Image(systemName: "testtube.2")
             Text("DEMO · БЕЗ РЕАЛЬНЫХ СРЕДСТВ")
         }
         .font(.system(size: 10, weight: .semibold, design: .rounded))
@@ -63,10 +64,11 @@ extension View {
 private struct SpyderPrimaryButtonStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .font(.system(size: 16, weight: .semibold))
+            .font(.headline)
             .foregroundStyle(WalletTheme.contrast)
             .frame(maxWidth: .infinity)
-            .frame(height: 55)
-            .background(WalletTheme.accent, in: Capsule())
+            .padding(.vertical, 14)
+            .frame(minHeight: 50)
+            .background(WalletTheme.accent, in: RoundedRectangle(cornerRadius: WalletTheme.cornerRadius, style: .continuous))
     }
 }

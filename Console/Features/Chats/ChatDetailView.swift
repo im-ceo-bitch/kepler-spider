@@ -49,10 +49,17 @@ struct ChatDetailView: View {
                     LazyVStack(spacing: 10) {
                         if messages.isEmpty {
                             VStack(spacing: 10) {
-                                Image(systemName: "arrow.up.right").font(.title2)
-                                Text("Деньги — в контексте разговора").font(.headline)
-                                Text("Обсуди перевод и запроси реквизиты кнопкой «Перевести».")
+                                Image(systemName: "bubble.left.and.bubble.right")
+                                    .font(.title2.weight(.medium)).frame(width: 56, height: 56)
+                                    .background(WalletTheme.surface, in: Circle())
+                                Text("Переписка с \(contact.name)").font(.headline)
+                                Text("Напиши первое сообщение или запроси реквизиты для перевода.")
                                     .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                                Button { openPayment() } label: {
+                                    Label("Перевести", systemImage: "arrow.up.right")
+                                        .font(.subheadline.weight(.semibold)).padding(.horizontal, 18).frame(minHeight: 44)
+                                        .background(WalletTheme.ink, in: Capsule()).foregroundStyle(WalletTheme.canvas)
+                                }.buttonStyle(.plain)
                             }.padding(.vertical, 45).padding(.horizontal, 25)
                         }
                         ForEach(messages) { message in
@@ -85,15 +92,19 @@ struct ChatDetailView: View {
                             seed: peerAvatar?.seed ?? "")
                         VStack(alignment: .leading, spacing: 2) {
                             Text(contact.name).font(.subheadline.bold()).lineLimit(1)
-                            Text(summary?.typing == true ? "печатает…" : "Защищённый чат")
+                            Text(summary?.typing == true ? "печатает…" : (chat.encryptionReady ? "Защищённый чат" : "Подготовка ключей"))
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     }.foregroundStyle(WalletTheme.ink)
                 }.buttonStyle(.plain)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { openPayment() } label: { Label("Перевести", systemImage: "arrow.up.right") }
-                    .font(.subheadline.weight(.semibold))
+                Button { openPayment() } label: {
+                    Image(systemName: "arrow.up.right").font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WalletTheme.canvas).frame(width: 32, height: 32)
+                        .background(WalletTheme.ink, in: Circle()).frame(width: 44, height: 44)
+                }
+                    .accessibilityLabel("Перевести")
                     .accessibilityIdentifier("spyder.chat.transfer")
             }
         }
@@ -146,17 +157,19 @@ struct ChatDetailView: View {
                 Button { choosingPersona = true } label: { Label("Личность: " + chat.myName, systemImage: "person.crop.circle.badge.checkmark") }
                 Button { showingSecurity = true } label: { Label("Проверить ключи", systemImage: "lock.shield") }
             } label: {
-                Image(systemName: "plus").font(.title3).frame(width: 36, height: 42)
+                Image(systemName: "plus").font(.body.weight(.medium)).frame(width: 44, height: 44)
+                    .background(WalletTheme.surface, in: Circle())
             }.accessibilityLabel("Действия в чате")
             TextField("Сообщение…", text: $draft, axis: .vertical)
                 .font(.body).lineLimit(1...5).focused($composerFocused)
                 .submitLabel(.send).onSubmit(send)
                 .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(Color(white: 0.96), in: RoundedRectangle(cornerRadius: 22))
+                .frame(minHeight: 44)
+                .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             Button(action: send) {
                 Group { if sending { ProgressView().tint(.white) } else { Image(systemName: "arrow.up").font(.headline) } }
-                    .foregroundStyle(.white).frame(width: 42, height: 42)
-                    .background(canSend ? Color.black : Color.gray.opacity(0.4), in: Circle())
+                    .foregroundStyle(.white).frame(width: 44, height: 44)
+                    .background(canSend ? WalletTheme.ink : Color.gray, in: Circle())
             }.disabled(!canSend).accessibilityLabel("Отправить сообщение")
         }
         .foregroundStyle(.black).padding(.horizontal, 12).padding(.vertical, 8)
@@ -167,6 +180,9 @@ struct ChatDetailView: View {
         let outgoing = chat.isOutgoing(message)
         let payment = message.verified ? SpyderPaymentEnvelope.decode(message.text) : nil
         let transfer = message.verified ? SpyderTransferEnvelope.decode(message.text) : nil
+        let darkBubble = outgoing && payment == nil && transfer == nil
+        let bubbleShape = UnevenRoundedRectangle(topLeadingRadius: 19, bottomLeadingRadius: outgoing ? 19 : 5,
+            bottomTrailingRadius: outgoing ? 5 : 19, topTrailingRadius: 19)
         return HStack(alignment: .bottom, spacing: 0) {
             if outgoing { Spacer(minLength: 44) }
             VStack(alignment: .leading, spacing: 7) {
@@ -195,17 +211,17 @@ struct ChatDetailView: View {
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
                 HStack(spacing: 5) {
-                    Spacer(minLength: 0)
-                    Text(SpyderChatClock.text(message.created_at)).font(.caption2).foregroundStyle(.secondary)
+                    Text(SpyderChatClock.text(message.created_at)).font(.caption2)
+                        .foregroundStyle(darkBubble ? Color.white.opacity(0.78) : WalletTheme.secondary)
                     if outgoing && message.verified {
-                        SpyderReceiptMark(state: SpyderMessageReceipt(deliveredAt: message.delivered_at, readAt: message.read_at), accent: .black)
+                        SpyderReceiptMark(state: SpyderMessageReceipt(deliveredAt: message.delivered_at, readAt: message.read_at), accent: darkBubble ? .white : WalletTheme.ink)
                     }
                 }
             }
             .padding(.horizontal, 13).padding(.vertical, 9)
-            .frame(minWidth: 80, maxWidth: 300, alignment: .leading)
-            .background(outgoing ? Color(white: 0.94) : Color.white, in: RoundedRectangle(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.black.opacity(0.07), lineWidth: 0.6))
+            .foregroundStyle(darkBubble ? Color.white : WalletTheme.ink)
+            .background(darkBubble ? WalletTheme.ink : WalletTheme.surface, in: bubbleShape)
+            .overlay(bubbleShape.stroke(payment != nil || transfer != nil ? WalletTheme.divider : Color.clear, lineWidth: 1))
             .contextMenu {
                 Button { UIPasteboard.general.string = SpyderPaymentEnvelope.preview(message.text) } label: {
                     Label("Копировать", systemImage: "doc.on.doc")

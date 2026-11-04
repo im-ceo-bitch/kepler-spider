@@ -45,79 +45,31 @@ struct SpyderChatPaymentView: View {
     }
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Label(contact.name, systemImage: "person.crop.circle")
-                    if !contact.handle.isEmpty { Text(contact.handle).foregroundStyle(.secondary) }
-                    Text(incomingRequest == nil ? "Перевод собеседнику" : "Поделиться реквизитами для получения")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                Section("Актив и сеть") {
-                    if let request = incomingRequest {
-                        Text(request.asset.ticker + " · " + request.asset.network)
-                    } else {
-                        Picker("Актив", selection: $asset) {
-                            ForEach(SpyderPaymentAsset.allCases) { Text($0.ticker).tag($0) }
-                        }
-                        Text(asset.network).foregroundStyle(.secondary)
-                    }
-                    Text("Отправка доступна для USDT ERC-20. ETH и USDC пока доступны только для подготовки реквизитов и комиссии.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                if let request = incomingRequest {
-                    Section("Кошелёк получения") {
-                        Text("Будет передан адрес текущего кошелька. Личности чата используют тот кошелёк, который выбран в разделе «Кошелёк».")
-                            .font(.footnote).foregroundStyle(.secondary)
-                        if chains.verifiedForReceiving && chains.verifiedWalletID == access.activeWalletID,
-                           let address = chains.address(for: .ethereum) {
-                            Text(address).font(.footnote.monospaced()).textSelection(.enabled)
-                        }
-                        if !canShare {
-                            Button(chains.isLoading ? "Подтверждаем кошелёк…" : "Подтвердить адрес через Face ID / код") {
-                                chains.selectAccount(access.activeWalletID); chains.activate()
-                            }.disabled(chains.isLoading || !access.unlocked || !request.isValid())
-                        }
-                        Button("Поделиться в защищённом чате") { confirmShare = true }
-                            .disabled(!canShare || sending || !chat.encryptionReady)
-                        if let error = chains.errorMessage { Text(error).font(.footnote).foregroundStyle(.red) }
-                    }
-                } else {
-                    Section("Получатель") {
-                        if let reply = recipient, let address = reply.address {
-                            Label(ownershipVerified ? "Владение адресом подтверждено подписью" : "Реквизиты получены от собеседника", systemImage: "checkmark.shield")
-                            if asset == .usdtEthereum && !ownershipVerified {
-                                Text("Для отправки USDT запроси реквизиты заново. Собеседник должен подтвердить адрес в обновлённом приложении.")
-                                    .font(.footnote).foregroundStyle(.orange)
-                            }
-                            Text(address).font(.footnote.monospaced()).textSelection(.enabled)
-                            Text("Подпись чата подтверждает отправителя реквизитов. Сверь отпечаток ключей с человеком перед первым переводом.")
-                                .font(.footnote).foregroundStyle(.secondary)
-                            Button("Выбрать сумму и проверить комиссию") { reviewRecipient = recipientContext; preparing = reviewRecipient != nil }
-                                .disabled(!access.unlocked || (asset == .usdtEthereum && !ownershipVerified))
-                        } else {
-                            Text("Запроси реквизиты. Собеседник подтвердит адрес своего кошелька; вручную копировать его не потребуется.")
-                                .font(.subheadline)
-                        }
-                        Button(sending ? "Отправляем запрос…" : "Запросить актуальные реквизиты") {
-                            let request = SpyderPaymentEnvelope.request(asset: asset)
-                            send(request)
-                        }.disabled(sending || !chat.encryptionReady)
-                    }
-                }
-                if !transfers.records.filter({ $0.ownerID == chat.activePersonaID && $0.peerID == contact.id }).isEmpty {
-                    Section("Мои последние переводы") {
-                        ForEach(Array(transfers.records.filter { $0.ownerID == chat.activePersonaID && $0.peerID == contact.id }.suffix(5).reversed())) { record in
-                            SpyderTransferStatusView(transfer: SpyderTransferEnvelope(requestID: record.requestID,
-                                txHash: record.txHash, intent: record.intent, submittedAt: record.submittedAt, binding: record.binding, authorizationSignature: record.authorizationSignature), enabled: !preparing)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(incomingRequest == nil ? "Получатель" : "Запрос от")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Text(contact.name).font(.largeTitle.bold())
+                        if !contact.handle.isEmpty {
+                            Text(contact.handle).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
+                    assetSection
+                    if let request = incomingRequest { shareSection(request) }
+                    else { recipientSection }
+                    if let notice { Text(LocalizedStringKey(notice)).font(.footnote) }
+                    if let error = chat.errorMessage { Text(error).font(.footnote).foregroundStyle(.red) }
+                    historySection
                 }
-                if let notice { Section { Text(notice).font(.footnote) } }
-                if let error = chat.errorMessage { Section { Text(error).foregroundStyle(.red).font(.footnote) } }
+                .frame(maxWidth: 540, alignment: .leading)
+                .padding(20)
+                .frame(maxWidth: .infinity)
             }
-            .navigationTitle(incomingRequest == nil ? "Перевести" : "Реквизиты")
+            .background(Color(uiColor: .systemBackground))
+            .navigationTitle(incomingRequest == nil ? "Перевод" : "Поделиться реквизитами")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Закрыть") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
             .onChange(of: asset) { _, _ in preparing = false; notice = nil }
             .onChange(of: access.activeWalletID) { _, id in
                 cancelAddressAuthorization()
@@ -154,6 +106,119 @@ struct SpyderChatPaymentView: View {
             } message: { Text("Собеседник сможет связать этот публичный адрес с твоей личностью чата и посмотреть его операции в блокчейне.") }
         }
     }
+    private var assetSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Актив и сеть").font(.headline).accessibilityAddTraits(.isHeader)
+            HStack {
+                if let request = incomingRequest {
+                    Text(request.asset.ticker).font(.title3.weight(.semibold))
+                } else {
+                    Picker("Актив", selection: $asset) {
+                        ForEach(SpyderPaymentAsset.allCases) { Text($0.ticker).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(.primary)
+                }
+                Spacer(minLength: 12)
+                Text((incomingRequest?.asset ?? asset).network)
+                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+            }
+            .padding(.horizontal, 14).frame(minHeight: 52)
+            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+            if (incomingRequest?.asset ?? asset) != .usdtEthereum {
+                Text("Для этого актива доступны реквизиты и расчёт комиссии. Отправка доступна для USDT ERC-20.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func shareSection(_ request: SpyderPaymentEnvelope) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Твой адрес").font(.headline).accessibilityAddTraits(.isHeader)
+            Text("Собеседник получит адрес кошелька, выбранного во вкладке «Кошелёк».")
+                .font(.subheadline).foregroundStyle(.secondary)
+            if chains.verifiedForReceiving && chains.verifiedWalletID == access.activeWalletID,
+               let address = chains.address(for: .ethereum) {
+                addressLabel(address)
+            }
+            if !canShare {
+                Button(chains.isLoading ? "Подтверждаем кошелёк…" : "Подтвердить адрес через Face ID / код") {
+                    chains.selectAccount(access.activeWalletID); chains.activate()
+                }.buttonStyle(.bordered).disabled(chains.isLoading || !access.unlocked || !request.isValid())
+            }
+            Button { confirmShare = true } label: {
+                actionLabel("Поделиться реквизитами", icon: "arrow.up")
+            }.buttonStyle(ChatPaymentPrimaryButton()).disabled(!canShare || sending || !chat.encryptionReady)
+            if let error = chains.errorMessage { Text(error).font(.footnote).foregroundStyle(.red) }
+        }
+    }
+
+    private var recipientSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Реквизиты").font(.headline).accessibilityAddTraits(.isHeader)
+            if let reply = recipient, let address = reply.address {
+                let verified = ownershipVerified
+                Label(verified ? "Владение адресом подтверждено подписью" : "Реквизиты получены от собеседника",
+                      systemImage: verified ? "checkmark.shield" : "doc.text")
+                    .font(.subheadline.weight(.medium))
+                addressLabel(address)
+                Text("Подпись чата подтверждает отправителя реквизитов. Сверь отпечаток ключей с человеком перед первым переводом.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if asset == .usdtEthereum && !verified {
+                    Text("Для отправки USDT запроси реквизиты повторно. Собеседнику потребуется подтвердить адрес в обновлённом приложении.")
+                        .font(.footnote)
+                    requestButton(primary: true)
+                } else {
+                    Button {
+                        reviewRecipient = recipientContext
+                        preparing = reviewRecipient != nil
+                    } label: { actionLabel("Выбрать сумму и комиссию", icon: "arrow.right") }
+                        .buttonStyle(ChatPaymentPrimaryButton()).disabled(!access.unlocked)
+                    requestButton(primary: false)
+                }
+            } else {
+                Text("Запроси адрес у собеседника. После его ответа можно будет выбрать сумму и проверить комиссию.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                requestButton(primary: true)
+            }
+        }
+    }
+
+    @ViewBuilder private func requestButton(primary: Bool) -> some View {
+        let button = Button {
+            send(SpyderPaymentEnvelope.request(asset: asset))
+        } label: {
+            actionLabel(sending ? "Отправляем запрос…" : "Запросить реквизиты", icon: "arrow.up.right")
+        }.disabled(sending || !chat.encryptionReady)
+        if primary { button.buttonStyle(ChatPaymentPrimaryButton()) }
+        else { button.buttonStyle(.bordered).tint(.primary) }
+    }
+
+    private func addressLabel(_ address: String) -> some View {
+        Text(address).font(.footnote.monospaced()).textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading).padding(14)
+            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func actionLabel(_ title: LocalizedStringKey, icon: String) -> some View {
+        HStack(spacing: 10) { Text(title); Spacer(); Image(systemName: icon).accessibilityHidden(true) }
+    }
+
+    @ViewBuilder private var historySection: some View {
+        let recent = transfers.records.filter { $0.ownerID == chat.activePersonaID && $0.peerID == contact.id }.suffix(5).reversed()
+        if !recent.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Последние переводы").font(.headline).accessibilityAddTraits(.isHeader)
+                ForEach(Array(recent)) { record in
+                    Divider()
+                    SpyderTransferStatusView(transfer: SpyderTransferEnvelope(requestID: record.requestID,
+                        txHash: record.txHash, intent: record.intent, submittedAt: record.submittedAt,
+                        binding: record.binding, authorizationSignature: record.authorizationSignature), enabled: !preparing)
+                }
+            }
+        }
+    }
+
     private func cancelAddressAuthorization() {
         addressGeneration = UUID(); addressContext?.invalidate(); addressContext = nil; sending = false
     }
@@ -188,5 +253,16 @@ struct SpyderChatPaymentView: View {
             }
             sending = false
         }
+    }
+}
+
+private struct ChatPaymentPrimaryButton: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.headline)
+            .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 50)
+            .foregroundStyle(Color(uiColor: .systemBackground))
+            .background(Color.primary, in: RoundedRectangle(cornerRadius: 14))
+            .opacity(enabled ? (configuration.isPressed ? 0.78 : 1) : 0.48)
     }
 }

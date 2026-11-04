@@ -41,38 +41,45 @@ struct WalletOnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 12) {
                 if step != .start && step != .complete {
                     SpyderNavigationButton(symbol: "chevron.left", label: "Назад") { goBack() }
                 } else if step == .start && isAddingAccount {
                     SpyderNavigationButton(symbol: "xmark", label: "Закрыть") { dismiss() }
                 }
+                Text(verbatim: "Spyder Wallet")
+                    .font(.headline)
                 Spacer()
-                Text("SPYDER WALLET")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .tracking(2.4)
-                    .foregroundStyle(WalletTheme.secondary)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 22) {
-                    switch step {
-                    case .start: welcome
-                    case .backup: backup
-                    case .verify: verification
-                    case .importWallet: importFlow
-                    case .complete: completion
-                    }
+                switch step {
+                case .backup: stepLabel("01 / 02")
+                case .verify: stepLabel("02 / 02")
+                default: EmptyView()
                 }
-                .frame(maxWidth: 540)
-                .padding(.horizontal, 22)
-                .padding(.top, 30)
-                .padding(.bottom, 32)
-                .frame(maxWidth: .infinity)
+            }
+            .foregroundStyle(WalletTheme.ink)
+            .frame(minHeight: 48)
+            .padding(.horizontal, 20)
+            Divider()
+
+            GeometryReader { viewport in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        switch step {
+                        case .start: welcome
+                        case .backup: backup
+                        case .verify: verification
+                        case .importWallet: importFlow
+                        case .complete: completion
+                        }
+                    }
+                    .frame(minHeight: step == .start ? max(0, viewport.size.height - 48) : nil, alignment: .top)
+                    .frame(maxWidth: 540)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity, minHeight: viewport.size.height, alignment: .top)
+                }
+                .scrollDismissesKeyboard(.interactively)
                 .id(step)
-                .transition(.opacity)
             }
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
@@ -104,55 +111,51 @@ struct WalletOnboardingView: View {
     }
 
     private var welcome: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer(minLength: 16)
             Image("SpyderLaunchLogo")
                 .resizable().scaledToFit()
-                .frame(width: 132, height: 132)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 23)
-                .spyderReveal(0.01)
+                .frame(width: 72, height: 72)
+                .accessibilityHidden(true)
             Text("Ваш кошелёк.\nВаши ключи.")
-                .font(.system(size: 38, weight: .bold))
+                .font(.largeTitle.bold())
                 .foregroundStyle(WalletTheme.ink)
-                .fixedSize(horizontal: false, vertical: true)
-                .spyderReveal(0.08)
+                .padding(.top, 24)
+                .accessibilityAddTraits(.isHeader)
             Text("Все криптоактивы и контакты — в одном пространстве. Только ты контролируешь доступ к своему кошельку.")
-                .font(.system(size: 16))
+                .font(.body)
                 .foregroundStyle(WalletTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-                .spyderReveal(0.12)
-            Spacer(minLength: 15)
-            Button { create() } label: { Text("Создать кошелёк").spyderPrimaryButton() }
-                .buttonStyle(.plain)
-                .spyderReveal(0.18)
-            Button { step = .importWallet } label: {
-                Text("У меня уже есть кошелёк")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(WalletTheme.ink)
-                    .frame(maxWidth: .infinity).frame(height: 54)
-                    .background(WalletTheme.surface, in: Capsule())
+                .padding(.top, 12)
+            Spacer(minLength: 44)
+            VStack(spacing: 8) {
+                Button { create() } label: { Text("Создать кошелёк").spyderPrimaryButton() }
+                Button { step = .importWallet } label: {
+                    Text("У меня уже есть кошелёк")
+                        .font(.headline)
+                        .foregroundStyle(WalletTheme.ink)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                }
+                Label("Ключи хранятся в защищённом хранилище iPhone", systemImage: "lock")
+                    .font(.footnote)
+                    .foregroundStyle(WalletTheme.secondary)
+                    .padding(.top, 8)
             }
             .buttonStyle(.plain)
-            .spyderReveal(0.22)
-            Label("Ключи хранятся в защищённом хранилище iPhone", systemImage: "lock.shield")
-                .font(.system(size: 12))
-                .foregroundStyle(WalletTheme.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 12)
         }
     }
 
     private var backup: some View {
         VStack(alignment: .leading, spacing: 19) {
-            stepLabel("01 / 03")
             heading("Сохрани 12 слов", subtitle: "Это единственный способ восстановить кошелёк при потере устройства. Запиши их на бумаге в правильном порядке.")
             WalletCard {
                 VStack(spacing: 14) {
                     HStack {
-                        Label("Recovery Phrase", systemImage: "key.horizontal")
+                        Label("Фраза восстановления", systemImage: "key.horizontal")
                             .font(.system(size: 14, weight: .semibold))
                         Spacer()
-                        Image(systemName: "eye.slash")
+                        Image(systemName: reveal ? "eye" : "eye.slash")
+                            .accessibilityHidden(true)
                     }
                     .foregroundStyle(WalletTheme.ink)
                     if reveal {
@@ -187,7 +190,7 @@ struct WalletOnboardingView: View {
                 .buttonStyle(.plain)
             }
             Label("Никому не отправляй фразу. Скриншоты и обычные заметки не защищают твои средства.", systemImage: "exclamationmark.shield")
-                .font(.system(size: 13))
+                .font(.footnote)
                 .foregroundStyle(WalletTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Toggle("Я записал все 12 слов офлайн", isOn: $confirmOffline)
@@ -205,16 +208,15 @@ struct WalletOnboardingView: View {
 
     private var verification: some View {
         VStack(alignment: .leading, spacing: 19) {
-            stepLabel("02 / 03")
             heading("Проверим запись", subtitle: "Введи три слова по их номерам. Так мы убедимся, что фраза сохранена правильно.")
             ForEach(0..<positions.count, id: \.self) { index in
                 WalletCard {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Слово №\(positions[index])")
-                            .font(.system(size: 13))
+                            .font(.footnote)
                             .foregroundStyle(WalletTheme.secondary)
                         SecureField("Введите слово", text: $answers[index])
-                            .font(.system(size: 19, weight: .medium, design: .rounded))
+                            .font(.body.weight(.medium))
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled(true)
                             .textContentType(.password)
@@ -223,7 +225,7 @@ struct WalletOnboardingView: View {
                 }
             }
             Text("Проверь написание слов на английском. Spyder не получает и не сохраняет их на сервере.")
-                .font(.system(size: 13))
+                .font(.footnote)
                 .foregroundStyle(WalletTheme.secondary)
             Button {
                 guard isVerified else { return }
@@ -242,7 +244,6 @@ struct WalletOnboardingView: View {
 
     private var importFlow: some View {
         VStack(alignment: .leading, spacing: 20) {
-            stepLabel("RESTORE")
             heading("Восстановить кошелёк", subtitle: "Вставь 12 или 24 английских слова BIP-39 в исходном порядке.")
             Button { restoreFromICloud() } label: {
                 HStack(spacing: 12) {
@@ -255,10 +256,10 @@ struct WalletOnboardingView: View {
             .buttonStyle(.plain)
             .disabled(cloudBusy)
             Text("Требуется тот же Apple Account и включённый iCloud Keychain. Если резервной копии нет, используй свои 12/24 слова.")
-                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                .font(.footnote).foregroundStyle(WalletTheme.secondary)
             WalletCard {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Secret Recovery Phrase")
+                    Text("Фраза восстановления")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(WalletTheme.secondary)
                     SecureField("12 или 24 слова, через пробел", text: $importText)
@@ -266,7 +267,7 @@ struct WalletOnboardingView: View {
                         .autocorrectionDisabled(true)
                         .textContentType(.password)
                         .focused($focusedImport)
-                        .font(.system(size: 15))
+                        .font(.body)
                         .foregroundStyle(WalletTheme.ink)
                         .privacySensitive()
                 }
@@ -280,7 +281,7 @@ struct WalletOnboardingView: View {
             }
             .buttonStyle(.plain)
             Label("Если в предыдущем кошельке использовалась дополнительная BIP-39 passphrase, сейчас импортировать его нельзя.", systemImage: "info.circle")
-                .font(.system(size: 13))
+                .font(.footnote)
                 .foregroundStyle(WalletTheme.secondary)
             Text("Тестовая версия не прошла аудит. Не вводите фразу от кошелька с реальными средствами.")
                 .font(.system(size: 13, weight: .semibold))
@@ -308,14 +309,14 @@ struct WalletOnboardingView: View {
     private var completion: some View {
         VStack(alignment: .center, spacing: 17) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 76, weight: .ultraLight))
+                .font(.system(size: 44, weight: .regular))
                 .foregroundStyle(WalletTheme.ink)
                 .symbolEffect(.bounce, value: step == .complete)
             Text("Кошелёк защищён")
-                .font(.system(size: 29, weight: .bold))
+                .font(.title.bold())
                 .foregroundStyle(WalletTheme.ink)
             Text("Фраза сохранена локально в защищённом Keychain iPhone. Face ID или код устройства защищает доступ. Для восстановления после потери телефона сохрани резервную копию отдельно.")
-                .font(.system(size: 15))
+                .font(.body)
                 .foregroundStyle(WalletTheme.secondary)
                 .multilineTextAlignment(.center)
             WalletCard {
@@ -323,7 +324,7 @@ struct WalletOnboardingView: View {
                     Label("Резервная копия в iCloud Keychain", systemImage: "icloud.and.arrow.up")
                         .font(.system(size: 15, weight: .semibold))
                     Text("Необязательно. Фраза синхронизируется только через iCloud Keychain Apple, если он включён. Это отличается от локальной защиты и позволяет восстановить кошелёк на другом iPhone. Никогда не заменяй этим офлайн-копию.")
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(WalletTheme.secondary)
                     if cloudSaved {
                         Label("Копия добавлена в iCloud Keychain", systemImage: "checkmark.shield.fill")
@@ -359,20 +360,21 @@ struct WalletOnboardingView: View {
             .padding(.top, 18)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 70)
+        .padding(.vertical, 16)
     }
 
     @ViewBuilder private func heading(_ title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(LocalizedStringKey(title)).font(.system(size: 32, weight: .bold)).foregroundStyle(WalletTheme.ink)
-            Text(LocalizedStringKey(subtitle)).font(.system(size: 15)).foregroundStyle(WalletTheme.secondary)
+            Text(LocalizedStringKey(title)).font(.largeTitle.bold()).foregroundStyle(WalletTheme.ink)
+                .accessibilityAddTraits(.isHeader)
+            Text(LocalizedStringKey(subtitle)).font(.body).foregroundStyle(WalletTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private func stepLabel(_ text: String) -> some View {
-        Text(text).font(.system(size: 11, weight: .semibold, design: .rounded))
-            .tracking(2).foregroundStyle(WalletTheme.secondary)
+        Text(text).font(.caption.monospacedDigit())
+            .tracking(1).foregroundStyle(WalletTheme.secondary)
     }
 
     private func wordGrid(_ words: [String]) -> some View {
@@ -450,13 +452,14 @@ struct WalletUnlockView: View {
             Spacer()
             Image("SpyderLaunchLogo")
                 .resizable().scaledToFit()
-                .frame(width: 152, height: 152)
+                .frame(width: 80, height: 80)
+                .accessibilityHidden(true)
                 .spyderReveal(0.05)
             Text("Spyder Wallet")
-                .font(.system(size: 29, weight: .bold))
+                .font(.title.bold())
                 .foregroundStyle(WalletTheme.ink)
             Text("Ваш кошелёк заблокирован")
-                .font(.system(size: 15))
+                .font(.body)
                 .foregroundStyle(WalletTheme.secondary)
             Spacer()
             Button { access.unlock() } label: {

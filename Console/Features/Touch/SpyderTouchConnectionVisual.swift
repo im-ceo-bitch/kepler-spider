@@ -23,7 +23,7 @@ struct SpyderTouchConnectionVisual: View {
             ZStack {
                 // A silver light field joins the circles without adding a wallpaper.
                 Capsule()
-                    .fill(LinearGradient(colors: [.clear, Color.blue.opacity(0.09), .clear], startPoint: .leading, endPoint: .trailing))
+                    .fill(LinearGradient(colors: [.clear, Color.black.opacity(0.07), .clear], startPoint: .leading, endPoint: .trailing))
                     .frame(width: converged ? 196 : 40, height: 82)
                     .blur(radius: 16).opacity(converged ? 1 : 0)
                 Circle().stroke(Color.black.opacity(0.04), lineWidth: 1)
@@ -48,7 +48,7 @@ struct SpyderTouchConnectionVisual: View {
                 }
                 if !reduceMotion && scenePhase == .active {
                     Circle()
-                        .stroke(Color.blue.opacity(0.14), lineWidth: 1)
+                        .stroke(Color.black.opacity(0.13), lineWidth: 1)
                         .frame(width: 144, height: 144)
                         .scaleEffect(0.75 + wave * 1.3)
                         .opacity(stage == .searching ? 0 : Double(1 - wave))
@@ -56,7 +56,7 @@ struct SpyderTouchConnectionVisual: View {
             }
             .frame(width: width, height: geometry.size.height)
         }
-        .frame(height: 250)
+        .frame(height: 212)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(stage == .connected ? "Соединение установлено" : stage == .encounter ? "Два устройства сближаются" : "Ожидание второго iPhone")
         .task(id: stage) {
@@ -114,12 +114,12 @@ struct SpyderTouchEdgeWave: View {
             let width = geometry.size.width
             ZStack(alignment: .top) {
                 Ellipse()
-                    .fill(RadialGradient(colors: [Color.white, Color.blue.opacity(0.10), .clear],
+                    .fill(RadialGradient(colors: [Color.white, Color.black.opacity(0.08), .clear],
                         center: .center, startRadius: 2, endRadius: width * 0.65))
                     .frame(width: width * 1.6, height: width * 1.35)
                     .scaleEffect(0.05 + progress * 2.3)
                 Ellipse()
-                    .stroke(LinearGradient(colors: [.clear, Color.cyan.opacity(0.50), Color.white, Color.indigo.opacity(0.30), .clear],
+                    .stroke(LinearGradient(colors: [.clear, Color.gray.opacity(0.46), Color.white, Color.black.opacity(0.22), .clear],
                         startPoint: .leading, endPoint: .trailing), lineWidth: 8)
                     .frame(width: width * 1.4, height: width * 1.2)
                     .blur(radius: 7).scaleEffect(0.08 + progress * 2.4)

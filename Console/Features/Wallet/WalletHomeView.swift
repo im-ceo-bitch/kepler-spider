@@ -17,6 +17,8 @@ private struct WalletMarketSelection: Identifiable {
 struct WalletHomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var balanceSize: CGFloat = 48
     @EnvironmentObject private var chains: WalletChainStore
     @EnvironmentObject private var access: WalletAccess
     @EnvironmentObject private var publicAssets: WalletPublicAssetsStore
@@ -44,22 +46,18 @@ struct WalletHomeView: View {
                 .background(WalletTheme.canvas)
                 .zIndex(1)
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 25) {
+                VStack(alignment: .leading, spacing: 24) {
                     portfolioCard
-                        .spyderReveal(0.03)
                     quickActions
-                        .spyderReveal(0.08)
                     walletSectionPicker
                     if selectedSection == WalletHomeSection.cryptocurrencies.rawValue {
+                        marketStrip
                         WalletCatalogSection(catalog: catalog)
                             .environmentObject(market)
                             .environmentObject(live)
                     } else {
-                        marketStrip
                         assetsSection
-                            .spyderReveal(0.12)
                         recentSection
-                            .spyderReveal(0.16)
                     }
                     if spider.hasConfiguration {
                         DisclosureGroup(isExpanded: $showDevnet) {
@@ -81,11 +79,6 @@ struct WalletHomeView: View {
                         .padding(17)
                         .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 22))
                     }
-                    Text("Spyder Wallet · самостоятельное хранение")
-                        .font(.system(size: 11))
-                        .foregroundStyle(WalletTheme.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.bottom, 18)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 5)
@@ -168,139 +161,123 @@ struct WalletHomeView: View {
     }
 
     private var walletHeader: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(spacing: 8) {
             Button { onAction(.accounts) } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("SPYDER / WALLET")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .tracking(1.8)
+                HStack(spacing: 8) {
+                    Image(systemName: "wallet.pass")
+                        .font(.body.weight(.medium))
+                    Text(access.activeAccountName)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.semibold))
                         .foregroundStyle(WalletTheme.secondary)
-                    HStack(spacing: 6) {
-                        Text(access.activeAccountName)
-                            .font(.system(size: 21, weight: .bold, design: .rounded))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.74)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 11, weight: .bold))
-                    }
-                    .foregroundStyle(WalletTheme.ink)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 44)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Выбрать кошелёк")
-            headerButton(privacyHidden ? "eye.slash" : "eye", label: privacyHidden ? "Показать баланс" : "Скрыть баланс") {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { privacyHidden.toggle() }
-                UISelectionFeedbackGenerator().selectionChanged()
-            }
-            headerButton("line.3.horizontal", label: "Открыть Control Center") { onControlCenter() }
+            .accessibilityValue(Text(access.activeAccountName))
+            Spacer(minLength: 4)
+            headerButton("clock", label: "История операций", action: onActivity)
+            headerButton("person.crop.circle", label: "Профиль", action: onControlCenter)
         }
+        .foregroundStyle(WalletTheme.ink)
+        .frame(maxWidth: 660)
+        .frame(maxWidth: .infinity)
     }
 
     private func headerButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 19, weight: .medium))
-                .foregroundStyle(WalletTheme.ink)
+                .font(.title3.weight(.regular))
                 .frame(width: 44, height: 44)
-                .background(WalletTheme.surface, in: Circle())
-                .contentShape(Circle())
+                .contentShape(Rectangle())
         }
+        .foregroundStyle(WalletTheme.ink)
         .buttonStyle(.plain)
-        .accessibilityLabel(label)
+        .accessibilityLabel(Text(LocalizedStringKey(label)))
     }
 
     private var portfolioCard: some View {
-        VStack(alignment: .leading, spacing: 26) {
-            HStack(alignment: .center) {
-                Label("Общий баланс", systemImage: "wallet.bifold")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.78))
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 2) {
+                Text("Общий баланс")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(WalletTheme.secondary)
+                headerButton(privacyHidden ? "eye.slash" : "eye",
+                             label: privacyHidden ? "Показать баланс" : "Скрыть баланс") {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { privacyHidden.toggle() }
+                    UISelectionFeedbackGenerator().selectionChanged()
+                }
                 Spacer()
-                Button {
+                if !privacyHidden {
+                    Text("USD")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(WalletTheme.secondary)
+                }
+                headerButton("arrow.clockwise", label: "Обновить балансы") {
                     Task {
                         await market.refreshQuotes(force: true)
                         await refreshWallet()
                     }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 15, weight: .medium))
-                        .symbolEffect(.pulse, value: publicAssets.loading)
-                        .foregroundStyle(.white)
-                        .frame(width: 38, height: 38)
-                        .background(.white.opacity(0.12), in: Circle())
                 }
                 .disabled(publicAssets.loading)
-                .accessibilityLabel("Обновить балансы")
             }
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Text(privacyHidden ? "••••••" : (publicAssets.totalUSD.map {
-                        "$" + WalletPublicAssetsStore.formatted($0, fractionDigits: 2)
-                    } ?? "—"))
-                        .font(.system(size: 38, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                        .minimumScaleFactor(0.65)
-                        .lineLimit(1)
-                    if !privacyHidden {
-                        Text("USD")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.58))
-                    }
+            Text(privacyHidden ? "••••••" : (publicAssets.totalUSD.map {
+                "$" + WalletPublicAssetsStore.formatted($0, fractionDigits: 2)
+            } ?? "—"))
+                .font(.system(size: balanceSize, weight: .semibold))
+                .monospacedDigit()
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+                .foregroundStyle(WalletTheme.ink)
+                .privacySensitive()
+            Text("Mainnet")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(WalletTheme.secondary)
+            Text(publicAssets.totalUSD == nil ? "Ожидаем данные из сетей" :
+                 publicAssets.isPartialEstimate ? "Неполная оценка портфеля" : "Оценка по текущим котировкам")
+                .font(.footnote)
+                .foregroundStyle(WalletTheme.secondary)
+            if let updatedAt = publicAssets.updatedAt {
+                HStack(spacing: 4) {
+                    Text("Обновлено")
+                    Text(updatedAt, style: .time)
                 }
-                .foregroundStyle(.white)
-                Text(publicAssets.totalUSD == nil ? "Ожидаем данные из сетей" :
-                     publicAssets.isPartialEstimate ? "Неполная оценка портфеля" : "Оценка по текущим котировкам")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.62))
+                    .font(.caption)
+                    .foregroundStyle(WalletTheme.secondary)
             }
-            Rectangle().fill(.white.opacity(0.16)).frame(height: 1)
-            HStack(spacing: 8) {
-                Image(systemName: publicAssets.isPartialEstimate ? "exclamationmark.circle" : "checkmark.circle")
-                    .font(.system(size: 13))
-                Text(publicAssets.updatedAt.map {
-                    "Проверено " + $0.formatted(date: .omitted, time: .shortened)
-                } ?? "Баланс ещё не обновлён")
-                    .font(.system(size: 12))
-                Spacer(minLength: 3)
-                Text("MAINNET")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .tracking(1)
-            }
-            .foregroundStyle(.white.opacity(0.72))
         }
-        .padding(23)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(red: 0.065, green: 0.07, blue: 0.078), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .accessibilityElement(children: .contain)
     }
 
     private var walletSectionPicker: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 22) {
             ForEach(WalletHomeSection.allCases) { section in
                 let active = selectedSection == section.rawValue
                 Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                         selectedSection = section.rawValue
                     }
                     UISelectionFeedbackGenerator().selectionChanged()
                 } label: {
                     Text(section.title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 43)
-                        .foregroundStyle(active ? WalletTheme.contrast : WalletTheme.secondary)
-                        .background(active ? WalletTheme.accent : Color.clear, in: Capsule())
+                        .font(.headline)
+                        .foregroundStyle(active ? WalletTheme.ink : WalletTheme.secondary)
+                        .padding(.vertical, 12)
+                        .frame(minHeight: 44)
+                        .overlay(alignment: .bottom) {
+                            if active { Rectangle().fill(WalletTheme.ink).frame(height: 2) }
+                        }
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(active ? .isSelected : [])
             }
+            Spacer(minLength: 0)
         }
-        .padding(5)
-        .background(WalletTheme.surface, in: Capsule())
-        .accessibilityElement(children: .contain)
+        .background(alignment: .bottom) { Divider() }
     }
 
     private var marketStrip: some View {
@@ -347,46 +324,34 @@ struct WalletHomeView: View {
     }
 
     private var quickActions: some View {
-        HStack(alignment: .top, spacing: 12) {
-            actionButton("Отправить", symbol: "arrow.up.right") { onAction(.send) }
-            actionButton("Получить", symbol: "arrow.down.left") { onAction(.receive) }
-            actionButton("История", symbol: "clock.arrow.circlepath") { onActivity() }
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 10))
+        return layout {
+            actionButton("Отправить", symbol: "arrow.up.right", primary: true) { onAction(.send) }
+            actionButton("Получить", symbol: "arrow.down.left", primary: false) { onAction(.receive) }
         }
-        .frame(maxWidth: .infinity)
     }
 
-    private func actionButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+    private func actionButton(_ title: String, symbol: String, primary: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 9) {
-                Image(systemName: symbol)
-                    .font(.system(size: 21, weight: .semibold))
-                    .foregroundStyle(WalletTheme.ink)
-                    .frame(width: 58, height: 58)
-                    .background(WalletTheme.surface, in: Circle())
-                Text(LocalizedStringKey(title))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(WalletTheme.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
+            Label(LocalizedStringKey(title), systemImage: symbol)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(primary ? WalletTheme.contrast : WalletTheme.ink)
+                .background(primary ? WalletTheme.accent : WalletTheme.surface,
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(title)
     }
 
     private var assetsSection: some View {
         VStack(alignment: .leading, spacing: 13) {
-            HStack {
-                Text("Активы")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(WalletTheme.ink)
-                Spacer()
-                Text("5 активов · 3 сети")
-                    .font(.system(size: 12))
-                    .foregroundStyle(WalletTheme.secondary)
-            }
+            Text("5 активов · 3 сети")
+                .font(.caption)
+                .foregroundStyle(WalletTheme.secondary)
             if chains.addresses.isEmpty {
                 WalletCard {
                     VStack(alignment: .leading, spacing: 14) {
@@ -417,7 +382,6 @@ struct WalletHomeView: View {
                         if token.id != WalletTokenCatalog.ethereumERC20.last?.id { assetDivider }
                     }
                 }
-                .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 25, style: .continuous))
                 if publicAssets.updatedAt != nil && (publicAssets.isPartialEstimate || !publicAssets.failures.isEmpty || !publicAssets.stablecoinFailures.isEmpty) {
                     Label("Часть балансов или курсов пока недоступна. Пустое значение не означает ноль.", systemImage: "info.circle")
                         .font(.system(size: 12))
@@ -429,10 +393,7 @@ struct WalletHomeView: View {
     }
 
     private var assetDivider: some View {
-        Rectangle().fill(WalletTheme.divider)
-            .frame(height: 1)
-            .padding(.leading, 76)
-            .padding(.trailing, 17)
+        Divider().padding(.leading, 59)
     }
 
     private func nativeRow(_ chain: SpyderChain) -> some View {
@@ -465,8 +426,7 @@ struct WalletHomeView: View {
                 .foregroundStyle(WalletTheme.secondary)
         }
         .foregroundStyle(WalletTheme.ink)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
+        .padding(.vertical, 14)
         .contentShape(Rectangle())
     }
 
@@ -498,8 +458,7 @@ struct WalletHomeView: View {
                 .foregroundStyle(WalletTheme.secondary)
         }
         .foregroundStyle(WalletTheme.ink)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
+        .padding(.vertical, 14)
         .contentShape(Rectangle())
     }
 
@@ -524,8 +483,8 @@ struct WalletHomeView: View {
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: 13) {
             HStack {
-                Text("Операции")
-                    .font(.system(size: 22, weight: .bold))
+                Text("Последние операции")
+                    .font(.title3.weight(.semibold))
                 Spacer()
                 Button("Все") { onActivity() }
                     .font(.system(size: 13, weight: .medium))
@@ -703,36 +662,32 @@ struct WalletActivityView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    SpyderNavigationButton(symbol: "chevron.left", label: "Назад", action: onBack)
-                    Spacer()
-                    Button { Task { await history.refresh(addresses: chains.addresses) } } label: {
-                        Label("Обновить", systemImage: "arrow.clockwise")
-                    }.disabled(!history.loading.isEmpty)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("История операций")
+                        .font(.largeTitle.weight(.bold))
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Mainnet: публичные API могут показывать неполную историю. Для Solana суммы неизвестны, пока не обработаны изменения балансов транзакций.")
+                        .font(.footnote)
+                        .foregroundStyle(WalletTheme.secondary)
                 }
-                Text("История операций").font(.system(size: 30, weight: .bold))
-                Text("Mainnet: публичные API могут показывать неполную историю. Для Solana суммы неизвестны, пока не обработаны изменения балансов транзакций.")
-                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                WalletCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Фильтры")
-                            .font(.system(size: 15, weight: .semibold))
-                        Picker("Сеть", selection: $chainFilter) {
-                            Text("Все сети").tag("all")
-                            ForEach(SpyderChain.allCases) { chain in
-                                Text(chain.name).tag(chain.rawValue)
-                            }
+                HStack {
+                    Picker("Сеть", selection: $chainFilter) {
+                        Text("Все сети").tag("all")
+                        ForEach(SpyderChain.allCases) { chain in
+                            Text(chain.name).tag(chain.rawValue)
                         }
-                        .pickerStyle(.menu)
-                        Picker("Статус", selection: $statusFilter) {
-                            Text("Все операции").tag("all")
-                            Text("Подтверждено").tag(WalletChainActivity.State.confirmed.rawValue)
-                            Text("Ожидание").tag(WalletChainActivity.State.pending.rawValue)
-                            Text("Ошибка").tag(WalletChainActivity.State.failed.rawValue)
-                        }
-                        .pickerStyle(.segmented)
+                    }
+                    Divider().frame(height: 20)
+                    Picker("Статус", selection: $statusFilter) {
+                        Text("Все операции").tag("all")
+                        Text("Подтверждено").tag(WalletChainActivity.State.confirmed.rawValue)
+                        Text("Ожидание").tag(WalletChainActivity.State.pending.rawValue)
+                        Text("Ошибка").tag(WalletChainActivity.State.failed.rawValue)
                     }
                 }
+                .pickerStyle(.menu)
+                .font(.subheadline)
+                .frame(minHeight: 44)
                 ForEach(selectedChains) { chain in
                     WalletCard {
                         VStack(alignment: .leading, spacing: 12) {
@@ -791,6 +746,23 @@ struct WalletActivityView: View {
             .frame(maxWidth: .infinity)
         }
         .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.backward")
+                }
+                .accessibilityLabel("Назад")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await history.refresh(addresses: chains.addresses) }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .accessibilityLabel("Обновить")
+                .disabled(!history.loading.isEmpty)
+            }
+        }
         .background(WalletTheme.canvas.ignoresSafeArea())
         .task(id: chains.addresses) { await history.refresh(addresses: chains.addresses) }
     }

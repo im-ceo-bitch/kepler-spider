@@ -31,54 +31,70 @@ struct WalletTouchView: View {
         NavigationStack {
             GeometryReader { geometry in
                 ScrollView {
-                    VStack(spacing: 18) {
-                        Spacer(minLength: 12)
+                    VStack(alignment: .leading, spacing: 24) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(title)
+                                .font(.largeTitle.weight(.bold))
+                                .accessibilityAddTraits(.isHeader)
+                            Text(subtitle)
+                                .font(.body)
+                                .foregroundStyle(WalletTheme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .contentTransition(.opacity)
+
                         SpyderTouchConnectionVisual(stage: visualStage,
                             ownAvatar: chat.myAvatar, ownSeed: owner ?? "",
                             peerAvatar: peerAvatar, peerSeed: connected?.id)
-                        VStack(spacing: 9) {
-                            Text(title).font(.system(size: 29, weight: .semibold)).multilineTextAlignment(.center)
-                            Text(subtitle).font(.callout).foregroundStyle(WalletTheme.secondary)
-                                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                        }
-                        .contentTransition(.opacity)
-                        Text(chat.myName).font(.subheadline.weight(.medium)).foregroundStyle(WalletTheme.secondary)
+
                         if (touch.phase == .request || touch.phase == .waiting) && promptReady {
                             connectionRequest
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                        }
-                        if connecting { ProgressView("Создаём чат…").padding(.top, 12) }
-                        if connected != nil {
+                                .transition(.opacity)
+                        } else if connecting {
+                            ProgressView("Создаём чат…")
+                        } else if connected != nil {
                             Button("Открыть чат") { routeToChat() }
-                                .spyderPrimaryButton().buttonStyle(.plain).padding(.top, 12)
+                                .spyderPrimaryButton().buttonStyle(.plain)
+                        } else if visualStage == .searching && notice == nil && touch.error == nil {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Label("На обоих iPhone", systemImage: "iphone")
+                                    .font(.headline)
+                                Text("Откройте Spyder Touch, включите Wi-Fi и разрешите поиск устройств поблизости.")
+                                    .font(.subheadline).foregroundStyle(WalletTheme.secondary)
+                                if !chat.myName.isEmpty {
+                                    Text("Ваша личность · \(chat.myName)")
+                                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                                }
+                            }
+                            .accessibilityElement(children: .combine)
+                            .padding(18)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 18))
                         }
                         if touch.ambiguous {
-                            Text("Рядом несколько iPhone. Поднесите только тот, с которым хотите подключиться.")
-                                .font(.callout).multilineTextAlignment(.center)
+                            Label("Рядом несколько iPhone. Поднесите только тот, с которым хотите подключиться.", systemImage: "person.2")
+                                .font(.callout)
                         }
                         if let message = notice ?? touch.error {
-                            Text(message).font(.callout).multilineTextAlignment(.center)
+                            Label(LocalizedStringKey(message), systemImage: "info.circle").font(.callout)
                         }
                         if touch.phase == .failed {
                             Button("Открыть настройки Spyder") {
                                 if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                            }.font(.subheadline)
+                            }.font(.headline).frame(minHeight: 44)
                         }
                         if connected == nil && !connecting && [.idle, .failed, .exchanged].contains(touch.phase) {
-                            Button("Повторить поиск") { start() }.buttonStyle(.bordered)
-                        }
-                        Spacer(minLength: 18)
-                        if visualStage == .searching {
-                            Text("Откройте Touch на обоих iPhone.\nВключите Wi-Fi и разрешите поиск поблизости.")
-                                .font(.footnote).foregroundStyle(WalletTheme.secondary).multilineTextAlignment(.center)
+                            Button("Повторить поиск") { start() }
+                                .spyderPrimaryButton().buttonStyle(.plain)
                         }
                     }
-                    .frame(maxWidth: 430).frame(maxWidth: .infinity)
-                    .padding(.horizontal, 26).padding(.bottom, 24)
-                    .frame(minHeight: geometry.size.height)
+                    .frame(maxWidth: 430, alignment: .leading)
+                    .padding(.horizontal, 20).padding(.vertical, 24)
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .top)
                 }
             }
             .background(Color.white.ignoresSafeArea()).foregroundStyle(WalletTheme.ink)
+            .tint(WalletTheme.ink)
             .navigationTitle("Spyder Touch").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) {
                 Button("Закрыть") { cancel(); dismiss() }
@@ -114,40 +130,46 @@ struct WalletTouchView: View {
             }
         }
     }
-    private var title: String {
+    private var title: LocalizedStringKey {
         if connected != nil { return "Вы подключены" }
         if connecting { return "Создаём чат" }
         if touch.phase == .waiting { return "Соединяем iPhone" }
         if touch.phase == .request { return "iPhone рядом" }
+        if touch.phase == .failed || notice != nil { return "Поиск остановлен" }
         return "Поднесите iPhone"
     }
-    private var subtitle: String {
-        if let connected { return connected.name + " теперь в ваших чатах" }
+    private var subtitle: LocalizedStringKey {
+        if let connected { return "\(connected.name) теперь в ваших чатах" }
         if connecting { return "Завершаем подключение" }
         if touch.phase == .waiting { return "Подтвердите подключение на втором экране" }
         if touch.phase == .request { return "Сверьте код и подключитесь друг к другу" }
-        return "Поднесите телефоны верхними краями\nи задержите рядом"
+        if touch.phase == .failed || notice != nil { return "Проверьте подключение и попробуйте снова." }
+        return "Расположите телефоны верхними краями друг к другу и задержите рядом."
     }
     private var connectionRequest: some View {
-        VStack(spacing: 15) {
+        VStack(spacing: 12) {
+            Text("Код подключения").font(.footnote.weight(.semibold)).foregroundStyle(WalletTheme.secondary)
             if let comparison = touch.comparison {
-                Text(comparison).font(.system(size: 29, weight: .medium, design: .monospaced)).tracking(7)
-                    .accessibilityLabel("Код проверки " + comparison.map(String.init).joined(separator: " "))
+                Text(comparison).font(.title.weight(.semibold).monospacedDigit()).tracking(4)
+                    .accessibilityLabel(Text("Код проверки \(comparison.map(String.init).joined(separator: " "))"))
             }
             Text("Код должен совпадать на обоих iPhone.")
                 .font(.footnote).foregroundStyle(WalletTheme.secondary).multilineTextAlignment(.center)
             if touch.phase == .waiting {
                 ProgressView().padding(.vertical, 6)
-                Button("Отменить", role: .cancel) { cancel() }.font(.subheadline)
+                Button("Отменить", role: .cancel) { cancel() }.font(.subheadline).frame(minHeight: 44)
             } else {
                 Button("Подключиться") { if scenePhase == .active && promptReady { touch.approve() } }
                     .spyderPrimaryButton().buttonStyle(.plain).disabled(scenePhase != .active)
                 Button("Не сейчас", role: .cancel) { touch.decline() }
-                    .font(.subheadline).foregroundStyle(WalletTheme.secondary)
+                    .font(.subheadline).foregroundStyle(WalletTheme.secondary).frame(minHeight: 44)
             }
-            Text("Вы делитесь приглашением личности «" + chat.myName + "». Деньги не отправляются.")
+            Text("Вы делитесь приглашением личности «\(chat.myName)». Деньги не отправляются.")
                 .font(.caption).foregroundStyle(WalletTheme.secondary).multilineTextAlignment(.center)
-        }.padding(.top, 10)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity)
+        .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 18))
     }
     private func routeToChat() {
         guard let connected, visible, scenePhase == .active, !opened else { return }

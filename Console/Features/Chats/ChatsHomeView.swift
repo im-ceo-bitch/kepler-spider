@@ -11,10 +11,19 @@ struct SpyderDevnetChatsHomeView: View {
     @State private var selectedPersona = ""
     @State private var showIdentityQR = false
     @State private var showPersonaStyle = false
-        @State private var showPersonas = false
+    @State private var showPersonas = false
     @State private var switchingPersona = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var archived = false
+    @State private var showingContacts = false
+
+    private var visibleContacts: [SpyderChatPerson] {
+        chat.contacts.filter { person in
+            (showHidden || chat.contactPreferences[person.id]?.hidden != true) &&
+            (search.isEmpty || person.name.localizedCaseInsensitiveContains(search) ||
+                (person.username ?? "").localizedCaseInsensitiveContains(search))
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
     @State private var pendingDelete: SpyderChatPerson?
     @State private var showHidden = false
     @State private var pendingBlock: SpyderChatPerson?
@@ -49,107 +58,10 @@ struct SpyderDevnetChatsHomeView: View {
 
     var body: some View {
         List {
-            Section {
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack {
-                        Text("Чаты").font(.system(size: 34, weight: .bold))
-                        Spacer()
-                        if chat.hasIdentity {
-                            Button(action: onAdd) {
-                                Label("Пригласить", systemImage: "person.badge.plus")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .padding(.horizontal, 14).frame(height: 44)
-                                    .background(WalletTheme.surface, in: Capsule())
-                            }.buttonStyle(.plain)
-                        }
-                    }
-                    identityCarousel
-                    if !chat.hasIdentity { setup }
-                    else {
-                        HStack(spacing: 7) {
-                            Circle().fill(chat.connected ? WalletTheme.ink : WalletTheme.secondary).frame(width: 6, height: 6)
-                            Text(chat.connected ? "Подключено" : "Нет соединения").font(.caption)
-                            Spacer()
-                            if chat.refreshing { ProgressView().controlSize(.mini) }
-                        }.foregroundStyle(WalletTheme.secondary)
-                        if let status = chat.serverStatus {
-                            Text(status).font(.caption).foregroundStyle(WalletTheme.secondary)
-                            Button("Повторить") { Task { await chat.refresh() } }
-                        }
-                        if !chat.pushEnabled {
-                            Button("Включить уведомления") { Task { await chat.enablePush() } }
-                        }
-                        if chat.myUsername.isEmpty && chat.personaKind != "private" {
-                            TextField("Создать @username", text: $claim)
-                                .textInputAutocapitalization(.never).autocorrectionDisabled()
-                            Button("Сохранить username") { Task { _ = await chat.claimUsername(claim) } }
-                                .disabled(claim.count < 3)
-                        }
-                        TextField("Поиск переписок", text: $search)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .padding(13).background(WalletTheme.surface, in: Capsule())
-                        Picker("Переписки", selection: $archived) {
-                            Text("Чаты").tag(false)
-                            Text("Архив").tag(true)
-                        }.pickerStyle(.segmented)
-                        if chat.contactPreferences.values.contains(where: { $0.hidden }) {
-                            Toggle("Показать скрытые", isOn: $showHidden).font(.caption)
-                        }
-                    }
-                }
-                .foregroundStyle(WalletTheme.ink)
-                .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-            }
+            inboxHeader
             if chat.hasIdentity {
-                Section {
-                    if filtered.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(archived ? "Архив пуст" : "Пока нет переписок").font(.headline)
-                            Text(search.isEmpty ? "Подключи контакт через «Пригласить»." : "Нет совпадений.")
-                                .font(.caption).foregroundStyle(WalletTheme.secondary)
-                            if !archived { Button("Пригласить", action: onAdd) }
-                        }.padding(.vertical, 15).listRowBackground(Color.clear)
-                    }
-                    ForEach(filtered) { item in
-                        conversationRow(item)
-                            .listRowInsets(EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20))
-                            .listRowBackground(Color.clear)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) { pendingDelete = item.peer } label: {
-                                    Label("Удалить", systemImage: "trash")
-                                }
-                                Button {
-                                    Task { await chat.conversationAction(peer: item.id,
-                                        action: item.preferences.archived == true ? "unarchive" : "archive") }
-                                } label: { Label(item.preferences.archived == true ? "Вернуть" : "Архив", systemImage: "archivebox") }
-                                    .tint(.gray)
-                            }
-                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                                Button {
-                                    Task { await chat.conversationAction(peer: item.id,
-                                        action: item.preferences.pinned == true ? "unpin" : "pin") }
-                                } label: { Label(item.preferences.pinned == true ? "Открепить" : "Закрепить", systemImage: "pin") }
-                                    .tint(.orange)
-                                Button { toggleMute(item) } label: {
-                                    Label(item.preferences.muted ? "Звук" : "Без звука", systemImage: "bell.slash")
-                                }.tint(.gray)
-                            }
-                            .contextMenu {
-                                Button("Открыть и выбрать личность") { open(item.peer) }
-                                Button(item.preferences.muted ? "Включить уведомления" : "Выключить уведомления") { toggleMute(item) }
-                                Button(item.preferences.hidden ? "Показать чат" : "Скрыть чат") {
-                                    Task { await chat.setContactPreferences(peer: item.id,
-                                        muted: item.preferences.muted, hidden: !item.preferences.hidden) }
-                                }
-                                Button("Заблокировать", role: .destructive) { pendingBlock = item.peer }
-                            }
-                    }
-                } footer: {
-                    Text("Перевод начинается с выбора собеседника. Сравнивай отпечатки ключей перед первым обменом реквизитами.")
-                        .font(.caption2)
-                }
+                if showingContacts { contactsSection } else { conversationsSection }
+
             }
         }
         .listStyle(.plain)
@@ -226,6 +138,159 @@ struct SpyderDevnetChatsHomeView: View {
         } message: { Text(chat.errorMessage ?? "") }
     }
 
+    private var inboxHeader: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Чаты").font(.largeTitle.bold())
+                        if chat.hasIdentity {
+                            Label(chat.connected ? "Подключено" : "Нет соединения",
+                                  systemImage: chat.connected ? "antenna.radiowaves.left.and.right" : "wifi.slash")
+                                .font(.caption).foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    Spacer(minLength: 4)
+                    if chat.refreshing { ProgressView().controlSize(.small) }
+                    if chat.hasIdentity {
+                        Button(action: onAdd) {
+                            Image(systemName: "person.badge.plus")
+                                .font(.body.weight(.semibold))
+                                .frame(width: 44, height: 44)
+                                .foregroundStyle(WalletTheme.canvas)
+                                .background(WalletTheme.ink, in: Circle())
+                        }.buttonStyle(.plain).accessibilityLabel("Пригласить")
+                    }
+                }
+                if !chat.hasIdentity { setup }
+                else {
+                    identityCarousel
+                    if let status = chat.serverStatus {
+                        Text(status).font(.caption).foregroundStyle(WalletTheme.secondary)
+                        Button("Повторить") { Task { await chat.refresh() } }
+                    }
+                    if !chat.pushEnabled {
+                        Button("Включить уведомления") { Task { await chat.enablePush() } }
+                    }
+                    if chat.myUsername.isEmpty && chat.personaKind != "private" {
+                        TextField("Создать @username", text: $claim)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        Button("Сохранить username") { Task { _ = await chat.claimUsername(claim) } }
+                            .disabled(claim.count < 3)
+                    }
+                    Picker("Раздел", selection: $showingContacts) {
+                        Text("Переписки").tag(false)
+                        Text("Контакты").tag(true)
+                    }.pickerStyle(.segmented)
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(WalletTheme.secondary)
+                        TextField(showingContacts ? "Поиск контактов" : "Поиск переписок", text: $search)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        if !search.isEmpty {
+                            Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
+                                .buttonStyle(.plain).accessibilityLabel("Очистить поиск")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                    }
+                    .padding(.horizontal, 14).frame(minHeight: 46)
+                    .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+                    if !showingContacts {
+                        HStack {
+                            Text(archived ? "Архив" : "Переписки").font(.headline)
+                            Spacer()
+                            Button(archived ? "Все переписки" : "Архив") { archived.toggle() }
+                                .font(.subheadline.weight(.medium)).frame(minHeight: 44)
+                        }
+                    }
+                    if chat.contactPreferences.values.contains(where: { $0.hidden }) {
+                        Toggle("Показать скрытые", isOn: $showHidden).font(.caption)
+                    }
+                }
+            }
+            .foregroundStyle(WalletTheme.ink)
+            .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+
+    private var contactsSection: some View {
+        Section {
+            if visibleContacts.isEmpty {
+                Text(search.isEmpty ? "Пока нет контактов" : "Контакты не найдены")
+                    .foregroundStyle(WalletTheme.secondary).font(.subheadline)
+                    .listRowSeparator(.hidden)
+            }
+            ForEach(visibleContacts, id: \.id) { person in
+                Button { open(person) } label: {
+                    HStack(spacing: 12) {
+                        SpyderProfileAvatarView(motion: person.avatar?.motion ?? .quiet,
+                            accent: person.avatar?.color ?? .blue, diameter: 44,
+                            animate: false, seed: person.avatar?.seed ?? person.id)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(person.name).font(.headline)
+                            if let username = person.username, !username.isEmpty {
+                                Text("@" + username).font(.caption).foregroundStyle(WalletTheme.secondary)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(WalletTheme.secondary)
+                    }.padding(.vertical, 4).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var conversationsSection: some View {
+        Section {
+            if filtered.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(!search.isEmpty ? "Переписки не найдены" : archived ? "Архив пуст" : "Пока нет переписок").font(.headline)
+                    Text(!search.isEmpty ? "Попробуй другое имя или username." : archived ? "Здесь появятся архивированные чаты." : "Пригласи контакт, чтобы начать общение.")
+                        .font(.caption).foregroundStyle(WalletTheme.secondary)
+                    if !archived && search.isEmpty { Button("Пригласить", action: onAdd) }
+                }.padding(.vertical, 15).listRowBackground(Color.clear)
+            }
+            ForEach(filtered) { item in
+                conversationRow(item)
+                    .listRowInsets(EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20))
+                    .listRowBackground(Color.clear)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) { pendingDelete = item.peer } label: {
+                            Label("Удалить", systemImage: "trash")
+                        }
+                        Button {
+                            Task { await chat.conversationAction(peer: item.id,
+                                action: item.preferences.archived == true ? "unarchive" : "archive") }
+                        } label: { Label(item.preferences.archived == true ? "Вернуть" : "Архив", systemImage: "archivebox") }
+                            .tint(.gray)
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                        Button {
+                            Task { await chat.conversationAction(peer: item.id,
+                                action: item.preferences.pinned == true ? "unpin" : "pin") }
+                        } label: { Label(item.preferences.pinned == true ? "Открепить" : "Закрепить", systemImage: "pin") }
+                            .tint(.orange)
+                        Button { toggleMute(item) } label: {
+                            Label(item.preferences.muted ? "Звук" : "Без звука", systemImage: "bell.slash")
+                        }.tint(.gray)
+                    }
+                    .contextMenu {
+                        Button("Открыть и выбрать личность") { open(item.peer) }
+                        Button(item.preferences.muted ? "Включить уведомления" : "Выключить уведомления") { toggleMute(item) }
+                        Button(item.preferences.hidden ? "Показать чат" : "Скрыть чат") {
+                            Task { await chat.setContactPreferences(peer: item.id,
+                                muted: item.preferences.muted, hidden: !item.preferences.hidden) }
+                        }
+                        Button("Заблокировать", role: .destructive) { pendingBlock = item.peer }
+                    }
+            }
+        } footer: {
+            Text("Перевод начинается с выбора собеседника. Сравнивай отпечатки ключей перед первым обменом реквизитами.")
+                .font(.caption2)
+        }
+    }
+
     private func open(_ person: SpyderChatPerson) {
         onOpen(WalletContact(id: person.id, name: person.name,
             handle: person.username.map { "@" + $0 } ?? "", letter: String(person.name.prefix(1)), preview: "", time: ""))
@@ -254,7 +319,7 @@ struct SpyderDevnetChatsHomeView: View {
                     }
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
-                        Text(item.peer.name).font(.system(size: 17, weight: .semibold)).lineLimit(1)
+                        Text(item.peer.name).font(.headline).lineLimit(1)
                         Spacer()
                         if let timestamp = item.last_message?.created_at {
                             Text(SpyderConversationClock.text(timestamp)).font(.caption2).foregroundStyle(WalletTheme.secondary)
@@ -266,7 +331,7 @@ struct SpyderDevnetChatsHomeView: View {
                                 readAt: message.read_at), accent: WalletTheme.ink)
                         }
                         Text(item.typing ? "печатает…" : (chat.conversationPreviews[item.id] ?? "Начать переписку"))
-                            .font(.system(size: 13)).foregroundStyle(item.typing ? WalletTheme.ink : WalletTheme.secondary)
+                            .font(.subheadline).foregroundStyle(item.typing ? WalletTheme.ink : WalletTheme.secondary)
                             .lineLimit(1)
                         Spacer(minLength: 3)
                         if item.preferences.muted { Image(systemName: "bell.slash.fill").font(.caption2) }
@@ -277,8 +342,10 @@ struct SpyderDevnetChatsHomeView: View {
                                 .padding(6).background(WalletTheme.ink, in: Capsule())
                         }
                     }
-                    Text(personaLabel(peer: item.id)).font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(WalletTheme.secondary).lineLimit(1)
+                    if chat.personaIDs.count > 1 {
+                        Label(personaLabel(peer: item.id), systemImage: "person.crop.circle")
+                            .font(.caption2).foregroundStyle(WalletTheme.secondary).lineLimit(1)
+                    }
                 }
             }
             .foregroundStyle(WalletTheme.ink).padding(.vertical, 8)
@@ -307,11 +374,14 @@ struct SpyderDevnetChatsHomeView: View {
                     }
                 }
                 Button("Управлять личностями") { showPersonas = true }
+                Button("Мой QR-код") { showIdentityQR = true }
             } label: {
                 Image(systemName: "chevron.up.chevron.down").frame(width: 44, height: 44)
             }.disabled(switchingPersona).accessibilityLabel("Сменить личность")
             if switchingPersona { ProgressView().controlSize(.small) }
-        }.padding(.vertical, 4)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private var setup: some View {
