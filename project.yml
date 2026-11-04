@@ -11,8 +11,6 @@ packages:
     path: Packages/WalletCore
   SpyderNativeCollection:
     path: Packages/SpyderNativeCollection
-  SpyderTerminalKit:
-    path: Packages/SpyderTerminalKit
 
 targets:
   Console:
@@ -21,14 +19,17 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Console
+        excludes:
+          - Features/Chats/SpyderOriginals.swift
+          - Features/Chats/SpyderChatTerminalView.swift
+          - Features/Chats/SpyderGlobalTerminalView.swift
+          - Features/Chats/SpyderTerminalChatContainer.swift
     dependencies:
       - package: BIP39MnemonicKit
       - package: WalletCore
         product: WalletCore
       - package: WalletCore
         product: WalletCoreSwiftProtobuf
-      - package: SpyderTerminalKit
-        product: SpyderTerminalKit
       - package: SpyderNativeCollection
         product: SpyderNativeCollection
     settings:

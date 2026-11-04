@@ -26,7 +26,7 @@ struct SpyderConversationSession: View {
     }
 
     var body: some View {
-        SpyderTerminalChatContainer(contact: contact, onBack: onBack,
+        ChatDetailView(contact: contact, onBack: onBack,
             onAction: onAction, onOpenActivity: onOpenActivity, onOpenContact: { showingContact = true })
             .id(session.activePersonaID ?? "")
             .environmentObject(session)

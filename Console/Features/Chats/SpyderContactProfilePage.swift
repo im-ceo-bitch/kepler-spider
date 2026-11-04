@@ -82,33 +82,12 @@ struct SpyderContactProfilePage: View {
                 .padding(19)
                 .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 25))
 
-                NavigationLink {
-                    SpyderChatAppearanceSettingsView(peerID: contact.id)
-                } label: {
-                    HStack(spacing: 14) {
-                        Image(systemName: "paintpalette").foregroundStyle(accent)
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("Оформление этого чата").font(.headline)
-                            Text("Фон, сообщения и движение")
-                                .font(.subheadline).foregroundStyle(WalletTheme.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").foregroundStyle(WalletTheme.secondary)
-                    }
-                    .padding(19)
-                    .foregroundStyle(WalletTheme.ink)
-                    .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 25))
-                }
-                .buttonStyle(.plain)
-
                 Button(role: .destructive) { confirmBlock = true } label: {
                     Label("Заблокировать контакт", systemImage: "hand.raised")
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(18)
                         .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 22))
                 }
-                Text("Медиа появятся после реализации зашифрованных вложений. Данные профиля предоставляются сервером и не заменяют проверку ключей.")
-                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
             }
             .padding(20)
         }

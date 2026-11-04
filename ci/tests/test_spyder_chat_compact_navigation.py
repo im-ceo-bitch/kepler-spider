@@ -12,7 +12,7 @@ class CompactChatNavigationTests(unittest.TestCase):
         chat = read("Console/Features/Chats/ChatDetailView.swift")
         root = read("Console/WalletRootView.swift")
         self.assertIn('ToolbarItem(placement: .principal)', chat)
-        self.assertIn('chatNavigationTitle', chat)
+        self.assertIn('Text(contact.name)', chat)
         self.assertNotIn('.navigationBarBackButtonHidden(true)', chat)
         self.assertNotIn('DragGesture()', chat)
         self.assertIn('NavigationStack(path: $networkPath)', root)
@@ -29,12 +29,12 @@ class CompactChatNavigationTests(unittest.TestCase):
     def test_terminal_access_and_cryptography_are_preserved(self):
         chat = read("Console/Features/Chats/ChatDetailView.swift")
         terminal = read("Console/Features/Chats/SpyderChatTerminalView.swift")
-        self.assertIn('Label("Открыть терминал", systemImage: "terminal")', chat)
-        self.assertIn('onReturnToChat:', chat)
+        self.assertNotIn('SpyderChatTerminalView(', chat)
+        self.assertIn('SpyderChatPaymentView(', chat)
         self.assertIn('Button(action: onReturnToChat)', terminal)
-        self.assertIn('await chat.sendMessage(to: contact.id, text: content)', chat)
+        self.assertIn('await chat.sendMessage(to: contact.id, text: text)', chat)
         self.assertIn('await chat.loadMessages(peer: contact.id)', chat)
-        self.assertIn('SpyderChatAppearanceStore.save(appearance, peer: contact.id, persona: chat.activePersonaID)', chat)
+        self.assertNotIn('SpyderLayeredChatBackdrop(', chat)
 
 if __name__ == '__main__':
     unittest.main()

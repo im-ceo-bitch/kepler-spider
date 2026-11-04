@@ -18,7 +18,8 @@ class GlobalTerminalChecks(unittest.TestCase):
         self.assertIn('tabButton(.chats, title: "Чаты"', root)
         self.assertIn("SpyderConversationSession(contact: contact", root)
         session = read("Console/Features/Chats/SpyderConversationSession.swift")
-        self.assertIn("SpyderTerminalChatContainer(contact: contact", session)
+        self.assertIn("ChatDetailView(contact: contact", session)
+        self.assertNotIn("SpyderTerminalChatContainer(", session)
         self.assertIn(".environmentObject(session)", session)
 
     def test_global_host_fails_closed_and_does_not_sign(self):

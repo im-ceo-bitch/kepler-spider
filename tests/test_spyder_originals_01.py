@@ -24,17 +24,17 @@ class SpyderOriginalsTests(unittest.TestCase):
         self.assertIn('isLowPowerModeEnabled', text)
         self.assertIn('view.isPlaying = false', text)
 
-    def test_chat_uses_existing_encrypted_send_and_does_not_delete_draft(self):
+    def test_stickers_disabled_while_encrypted_message_path_remains(self):
         chat = CHAT.read_text()
         service = SERVICE.read_text()
-        self.assertIn('SpyderOriginalsPicker(canSend:', chat)
-        self.assertIn('SpyderOriginal.decode(message.text)', chat)
-        self.assertIn('transmit(original.payload, clearDraft: false)', chat)
-        self.assertIn('if clearDraft && draft.trimmingCharacters(in: .whitespacesAndNewlines) == content {', chat)
-        self.assertIn('await chat.sendMessage(to: contact.id, text: content)', chat)
-        self.assertIn('await chat.sendNextMessage(to: contact.id, text: content, personaID: persona)', chat)
+        self.assertNotIn('SpyderOriginalsPicker(', chat)
+        self.assertNotIn('SpyderOriginalView(', chat)
+        self.assertIn('await chat.sendMessage(to: contact.id, text: text)', chat)
         self.assertIn('SpyderMessageCrypto.seal(clean', service)
-        self.assertIn('SpyderOriginal.decode(text).map', service)
+        self.assertIn('SpyderPaymentEnvelope.preview(text)', service)
+        project = (ROOT / 'project.yml').read_text()
+        self.assertIn('Features/Chats/SpyderOriginals.swift', project)
+        self.assertIn('excludes:', project)
 
     def test_wire_codec_compiles_and_rejects_unknown_or_partial_codes(self):
         if not shutil.which('swiftc'):

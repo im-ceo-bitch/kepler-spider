@@ -30,7 +30,7 @@ class SonicIdentityChecks(unittest.TestCase):
         chats = source('Console/Features/Chats/ChatsHomeView.swift')
         hub = source('Console/Features/Settings/SpyderIdentityHubView.swift')
         self.assertIn('case .profile:\n            SpyderIdentityHubView()',root)
-        self.assertIn('onProfile()',chats)
+        self.assertIn('Button(action: onProfile)',chats)
         self.assertIn('case .identity:',root)
         self.assertNotIn('.sheet(isPresented: $showingPrivacy)',chats)
         self.assertIn('SpyderNotificationSettingsView()',hub)

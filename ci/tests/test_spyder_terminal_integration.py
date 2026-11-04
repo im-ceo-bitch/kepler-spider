@@ -8,16 +8,16 @@ ROOT = Path(__file__).resolve().parents[2]
 class SpyderTerminalIntegrationTests(unittest.TestCase):
     def test_xcodegen_local_package(self):
         project = (ROOT / "project.yml").read_text()
-        self.assertIn("SpyderTerminalKit:\n    path: Packages/SpyderTerminalKit", project)
-        self.assertIn("- package: SpyderTerminalKit\n        product: SpyderTerminalKit", project)
+        self.assertNotIn("SpyderTerminalKit:\n    path: Packages/SpyderTerminalKit", project)
+        self.assertNotIn("product: SpyderTerminalKit", project)
 
     def test_active_chat_routed_to_terminal(self):
         chat = (ROOT / "Console/Features/Chats/ChatDetailView.swift").read_text()
         root = (ROOT / "Console/WalletRootView.swift").read_text()
-        self.assertIn("SpyderChatTerminalView(contact: contact", chat)
+        self.assertNotIn("SpyderChatTerminalView(", chat)
         self.assertIn("onOpenActivity:", root)
-        self.assertIn('Label("Открыть терминал", systemImage: "terminal")', chat)
-        self.assertIn('onReturnToChat:', chat)
+        self.assertIn('Label("Перевести", systemImage: "arrow.up.right")', chat)
+        self.assertIn('SpyderChatPaymentView(', chat)
 
     def test_catalogs_and_safety(self):
         source = ROOT / "Packages/SpyderTerminalKit/Sources/SpyderTerminalKit/Resources"

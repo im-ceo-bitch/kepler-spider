@@ -7,7 +7,6 @@ struct WalletSettingsView: View {
     @AppStorage(SpyderMotionKeys.accent) private var accentValue = SpyderSignalAccent.red.rawValue
     @AppStorage(SpyderMotionKeys.avatar) private var avatarValue = SpyderAvatarMotion.pulse.rawValue
     @AppStorage(SpyderMotionKeys.enabled) private var motionEnabled = true
-    @State private var showMotionStudio = false
     @State private var backupWords: [String] = []
     @State private var showBackup = false
     @State private var showAccounts = false
@@ -15,7 +14,6 @@ struct WalletSettingsView: View {
     @State private var backupCloudBusy = false
     @State private var showDevnetSettings = false
     @State private var showChatSettings = false
-    @State private var showTerminalSettings = false
     @State private var showDeveloperOptions = false
     @State private var vaultError: String?
     @EnvironmentObject private var chat: SpyderChatStore
@@ -49,17 +47,9 @@ struct WalletSettingsView: View {
                     }
                     .spyderReveal(0.08)
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Внешний вид")
-                            .font(.system(size: 21, weight: .bold))
-                        Picker("Тема", selection: $appearance) {
-                            ForEach(WalletAppearance.allCases) { option in
-                                Text(LocalizedStringKey(option.title)).tag(option.rawValue)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        Text("Аватар и анимации Spyder ID настраиваются только в разделе «Сеть».")
-                            .font(.footnote)
-                            .foregroundStyle(WalletTheme.secondary)
+                        Text("Оформление").font(.system(size: 21, weight: .bold))
+                        Text("Светлый интерфейс. Нативный аватар настраивается в профиле Spyder ID.")
+                            .font(.footnote).foregroundStyle(WalletTheme.secondary)
                     }
                     .foregroundStyle(WalletTheme.ink)
                     .spyderReveal(0.13)

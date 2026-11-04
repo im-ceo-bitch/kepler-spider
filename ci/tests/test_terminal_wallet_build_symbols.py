@@ -20,15 +20,15 @@ class TerminalWalletBuildSymbols(unittest.TestCase):
         bridge = (ROOT / "Console/Features/Chats/SpyderTerminalChatContainer.swift").read_text()
         self.assertIn('final class SpyderSonicPlayer', sound)
         self.assertIn('func playSent()', sound)
-        self.assertIn('if succeeded {', chat)
-        self.assertIn('SpyderSonicPlayer.shared.playSent()', chat)
+        self.assertIn('if await chat.sendMessage(', chat)
+        self.assertNotIn('SpyderSonicPlayer.shared.playSent()', chat)
         self.assertIn('guard await chat.sendMessage(to: peerID, text: message)', bridge)
         self.assertIn('SpyderSonicPlayer.shared.playSent()', bridge)
 
     def test_terminal_package_remains_linked(self):
         spec = (ROOT / "project.yml").read_text()
-        self.assertIn("path: Packages/SpyderTerminalKit", spec)
-        self.assertIn("product: SpyderTerminalKit", spec)
+        self.assertNotIn("path: Packages/SpyderTerminalKit", spec)
+        self.assertNotIn("product: SpyderTerminalKit", spec)
 
 if __name__ == "__main__":
     unittest.main()

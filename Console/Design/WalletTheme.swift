@@ -2,27 +2,13 @@ import SwiftUI
 
 // Apple-native adaptive colors. Deliberately no legacy ConsoleTheme or themed assets.
 enum WalletTheme {
-    static let ink = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark ? UIColor.white : UIColor(red: 0.085, green: 0.085, blue: 0.095, alpha: 1)
-    })
-    static let secondary = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark ? UIColor(white: 0.63, alpha: 1) : UIColor(white: 0.46, alpha: 1)
-    })
-    static let canvas = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark ? UIColor(red: 0.055, green: 0.058, blue: 0.066, alpha: 1) : UIColor(red: 0.963, green: 0.963, blue: 0.971, alpha: 1)
-    })
-    static let surface = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark ? UIColor(red: 0.12, green: 0.125, blue: 0.135, alpha: 1) : .white
-    })
-    static let divider = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.10) : UIColor.black.withAlphaComponent(0.075)
-    })
-    static let accent = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark ? .white : UIColor(red: 0.105, green: 0.105, blue: 0.115, alpha: 1)
-    })
-    static let contrast = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark ? .black : .white
-    })
+    static let ink = Color(white: 0.08)
+    static let secondary = Color(white: 0.46)
+    static let canvas = Color.white
+    static let surface = Color(white: 0.97)
+    static let divider = Color.black.opacity(0.07)
+    static let accent = Color.black
+    static let contrast = Color.white
 }
 
 enum WalletAppearance: String, CaseIterable, Identifiable {

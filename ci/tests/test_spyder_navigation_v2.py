@@ -27,7 +27,7 @@ class NavigationV2Tests(unittest.TestCase):
         self.assertIn('.environmentObject(session)', session)
         self.assertNotIn('.sheet(isPresented: $showingContact)', session)
         self.assertIn('Button(action: onOpenContact)', detail)
-        self.assertIn('onProfile()', home)
+        self.assertIn('Button(action: onProfile)', home)
         self.assertIn('NavigationLink { SpyderProfileEditView() }', hub)
         self.assertNotIn('.sheet(isPresented: $showingPrivacy)', home)
         self.assertNotIn('WalletSettingsView()', hub)
@@ -52,7 +52,7 @@ class NavigationV2Tests(unittest.TestCase):
     def test_peer_does_not_claim_unimplemented_features(self):
         peer = read('Console/Features/Chats/SpyderContactProfilePage.swift')
         self.assertIn('peerFingerprints[contact.id]', peer)
-        self.assertIn('SpyderChatAppearanceSettingsView(peerID: contact.id)', peer)
+        self.assertNotIn('SpyderChatAppearanceSettingsView(', peer)
         self.assertIn('await chat.block(contact.id)', peer)
         self.assertNotIn('В сети сейчас', peer)
 

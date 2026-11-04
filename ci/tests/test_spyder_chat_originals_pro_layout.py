@@ -1,64 +1,47 @@
-"""Source-level invariants for Spyder Pro Chat + Originals 01.
-
-The iOS build and real device rendering are separate gates. This test deliberately
-checks integration boundaries which have repeatedly regressed during ZIP overlays.
-"""
+"""Minimal wallet-chat product boundaries. Source checks do not replace Xcode/device tests."""
 from pathlib import Path
+ROOT=Path(__file__).resolve().parents[2]
+def src(path):return (ROOT/path).read_text()
 
-ROOT = Path(__file__).resolve().parents[2]
+def test_chat_has_no_runtime_wallpaper_or_sticker_renderer():
+    detail=src('Console/Features/Chats/ChatDetailView.swift')
+    for retired in ('SpyderLayeredChatBackdrop(', 'SpyderOriginalView(', 'SpyderOriginalsPicker(', 'SpyderChatAppearanceStore.load('):
+        assert retired not in detail
+    assert '.background(Color.white.ignoresSafeArea())' in detail
 
-def src(relative):
-    return (ROOT / relative).read_text(encoding="utf-8")
+def test_composer_is_keyboard_aware_and_payment_action_is_accessible():
+    detail=src('Console/Features/Chats/ChatDetailView.swift')
+    assert '@FocusState private var composerFocused' in detail
+    assert '.lineLimit(1...5)' in detail
+    assert 'spyder.chat.transfer' in detail
+    assert 'selectChatPersona(id, peer: contact)' in detail
+    assert '.ignoresSafeArea(edges: .bottom)' not in detail
 
+def test_terminal_and_scenekit_are_excluded_from_app_sources():
+    project=src('project.yml')
+    assert 'excludes:' in project
+    assert 'Features/Chats/SpyderOriginals.swift' in project
+    assert 'Features/Chats/SpyderChatTerminalView.swift' in project
+    assert 'product: SpyderTerminalKit' not in project
+    session=src('Console/Features/Chats/SpyderConversationSession.swift')
+    assert 'SpyderTerminalChatContainer(' not in session
+    assert 'ChatDetailView(contact: contact' in session
 
-def test_native_background_not_downgraded_to_old_2d_wallpaper():
-    detail = src("Console/Features/Chats/ChatDetailView.swift")
-    assert "SpyderLayeredChatBackdrop(appearance: appearance" in detail
-    assert "onEntryHandled: { spiderEntryConsumed = true }" in detail
-    assert ".ignoresSafeArea()" in detail
-    assert ".toolbarBackground(.hidden, for: .navigationBar)" in detail
+def test_message_path_remains_signed_and_legacy_stickers_are_text_only():
+    detail=src('Console/Features/Chats/ChatDetailView.swift')
+    service=src('Console/ChatLive/SpyderChatService.swift')
+    protocol=src('Console/Features/Chats/SpyderChatPayments.swift')
+    assert 'await chat.sendMessage(to: contact.id, text: text)' in detail
+    assert 'SpyderMessageCrypto.seal(clean' in service
+    assert 'SpyderPaymentEnvelope.preview(text)' in service
+    assert 'spyder:originals:' in protocol
+    assert 'Стикер скрыт' in protocol
 
-
-def test_composer_is_keyboard_aware_and_identity_selection_remains_accessible():
-    detail = src("Console/Features/Chats/ChatDetailView.swift")
-    assert "@FocusState private var composerFocused" in detail
-    assert 'Label("Писать как: " + visiblePersonaName' in detail
-    assert "if nextPersonaID != nil || changingPersona" in detail
-    assert 'Label("Открыть терминал", systemImage: "terminal")' in detail
-    assert 'Image(systemName: "circle.hexagongrid")' in detail
-    assert '.ignoresSafeArea(edges: .bottom)' in detail
-    assert "await chat.sendNextMessage(to: contact.id, text: content, personaID: persona)" in detail
-
-
-def test_terminal_picker_does_not_use_vertical_space_in_chat():
-    terminal = src("Packages/SpyderTerminalKit/Sources/SpyderTerminalKit/TerminalChatShell.swift")
-    assert 'Image(systemName: selection == .chat ? "terminal" : "bubble.left")' in terminal
-    assert '.accessibilityIdentifier("spyder.chat.terminalToggle")' in terminal
-    assert "if !showsChatSwitch {" in terminal
-    assert "chatContent()" in terminal
-    assert "TerminalExecutionGate" in terminal
-
-
-def test_originals_payload_is_versioned_and_sent_encrypted_without_draft_loss():
-    detail = src("Console/Features/Chats/ChatDetailView.swift")
-    originals = src("Console/Features/Chats/SpyderOriginals.swift")
-    service = src("Console/ChatLive/SpyderChatService.swift")
-    assert 'static let prefix = "spyder:originals:v1:"' in originals
-    assert 'case watcher, blink, threat, webDrop, crawl, phantom, webCast, retreat' in originals
-    assert "SCNView(frame: .zero)" in originals
-    assert "SpyderOriginal.decode(message.text)" in detail
-    assert 'transmit(original.payload, clearDraft: false)' in detail
-    assert 'if clearDraft && draft.trimmingCharacters(in: .whitespacesAndNewlines) == content' in detail
-    assert 'await chat.sendMessage(to: contact.id, text: content)' in detail
-    assert 'SpyderOriginal.decode(text)' in service
-
-
-def test_profile_navigation_read_receipts_and_per_peer_appearance_preserved():
-    detail = src("Console/Features/Chats/ChatDetailView.swift")
-    session = src("Console/Features/Chats/SpyderConversationSession.swift")
-    assert "SpyderChatAppearanceStore.load(peer: contact.id, persona: chat.activePersonaID)" in detail
-    assert "SpyderReadViewport.visibleIDs" in detail
-    assert "await chat.markRead(peer: contact.id, visibleIDs: ids)" in detail
-    assert "SpyderReceiptMark" in detail
-    assert "SpyderContactProfilePage(contact: contact" in session
-    assert ".navigationBarBackButtonHidden(true)" not in detail
+def test_profile_navigation_and_real_read_receipts_preserved():
+    detail=src('Console/Features/Chats/ChatDetailView.swift')
+    session=src('Console/Features/Chats/SpyderConversationSession.swift')
+    assert 'SpyderReadViewport.visibleIDs' in detail
+    assert 'await chat.markRead(peer: contact.id, visibleIDs: ids)' in detail
+    assert 'SpyderReceiptMark' in detail
+    assert 'SpyderContactProfilePage(contact: contact' in session
+    assert '.navigationBarBackButtonHidden(true)' not in detail

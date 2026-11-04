@@ -31,7 +31,7 @@ class PersonaV1Safety(unittest.TestCase):
         detail=source('Console/Features/Chats/ChatDetailView.swift')
         contact=source('Console/Features/Chats/SpyderContactProfilePage.swift')
         self.assertIn('item.peer.avatar?.motion',home)
-        self.assertIn('onOpenActivity: onOpenActivity',detail)
+        self.assertIn('SpyderChatPaymentView(',detail)
         self.assertIn('SpyderProfileAvatarView',contact)
         self.assertIn('peer?.bio',contact)
         self.assertIn('seed: peer?.avatar?.seed',contact)

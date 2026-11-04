@@ -10,24 +10,24 @@ def read(relative):
 class SpyderChatExperienceTests(unittest.TestCase):
     def test_view_uses_live_encrypted_store(self):
         view = read('Console/Features/Chats/ChatDetailView.swift')
-        self.assertIn('chat.sendMessage(to: contact.id, text: content)', view)
+        self.assertIn('chat.sendMessage(to: contact.id, text: text)', view)
         self.assertIn('await chat.loadMessages(peer: contact.id)', view)
-        self.assertIn('SpyderSonicPlayer.shared.playSent()', view)
+        self.assertIn('if await chat.sendMessage(', view)
         self.assertNotIn('Text("✓✓")', view)
 
     def test_accessible_reduced_motion(self):
         view = read('Console/Features/Chats/ChatDetailView.swift')
         wallpaper = read('Console/Features/Chats/SpyderChatExperience.swift')
-        self.assertIn('accessibilityReduceMotion', view)
+        self.assertNotIn('TimelineView', view)
         self.assertIn('accessibilityReduceMotion', wallpaper)
         self.assertIn('isLowPowerModeEnabled', wallpaper)
-        self.assertIn('isLowPowerModeEnabled', view)
+        self.assertNotIn('withAnimation(', view)
 
     def test_local_reactions_never_pretend_to_sync(self):
         view = read('Console/Features/Chats/ChatDetailView.swift')
         appearance = read('Console/Features/Chats/SpyderChatExperience.swift')
-        self.assertIn('SpyderLocalChatReactions.toggle', view)
-        self.assertIn('локальную реакцию', view)
+        self.assertNotIn('SpyderLocalChatReactions.toggle', view)
+        self.assertNotIn('ForEach(SpyderLocalChatReactions', view)
         self.assertIn('local-only', appearance)
         self.assertNotIn('sendReaction(', view)
         self.assertNotIn('sendMessage(to: contact.id, text: emoji)', view)
@@ -40,8 +40,8 @@ class SpyderChatExperienceTests(unittest.TestCase):
                       'static func reset(peer: String, persona: String? = nil',
                       'func save(_ value: SpyderChatAppearance, peer: String? = nil, persona: String? = nil'):
             self.assertIn(token, prefs)
-        self.assertIn('SpyderChatAppearanceSettingsView(peerID: nil)', profile)
-        self.assertIn('SpyderChatAppearanceSettingsView(peerID: contact.id)', detail)
+        self.assertNotIn('SpyderChatAppearanceSettingsView(', profile)
+        self.assertNotIn('SpyderChatAppearanceSettingsView(', detail)
 
     def test_no_wallet_or_server_protocol_in_styling_component(self):
         prefs = read('Console/Features/Chats/SpyderChatExperience.swift')

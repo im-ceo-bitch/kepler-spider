@@ -11,7 +11,7 @@ struct ConsoleApp: App {
     @AppStorage(SpyderMotionKeys.enabled) private var motionEnabled = true
     @AppStorage(SpyderMotionKeys.launchEveryTime) private var launchEveryTime = false
     @AppStorage(SpyderMotionKeys.introSeen) private var introSeen = false
-    @State private var showingBrand = true
+    @State private var showingBrand = false
     @StateObject private var walletAccess = WalletAccess()
     @StateObject private var walletChains = WalletChainStore()
     @StateObject private var publicAssets = WalletPublicAssetsStore()
@@ -25,7 +25,7 @@ struct ConsoleApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     private var preferredScheme: ColorScheme? {
-        WalletAppearance(rawValue: appearance)?.colorScheme
+        .light
     }
 
     var body: some Scene {

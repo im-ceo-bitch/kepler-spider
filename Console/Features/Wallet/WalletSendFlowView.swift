@@ -8,6 +8,8 @@ import UIKit
 struct WalletSendFlowView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @EnvironmentObject private var access: WalletAccess
+    @EnvironmentObject private var chat: SpyderChatStore
     @EnvironmentObject private var chains: WalletChainStore
     @EnvironmentObject private var assets: WalletPublicAssetsStore
     @EnvironmentObject private var addressBook: WalletAddressBookStore
@@ -24,8 +26,19 @@ struct WalletSendFlowView: View {
     @State private var showAddressBook = false
     @State private var showSaveRecipient = false
     let preselected: SpyderChain?
+    let chatRecipient: SpyderChatRecipient?
 
-    init(preselected: SpyderChain? = nil) { self.preselected = preselected }
+    init(preselected: SpyderChain? = nil) { self.preselected = preselected; self.chatRecipient = nil }
+    init(chatRecipient: SpyderChatRecipient) { self.preselected = .ethereum; self.chatRecipient = chatRecipient }
+
+    private var recipientContextValid: Bool {
+        guard let context = chatRecipient else { return true }
+        guard access.unlocked, chat.activePersonaID == context.ownerID,
+              context.payment.isValid(), selected == .ethereum, evmAsset == context.payment.asset.evmAsset,
+              normalizedRecipient == context.payment.address else { return false }
+        return SpyderPaymentEnvelope.recipient(in: chat.messageByPeer[context.peerID] ?? [],
+            peer: context.peerID, owner: context.ownerID, asset: context.payment.asset) == context.payment
+    }
 
     private var normalizedRecipient: String { recipient.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var parsedAmount: Decimal? {
@@ -39,7 +52,7 @@ struct WalletSendFlowView: View {
     }
     private var recipientValid: Bool { WalletAddressValidator.check(normalizedRecipient, for: selected) == .valid }
     private var validToReview: Bool {
-        guard recipientValid, normalizedRecipient.caseInsensitiveCompare(chains.address(for: selected) ?? "") != .orderedSame,
+        guard recipientContextValid, recipientValid, normalizedRecipient.caseInsensitiveCompare(chains.address(for: selected) ?? "") != .orderedSame,
               let entered = parsedAmount else { return false }
         if selected == .ethereum, evmAsset != .eth {
             return assets.stablecoins[evmAsset.rawValue].map { entered <= $0 } ?? false
@@ -72,11 +85,13 @@ struct WalletSendFlowView: View {
         let to = normalizedRecipient
         let entered = amount.replacingOccurrences(of: ",", with: ".")
         let asset = evmAsset
+        let walletID = access.activeWalletID
         Task {
+            defer { if quoteGeneration == currentGeneration { quoteLoading = false } }
             do {
                 let prepared = try await WalletEVMPreflightClient().quote(
                     sender: sender, recipient: to, amount: entered, asset: asset)
-                guard quoteGeneration == currentGeneration,
+                guard quoteGeneration == currentGeneration, recipientContextValid, access.activeWalletID == walletID,
                       chains.address(for: .ethereum)?.caseInsensitiveCompare(sender) == .orderedSame else { return }
                 evmQuote = prepared
                 reviewing = true
@@ -98,11 +113,15 @@ struct WalletSendFlowView: View {
                     Label(LocalizedStringKey(reviewing ? "Проверка перевода" : "Отправить криптовалюту"), systemImage: reviewing ? "checkmark.shield" : "arrow.up.right")
                         .font(.system(size: 28, weight: .bold))
                         .symbolEffect(.bounce, value: reviewing)
-                    Text("Подготовка транзакции Mainnet · неподписанная")
+                    Text(chatRecipient == nil ? "Подготовка транзакции Mainnet · неподписанная" : "Собеседник выбран в чате · подготовка перевода")
                         .font(.subheadline).foregroundStyle(WalletTheme.secondary)
                     WalletCard {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Актив и сеть").font(.system(size: 14, weight: .semibold))
+                            if let context = chatRecipient {
+                                Text(context.payment.asset.ticker + " · " + context.payment.asset.network)
+                                    .font(.headline)
+                            } else {
                             Picker("Актив", selection: $selected) {
                                 ForEach(SpyderChain.allCases) { chain in
                                     Label(chain.name + " · " + chain.ticker, systemImage: chain.symbol).tag(chain)
@@ -110,7 +129,7 @@ struct WalletSendFlowView: View {
                             }
                             .pickerStyle(.menu)
                             .onChange(of: selected) { _, _ in
-                                clearQuote(); evmAsset = .eth; amount = ""
+                                clearQuote(); evmAsset = chatRecipient?.payment.asset.evmAsset ?? .eth; amount = ""
                             }
                             if selected == .ethereum {
                                 Picker("Монета Ethereum", selection: $evmAsset) {
@@ -123,7 +142,20 @@ struct WalletSendFlowView: View {
                                 Text(evmAsset == .eth ? "Нативная монета Ethereum Mainnet" : "ERC-20 · сеть Ethereum Mainnet")
                                     .font(.caption).foregroundStyle(WalletTheme.secondary)
                             }
+                            }
                             Divider()
+                            if let context = chatRecipient {
+                                Text("Получатель").font(.system(size: 14, weight: .semibold))
+                                Text(context.name).font(.headline)
+                                Text(context.handle).font(.subheadline).foregroundStyle(WalletTheme.secondary)
+                                DisclosureGroup("Адрес из защищённого чата") {
+                                    Text(normalizedRecipient).font(.footnote.monospaced()).textSelection(.enabled)
+                                }
+                                if !recipientContextValid {
+                                    Text("Реквизиты изменились, истекли или личность переключена. Запроси их заново в чате.")
+                                        .font(.footnote).foregroundStyle(.red)
+                                }
+                            } else {
                             Text("Адрес получателя").font(.system(size: 14, weight: .semibold))
                             TextField("Вставить адрес", text: $recipient)
                                 .textInputAutocapitalization(.never)
@@ -146,6 +178,7 @@ struct WalletSendFlowView: View {
                                     Label(detail, systemImage: "exclamationmark.triangle")
                                         .font(.footnote).foregroundStyle(.orange)
                                 }
+                            }
                             }
                             Divider()
                             Text("Сумма \(selected == .ethereum ? evmAsset.rawValue : selected.ticker)").font(.system(size: 14, weight: .semibold))
@@ -223,7 +256,22 @@ struct WalletSendFlowView: View {
             .background(WalletTheme.canvas.ignoresSafeArea())
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Закрыть") { dismiss() } } }
         }
-        .onAppear { if let preselected { selected = preselected } }
+        .onAppear {
+            if let preselected { selected = preselected }
+            if let context = chatRecipient {
+                selected = .ethereum; evmAsset = context.payment.asset.evmAsset
+                recipient = context.payment.address ?? ""
+            }
+        }
+        .task {
+            guard chatRecipient != nil else { return }
+            while !Task.isCancelled {
+                if !recipientContextValid && (reviewing || quoteLoading) { clearQuote() }
+                do { try await Task.sleep(for: .seconds(1)) } catch { break }
+            }
+        }
+        .onChange(of: access.activeWalletID) { _, _ in clearQuote() }
+        .onChange(of: chat.activePersonaID) { _, _ in if chatRecipient != nil { clearQuote() } }
         .sheet(isPresented: $showAddressBook) {
             WalletAddressBookView(onSelect: { entry in
                 selected = entry.chain

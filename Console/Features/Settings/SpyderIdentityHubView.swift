@@ -66,8 +66,8 @@ struct SpyderIdentityHubView: View {
     }
 
     private func identityHeader(width: CGFloat) -> some View {
-        let size = SpyderIdentityExpansion.size(width: width, pull: pull, reduceMotion: reduceMotion)
-        let radius = SpyderIdentityExpansion.radius(size: size, pull: pull, reduceMotion: reduceMotion)
+        let size: CGFloat = 80
+        let radius: CGFloat = 40
         return VStack(spacing: 12) {
             Button { showingViewer = true } label: {
                 SpyderProfileAvatarView(motion: chat.myAvatar?.motion ?? .pulse,
@@ -88,7 +88,6 @@ struct SpyderIdentityHubView: View {
             Label(chat.connected ? "Сеть доступна" : "Соединение восстанавливается",
                   systemImage: chat.connected ? "checkmark.shield" : "wifi.slash")
                 .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-            Text("Потяни вниз, чтобы раскрыть аватар").font(.caption2).foregroundStyle(WalletTheme.secondary)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 18)
     }
@@ -142,15 +141,7 @@ struct SpyderIdentityHubView: View {
             }
             Divider()
             NavigationLink { SpyderPersonaStyleView() } label: {
-                identityRow("Персонализация", detail: "Аватар, цвета, анимации", symbol: "paintpalette")
-            }
-            Divider()
-            NavigationLink { SpyderChatAppearanceSettingsView(peerID: nil) } label: {
-                identityRow("Оформление чатов", detail: "Обои, пузырьки и эффекты", symbol: "bubble.left.and.bubble.right")
-            }
-            Divider()
-            NavigationLink { SpyderTerminalSettingsScreen() } label: {
-                identityRow("Spyder Terminal", detail: "Режим, команды и печать", symbol: "terminal")
+                identityRow("Аватар", detail: "Нативный аватар профиля", symbol: "paintpalette")
             }
             Divider()
             NavigationLink { SpyderChatConnectionSettingsView() } label: {

@@ -14,18 +14,18 @@ class TerminalWalletCumulativeMergeTests(unittest.TestCase):
                       'NavigationStack(path: $walletPath)', 'NavigationStack(path: $networkPath)'):
             self.assertIn(token,root)
         session=read('Console/Features/Chats/SpyderConversationSession.swift')
-        self.assertIn('SpyderTerminalChatContainer(contact: contact',session)
+        self.assertIn('ChatDetailView(contact: contact',session)
         self.assertIn('.environmentObject(session)',session)
         self.assertNotIn('WalletControlCenterView(', root)
-        self.assertIn('SpyderTerminalSettingsScreen()',
+        self.assertNotIn('SpyderTerminalSettingsScreen()',
                       read('Console/Features/Settings/SpyderIdentityHubView.swift'))
     def test_terminal_package_in_xcodegen(self):
         project=read('project.yml')
-        for token in ('path: Packages/SpyderTerminalKit','product: SpyderTerminalKit','product: WalletCore'):
+        for token in ('product: WalletCore','Features/Chats/SpyderChatTerminalView.swift','excludes:'):
             self.assertIn(token,project)
     def test_terminal_ui_available_in_chats_and_settings(self):
-        self.assertIn('SpyderChatTerminalView(',read('Console/Features/Chats/ChatDetailView.swift'))
-        self.assertIn('SpyderTerminalSettingsScreen()',read('Console/Features/Settings/SpyderIdentityHubView.swift'))
+        self.assertNotIn('SpyderChatTerminalView(',read('Console/Features/Chats/ChatDetailView.swift'))
+        self.assertNotIn('SpyderTerminalSettingsScreen()',read('Console/Features/Settings/SpyderIdentityHubView.swift'))
         self.assertIn('struct SpyderChatTerminalView',read('Console/Features/Chats/SpyderChatTerminalView.swift'))
     def test_market_and_chat_preserved(self):
         self.assertIn('WalletCatalogSection(catalog: catalog)',read('Console/Features/Wallet/WalletHomeView.swift'))
