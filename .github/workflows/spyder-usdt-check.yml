@@ -1,0 +1,24 @@
+name: Spyder USDT - offline iOS verification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: macos-26-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select the same Xcode as the existing TestFlight workflow
+        run: |
+          set -euo pipefail
+          test -d /Applications/Xcode_26.6.app/Contents/Developer
+          echo "DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer" >> "$GITHUB_ENV"
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Repository checks
+        run: |
+          python3 ci/verify_repo.py
+          python3 -m unittest discover -s ci/tests -v
+      - name: Offline USDT signer and recipient tests on iOS Simulator
+        run: bash ci/check_usdt_signing.sh
