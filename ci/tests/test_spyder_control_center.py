@@ -12,13 +12,14 @@ class ControlCenterTests(unittest.TestCase):
         assert 'spyder.chat.push.open.pending' not in panel
         assert 'chat.myUsername' in network and 'access.activeAccountName' in panel
         self.assertNotIn('WalletVault.save(',panel)
-    def test_gesture_only_edge_on_wallet_not_chat(self):
+    def test_wallet_profile_has_discoverable_button_and_chat_has_no_edge_gesture(self):
+        # Stage 2 replaces the undiscoverable edge swipe with an explicit button.
         home=src('Console/Features/Wallet/WalletHomeView.swift')
-        assert 'value.startLocation.x <= 26' in home
-        assert 'value.translation.width > 95' in home
-        assert 'onControlCenter()' in home
-        assert 'WalletCatalogSection(catalog: catalog)' in home
-        self.assertNotIn('DragGesture',src('Console/Features/Chats/ChatsHomeView.swift'))
+        self.assertIn('headerButton("person.crop.circle", label: "Профиль", action: onControlCenter)', home)
+        self.assertIn('.frame(width: 44, height: 44)', home)
+        self.assertIn('WalletCatalogSection(catalog: catalog)', home)
+        self.assertNotIn('DragGesture', home)
+        self.assertNotIn('DragGesture', src('Console/Features/Chats/ChatsHomeView.swift'))
     def test_root_keeps_chat_navigation_and_push(self):
         root=src('Console/WalletRootView.swift')
         assert 'openChatAfterNotificationIfNeeded()' in root

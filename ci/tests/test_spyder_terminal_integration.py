@@ -11,13 +11,17 @@ class SpyderTerminalIntegrationTests(unittest.TestCase):
         self.assertNotIn("SpyderTerminalKit:\n    path: Packages/SpyderTerminalKit", project)
         self.assertNotIn("product: SpyderTerminalKit", project)
 
-    def test_active_chat_routed_to_terminal(self):
+    def test_chat_transfer_entry_without_terminal(self):
         chat = (ROOT / "Console/Features/Chats/ChatDetailView.swift").read_text()
         root = (ROOT / "Console/WalletRootView.swift").read_text()
         self.assertNotIn("SpyderChatTerminalView(", chat)
         self.assertIn("onOpenActivity:", root)
-        self.assertIn('Label("Перевести", systemImage: "arrow.up.right")', chat)
+        # Transfer is intentionally moved out of the cluttered + menu.
+        self.assertIn('Button { openPayment() } label:', chat)
+        self.assertIn('.accessibilityLabel("Начать перевод")', chat)
+        self.assertIn('.accessibilityIdentifier("spyder.chat.transfer")', chat)
         self.assertIn('SpyderChatPaymentView(', chat)
+        self.assertIn('Button("Выбрать сумму") { openPayment(asset: payment.asset) }', chat)
 
     def test_catalogs_and_safety(self):
         source = ROOT / "Packages/SpyderTerminalKit/Sources/SpyderTerminalKit/Resources"

@@ -34,7 +34,9 @@ class EVMStage2Tests(unittest.TestCase):
         self.assertNotIn('WalletEVMOfflineSigner', flow)
         for prohibited in ('eth_sendRawTransaction', 'eth_sendTransaction', 'URLSession', 'UserDefaults', 'UIPasteboard'):
             self.assertNotIn(prohibited, signer)
-        self.assertIn('showUnavailable = true', flow)
+        self.assertIn('guard let context = chatRecipient, context.payment.asset == .usdtEthereum,', flow)
+        self.assertIn('WalletEthereumSignature.verifyOwnership(', flow)
+        self.assertIn('guard canSendUSDT, !transfers.busy', flow)
         self.assertIn('canSendUSDT', flow)
 
     def test_signed_vector_runs_only_in_xcode_and_no_real_secrets(self):

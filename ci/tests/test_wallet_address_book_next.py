@@ -32,7 +32,10 @@ class WalletAddressBookRegression(unittest.TestCase):
         self.assertIn('WalletAddressBookView(onSelect:', send)
         self.assertIn('WalletAddressBookAddView(chain: selected, address: normalizedRecipient)', send)
         self.assertIn('WalletAddressValidator.check(normalizedRecipient, for: selected)', send)
-        self.assertIn('showUnavailable = true', send) # still no broadcast
+        self.assertIn('guard let context = chatRecipient, context.payment.asset == .usdtEthereum,', send)
+        self.assertIn('else if canSendUSDT { confirmUSDT = true }', send)
+        self.assertIn('guard canSendUSDT, !transfers.busy', send)  # manual address cannot send
+        self.assertIn('Это предпросмотр. Отправка выбранного актива здесь недоступна.', send)
         self.assertNotIn('eth_sendRawTransaction', send)
 
     def test_validation_is_not_a_fake_authorization(self):

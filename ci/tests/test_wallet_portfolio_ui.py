@@ -39,9 +39,10 @@ class WalletPortfolioUIRegressions(unittest.TestCase):
         self.assertIn('ForEach(WalletReceiveAsset.supportedMainnet)', RECEIVE)
         self.assertIn('DisclosureGroup("Тестовая сеть Spider Chain")', RECEIVE)
 
-    def test_devnet_only_shown_when_configured(self):
-        self.assertRegex(HOME, r'if\s+spider\.hasConfiguration\s*\{\s*DisclosureGroup')
-        self.assertIn('if spider.hasConfiguration', HOME)
+    def test_devnet_only_shown_when_configured_and_portfolio_selected(self):
+        self.assertIn('@State private var showDevnet = false', HOME)
+        self.assertRegex(HOME, r'if\s+selectedSection\s*==\s*WalletHomeSection\.assets\.rawValue\s*&&\s*spider\.hasConfiguration\s*\{\s*DisclosureGroup\(isExpanded:\s*\$showDevnet\)')
+        self.assertIn('spiderSection', HOME)
 
 
 if __name__ == '__main__':

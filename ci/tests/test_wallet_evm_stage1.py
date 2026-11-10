@@ -55,7 +55,9 @@ class EVMPreflightTests(unittest.TestCase):
         ui = FLOW.read_text()
         self.assertIn('WalletEVMPreflightClient().quote(', ui)
         self.assertIn('if let quote = evmQuote', ui)
-        self.assertIn('showUnavailable = true', ui)
+        self.assertIn('guard let context = chatRecipient, context.payment.asset == .usdtEthereum,', ui)
+        self.assertIn('else if canSendUSDT { confirmUSDT = true }', ui)
+        self.assertIn('guard canSendUSDT, !transfers.busy', ui)
         self.assertNotIn('eth_sendRawTransaction', ui)
 
     def test_localization(self):

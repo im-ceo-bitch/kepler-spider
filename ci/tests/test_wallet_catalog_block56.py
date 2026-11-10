@@ -12,12 +12,16 @@ MODEL = (ROOT / 'Console/WalletCore/WalletCatalogModels.swift').read_text()
 
 
 class WalletCatalogBlock56Tests(unittest.TestCase):
-    def test_switch_inside_wallet_below_actions(self):
-        self.assertLess(HOME.index('quickActions\n'), HOME.index('walletSectionPicker\n'))
-        self.assertIn('WalletCatalogSection(catalog: catalog)', HOME)
-        self.assertIn('assetsSection', HOME)
-        self.assertIn('recentSection', HOME)
-        self.assertIn('@AppStorage("spyder.wallet.home.section")', HOME)
+    def test_market_has_explicit_navigation_and_wallet_actions_remain_visible(self):
+        # Stage 2 removes the ambiguous Assets/Cryptocurrencies picker. The wallet
+        # stays the default; the market has an explicit entry and return action.
+        self.assertIn('@State private var selectedSection = WalletHomeSection.assets.rawValue', HOME)
+        self.assertRegex(HOME, r'if selectedSection == WalletHomeSection\.cryptocurrencies\.rawValue\s*\{\s*marketNavigationHeader\s+marketStrip\s+WalletCatalogSection\(catalog: catalog\)')
+        self.assertRegex(HOME, r'else\s*\{\s*portfolioCard\s+quickActions\s+assetsSection\s+recentSection\s+marketEntry')
+        self.assertIn('selectedSection = WalletHomeSection.cryptocurrencies.rawValue', HOME)
+        self.assertIn('selectedSection = WalletHomeSection.assets.rawValue', HOME)
+        self.assertIn('Label("Вернуться в кошелёк", systemImage: "chevron.left")', HOME)
+        self.assertNotIn('walletSectionPicker', HOME)
 
     def test_real_bounded_market_api(self):
         self.assertIn('api.coingecko.com/api/v3/coins/markets', STORE)

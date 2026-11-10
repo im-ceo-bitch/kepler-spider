@@ -1,7 +1,8 @@
-"""Release regression checks compatible with Spyder Wallet Blocks 1–4.
+"""Release regressions for wallet routes and supported transfer boundaries.
 
-Keep this test focused on *observable safety properties* rather than naming an
-obsolete view. Mainnet send remains preview-only until independently audited.
+Mainnet generic/manual transfers remain preview-only. A reviewed USDT ERC-20
+transfer can only be sent to verified chat-recipient credentials after an
+explicit confirmation and authorization. The tests guard that distinction.
 """
 from pathlib import Path
 import re
@@ -32,27 +33,30 @@ class LiveReleaseChecks(unittest.TestCase):
         home = source('Console/Features/Wallet/WalletHomeView.swift')
         body = home.split('var body: some View {', 1)[1].split('private var spiderSection:', 1)[0]
         if 'spiderSection' in body:
-            # A configured test chain may be shown directly or inside a closed-by-default disclosure.
-            self.assertRegex(body, r'if\s+spider\.hasConfiguration\s*\{')
-            self.assertTrue(
-                re.search(r'if\s+spider\.hasConfiguration\s*\{\s*spiderSection\b', body)
-                or re.search(r'if\s+spider\.hasConfiguration\s*\{\s*DisclosureGroup\([^)]*\)\s*\{\s*spiderSection\b', body),
-                'Devnet is accessible only when explicitly configured'
-            )
+            # Stage 2 additionally requires the portfolio view to be selected.
+            # Devnet stays closed by default, even when the backend is configured.
+            self.assertIn('@State private var showDevnet = false', home)
+            self.assertRegex(body, r'if\s+selectedSection\s*==\s*WalletHomeSection\.assets\.rawValue\s*&&\s*spider\.hasConfiguration\s*\{\s*DisclosureGroup\(isExpanded:\s*\$showDevnet\)\s*\{\s*spiderSection')
         self.assertNotIn('WalletDemoLabel()', body)
 
     def test_mainnet_ui_has_no_direct_broadcaster_and_requires_review(self):
         root = source('Console/WalletRootView.swift')
         flow = source('Console/Features/Wallet/WalletSendFlowView.swift')
         self.assertRegex(root, r'case\s+\.send:\s*WalletSendFlowView\(preselected:\s*sendChain\)')
-        self.assertIn('showUnavailable = true', flow)
+        # Manual-address and other coins are preview-only. The ONLY active
+        # transfer needs verified in-chat USDT credentials and a separate confirm.
+        self.assertIn('guard let context = chatRecipient, context.payment.asset == .usdtEthereum,', flow)
+        self.assertIn('WalletEthereumSignature.verifyOwnership(', flow)
+        self.assertIn('else if canSendUSDT { confirmUSDT = true }', flow)
+        self.assertIn('Button("Подтвердить через Face ID / код") { sendUSDT() }', flow)
+        self.assertIn('guard canSendUSDT, !transfers.busy', flow)
+        self.assertIn('Это предпросмотр. Отправка выбранного актива здесь недоступна.', flow)
         self.assertIn('Подтвердить и отправить USDT', flow)
-        self.assertIn('Отправка ещё не включена', flow)
         # Do not mistake a visible send form for a complete signing engine.
         for api in ('eth_sendRawTransaction', 'sendRawTransaction', 'sendTransaction',
                     'sendAndConfirmTransaction', 'broadcastTransaction', 'URLSession.shared.data(for:'):
             self.assertNotIn(api, flow, f'Mainnet preview unexpectedly references {api}')
-        self.assertIn('.disabled(transfers.busy || (submitted == nil && (!validToReview || quoteLoading)))', flow) # preflight must also gate loading state
+        self.assertIn('.disabled(transfers.busy || (submitted == nil && (!reviewing && (!validToReview || quoteLoading))))', flow) # prevent quoting when invalid or still loading
 
     def test_market_prices_include_tokens_and_partial_banner(self):
         market = source('Console/WalletCore/WalletPublicAssets.swift')
