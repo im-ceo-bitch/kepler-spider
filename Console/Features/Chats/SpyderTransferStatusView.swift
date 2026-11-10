@@ -10,6 +10,14 @@ struct SpyderTransferStatusView: View {
     @State private var error: String?
     @State private var checkedAt: Date?
     @State private var retryCount = 0
+    @State private var checking = false
+
+    private var hasFinalResult: Bool {
+        switch assessment {
+        case .confirmed, .reverted: return true
+        default: return false
+        }
+    }
 
     private var status: LocalizedStringKey {
         switch assessment {
@@ -34,7 +42,9 @@ struct SpyderTransferStatusView: View {
                     Text("Ethereum · ERC-20").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Text(status).font(.subheadline.weight(.medium))
+            Text(status)
+                .font(.subheadline.weight(.medium))
+                .accessibilityAddTraits(.updatesFrequently)
             if case .reverted = assessment {
                 Text("USDT не переведены. Сеть могла списать комиссию в ETH.").font(.caption).foregroundStyle(.secondary)
             } else if case .notSeen = assessment {
@@ -45,7 +55,17 @@ struct SpyderTransferStatusView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Повторить проверку") { retryCount += 1 }
                     .buttonStyle(SpyderActionButtonStyle(.tertiary))
-                    .disabled(!enabled || scenePhase != .active || !sectionActive)
+                    .disabled(!enabled || scenePhase != .active || !sectionActive || checking)
+            } else if !hasFinalResult {
+                Button { retryCount += 1 } label: {
+                    HStack(spacing: 8) {
+                        if checking { ProgressView() }
+                        Text(checking ? "Проверяем статус…" : "Обновить статус")
+                    }
+                }
+                    .buttonStyle(SpyderActionButtonStyle(.tertiary))
+                    .disabled(!enabled || scenePhase != .active || !sectionActive || checking)
+                    .accessibilityHint("Проверить хеш в сети повторно, без повторной отправки средств")
             }
             if let checkedAt {
                 Text("Проверено в \(checkedAt.formatted(date: .omitted, time: .shortened))")
@@ -67,13 +87,16 @@ struct SpyderTransferStatusView: View {
         }
         .task(id: "\(transfer.txHash)-\(scenePhase == .active)-\(sectionActive)-\(enabled)-\(retryCount)") {
             guard enabled, scenePhase == .active, sectionActive else { return }
+            defer { checking = false }
             while !Task.isCancelled {
+                checking = true
                 do {
                     let result = try await WalletEVMOutgoingTracker().reconcile(txHash: transfer.txHash, intent: transfer.intent, notBefore: transfer.binding?.addressIssuedAt)
                     guard !Task.isCancelled else { return }
                     assessment = result; error = nil; checkedAt = Date()
                 } catch is CancellationError { return }
                 catch { self.error = error.localizedDescription }
+                checking = false
                 do { try await Task.sleep(for: .seconds(12)) } catch { return }
             }
         }

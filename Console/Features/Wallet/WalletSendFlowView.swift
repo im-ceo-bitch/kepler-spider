@@ -25,6 +25,9 @@ struct WalletSendFlowView: View {
     @State private var confirmUSDT = false
     @State private var approvedWalletID: String?
     @State private var submitted: WalletUSDTTransferRecord?
+    // A single approval attempt may have an uncertain network outcome. Never offer an immediate retry.
+    @State private var sendAttempted = false
+    @State private var submissionPending = false
     @State private var pageVisible = false
     @State private var showAddressBook = false
     @State private var showSaveRecipient = false
@@ -48,14 +51,15 @@ struct WalletSendFlowView: View {
               selected == .ethereum, evmAsset == .usdt, approvedWalletID == access.activeWalletID,
               let quote = evmQuote, quote.matches(sender: chains.address(for: .ethereum) ?? "",
                 recipient: normalizedRecipient, amount: amount.replacingOccurrences(of: ",", with: "."), asset: .usdt),
-              recipientContextValid, submitted == nil else { return false }
+              recipientContextValid, submitted == nil, !sendAttempted else { return false }
         return WalletEthereumSignature.verifyOwnership(context.payment, requester: context.ownerID,
             receiver: context.peerID, server: chat.serverAddress)
     }
 
     private var primaryButtonTitle: String {
-        if transfers.busy { return "Подтверждение и отправка…" }
-        if submitted != nil { return "Вернуться в чат" }
+        if transfers.busy || submissionPending { return "Подтверждение и отправка…" }
+        if submitted != nil { return chatRecipient == nil ? "Готово" : "Вернуться в чат" }
+        if sendAttempted { return "Готово" }
         if quoteLoading { return "Проверка сети…" }
         if reviewing { return canSendUSDT ? "Подтвердить и отправить USDT" : "Изменить реквизиты" }
         return "Проверить реквизиты"
@@ -92,7 +96,7 @@ struct WalletSendFlowView: View {
     }
 
     private func prepareReview() {
-        guard validToReview else { return }
+        guard validToReview, !sendAttempted else { return }
         guard selected == .ethereum else {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { reviewing = true }
             return
@@ -139,7 +143,7 @@ struct WalletSendFlowView: View {
                         .symbolEffect(.bounce, value: reviewing)
                     Text(chatRecipient == nil ? "Здесь можно проверить адрес, сумму и комиссию. Отправка средств с произвольного адреса недоступна." : "Отправка USDT доступна только с подтверждёнными реквизитами собеседника.")
                         .font(.subheadline).foregroundStyle(WalletTheme.secondary)
-                    Label(submitted != nil ? "Результат перевода" : (reviewing ? "Шаг 2 из 2 · Проверка" : "Шаг 1 из 2 · Реквизиты"),
+                    Label(submitted != nil ? "Результат перевода" : (sendAttempted ? "Результат попытки" : (reviewing ? "Шаг 2 из 2 · Проверка" : "Шаг 1 из 2 · Реквизиты")),
                           systemImage: reviewing ? "checkmark.circle" : "1.circle")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(WalletTheme.secondary)
@@ -244,7 +248,7 @@ struct WalletSendFlowView: View {
                                     Label("Итоговая проверка", systemImage: "checkmark.shield")
                                         .font(.system(size: 17, weight: .semibold))
                                     Spacer(minLength: 8)
-                                    if submitted == nil && !transfers.busy {
+                                    if submitted == nil && !transfers.busy && !sendAttempted {
                                         Button("Изменить") { clearQuote() }
                                             .font(.subheadline.weight(.semibold))
                                             .frame(minHeight: 44)
@@ -297,7 +301,17 @@ struct WalletSendFlowView: View {
                         Text("Попытка сохранена. Статус проверяется по хешу; повторная отправка автоматически не выполняется.")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    if let error = transfers.error { Text(error).font(.footnote).foregroundStyle(.red) }
+                    if sendAttempted && submitted == nil && !submissionPending {
+                        Label("Результат отправки неизвестен. Не повторяйте перевод: сначала проверьте историю и сеть Ethereum.", systemImage: "exclamationmark.shield")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.orange)
+                            .accessibilityAddTraits(.updatesFrequently)
+                    }
+                    if let error = transfers.error {
+                        DisclosureGroup("Причина сбоя") {
+                            Text(error).font(.footnote).textSelection(.enabled)
+                        }.font(.footnote).foregroundStyle(WalletTheme.secondary)
+                    }
                     if let quoteError {
                         Label(quoteError, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.orange)
@@ -323,12 +337,11 @@ struct WalletSendFlowView: View {
                 }
                 .foregroundStyle(WalletTheme.ink)
                 .padding(20)
-                .disabled(transfers.busy || submitted != nil)
             }
             .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .bottom) {
                 Button {
-                    if submitted != nil { dismiss() }
+                    if submitted != nil || sendAttempted { dismiss() }
                     else if !reviewing { prepareReview() }
                     else if canSendUSDT { confirmUSDT = true }
                     else { clearQuote() }
@@ -337,15 +350,15 @@ struct WalletSendFlowView: View {
                         .spyderPrimaryButton()
                 }
                 .buttonStyle(.plain)
-                .disabled(transfers.busy || (submitted == nil && (!reviewing && (!validToReview || quoteLoading))))
-                .accessibilityHint(reviewing && canSendUSDT ? "Откроется отдельное подтверждение перед подписью перевода" : "Сохранённые средства не списываются без подтверждения")
+                .disabled(transfers.busy || submissionPending || (submitted == nil && !sendAttempted && !reviewing && (!validToReview || quoteLoading)))
+                .accessibilityHint(sendAttempted ? "Закрыть проверку и просмотреть историю переводов" : (reviewing && canSendUSDT ? "Откроется отдельное подтверждение перед подписью перевода" : "Сохранённые средства не списываются без подтверждения"))
                 .padding(.horizontal, 20).padding(.vertical, 10)
                 .background(WalletTheme.canvas)
             }
             .background(WalletTheme.canvas.ignoresSafeArea())
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Закрыть") { dismiss() }.disabled(transfers.busy) } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Закрыть") { dismiss() }.disabled(transfers.busy || submissionPending) } }
         }
-        .interactiveDismissDisabled(transfers.busy)
+        .interactiveDismissDisabled(transfers.busy || submissionPending)
         .onDisappear { pageVisible = false; transfers.cancelAuthorization() }
         .onAppear {
             pageVisible = true
@@ -383,11 +396,13 @@ struct WalletSendFlowView: View {
         }
     }
     private func sendUSDT() {
-        guard canSendUSDT, !transfers.busy, let quote = evmQuote, let recipient = chatRecipient,
+        guard canSendUSDT, !transfers.busy, !sendAttempted, let quote = evmQuote, let recipient = chatRecipient,
               let sender = chains.address(for: .ethereum) else { return }
         let walletID = access.activeWalletID, server = chat.serverAddress
         do {
             let intent = try WalletEVMUnsignedIntent(quote: quote, expectedSender: sender)
+            sendAttempted = true
+            submissionPending = true
             Task {
                 let result = await transfers.send(intent: intent, quote: quote, walletID: walletID,
                     recipient: recipient, server: server, authorize: {
@@ -396,11 +411,13 @@ struct WalletSendFlowView: View {
                         reviewing && evmQuote == quote && approvedWalletID == walletID
                     })
                 submitted = result ?? transfers.records.first(where: { $0.walletID == walletID && $0.intent == intent })
+                submissionPending = false
                 if submitted != nil {
                     await transfers.announce(chat: chat)
                     await assets.refresh(addresses: chains.addresses)
                 }
-                else { clearQuote() }
+                // An unknown outcome is not permission to resubmit.
+                // Keep the result screen available and require an independent status check.
             }
         } catch { quoteError = error.localizedDescription; reviewing = false }
     }

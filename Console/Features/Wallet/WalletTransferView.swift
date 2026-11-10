@@ -13,6 +13,8 @@ struct WalletTransferView: View {
     @State private var isReview = false
     @State private var didSubmit = false
     @State private var isSubmitting = false
+    // A failed submission can have an uncertain chain result; do not permit a second tap to resend.
+    @State private var didAttempt = false
     @State private var transferError: String?
 
     private var amountIsValid: Bool {
@@ -32,6 +34,7 @@ struct WalletTransferView: View {
         VStack(spacing: 0) {
             HStack {
                 SpyderNavigationButton(symbol: "xmark", label: "Закрыть", action: { dismiss() })
+                    .disabled(isSubmitting || spider.sending)
                 Spacer()
                 Text(isRequest ? "ДЕМО-ЗАПРОС" : "TEST DEVNET")
                     .font(.footnote.weight(.semibold))
@@ -133,6 +136,23 @@ struct WalletTransferView: View {
                             }
                         }
                     }
+                    if didAttempt && !didSubmit && !isSubmitting {
+                        WalletCard {
+                            VStack(alignment: .leading, spacing: 9) {
+                                Label("Результат отправки неизвестен", systemImage: "exclamationmark.shield")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.orange)
+                                    .accessibilityAddTraits(.updatesFrequently)
+                                Text("Не повторяйте перевод до проверки статуса сети. Вернитесь в кошелёк и проверьте последнюю операцию.")
+                                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                                if let transferError {
+                                    DisclosureGroup("Сведения об ошибке") {
+                                        Text(transferError).font(.footnote).textSelection(.enabled)
+                                    }.font(.footnote)
+                                }
+                            }
+                        }
+                    }
                     if didSubmit, spider.pendingForAddress == nil, spider.latestConfirmed != nil {
                         Label("Тестовая транзакция финализирована", systemImage: "checkmark.seal.fill")
                             .font(.system(size: 15, weight: .semibold))
@@ -143,11 +163,13 @@ struct WalletTransferView: View {
             }
             Button {
                 if didSubmit { dismiss() }
+                else if didAttempt { dismiss() }
                 else if !isReview {
                     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { isReview = true }
                 } else if isRequest { dismiss() }
                 else if !isSubmitting {
                     isSubmitting = true
+                    didAttempt = true
                     Task {
                         defer { isSubmitting = false }
                         do {
@@ -160,19 +182,16 @@ struct WalletTransferView: View {
                 HStack {
                     if spider.sending || isSubmitting { ProgressView().tint(WalletTheme.contrast) }
                     Text(didSubmit ? "Готово" :
-                        (isReview ? (isRequest ? "Закрыть предпросмотр" : "Подписать и отправить тестовые SPD") : "Проверить реквизиты"))
+                        (didAttempt ? "Вернуться в кошелёк" :
+                        (isReview ? (isRequest ? "Закрыть предпросмотр" : "Подписать и отправить тестовые SPD") : "Проверить реквизиты")))
                 }.spyderPrimaryButton()
             }
-            .disabled(!didSubmit && (!canContinue || isSubmitting))
+            .disabled(isSubmitting || spider.sending || (!didSubmit && !didAttempt && !canContinue))
             .padding(.horizontal, 20)
             .padding(.bottom, 25)
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
-        .alert("Spider Devnet", isPresented: Binding(
-            get: { transferError != nil }, set: { if !$0 { transferError = nil } }
-        )) {
-            Button("Понятно", role: .cancel) { transferError = nil }
-        } message: { Text(transferError ?? "") }
+        .interactiveDismissDisabled(isSubmitting || spider.sending)
     }
 }
 
@@ -559,6 +578,16 @@ struct WalletReceiveView: View {
             .padding(.bottom, 30)
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
+        .onChange(of: verifiedAddress) { previous, current in
+            guard previous != current else { return }
+            acknowledged = false
+            copied = false
+            depositHash = ""
+            resetDepositCheck()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { copied = false }
+        }
         .onChange(of: access.activeWalletID) { _, _ in
             acknowledged = false
             copied = false

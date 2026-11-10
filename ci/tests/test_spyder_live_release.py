@@ -56,7 +56,9 @@ class LiveReleaseChecks(unittest.TestCase):
         for api in ('eth_sendRawTransaction', 'sendRawTransaction', 'sendTransaction',
                     'sendAndConfirmTransaction', 'broadcastTransaction', 'URLSession.shared.data(for:'):
             self.assertNotIn(api, flow, f'Mainnet preview unexpectedly references {api}')
-        self.assertIn('.disabled(transfers.busy || (submitted == nil && (!reviewing && (!validToReview || quoteLoading))))', flow) # prevent quoting when invalid or still loading
+        self.assertIn('.disabled(transfers.busy || submissionPending || (submitted == nil && !sendAttempted && !reviewing && (!validToReview || quoteLoading)))', flow) # prevent quoting when invalid and keep unknown-outcome exit available
+        self.assertIn('sendAttempted = true', flow)
+        self.assertIn('guard canSendUSDT, !transfers.busy, !sendAttempted', flow)
 
     def test_market_prices_include_tokens_and_partial_banner(self):
         market = source('Console/WalletCore/WalletPublicAssets.swift')
