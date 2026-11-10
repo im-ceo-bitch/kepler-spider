@@ -45,7 +45,7 @@ struct SpyderMotionSettingsView: View {
                                     HStack(spacing: 10) {
                                         Circle().fill(option.color).frame(width: 18, height: 18)
                                         Text(LocalizedStringKey(option.title))
-                                            .font(.system(size: 13, weight: .semibold))
+                                            .font(.footnote.weight(.semibold))
                                             .lineLimit(1)
                                             .minimumScaleFactor(0.8)
                                         if currentAccent == option {
@@ -95,7 +95,7 @@ struct SpyderMotionSettingsView: View {
                                             .foregroundStyle(currentAvatar == option ? currentAccent.color : WalletTheme.ink)
                                             .frame(height: 33)
                                         Text(LocalizedStringKey(option.title))
-                                            .font(.system(size: 11, weight: currentAvatar == option ? .bold : .medium))
+                                            .font(.footnote.weight(currentAvatar == option ? .bold : .medium))
                                             .lineLimit(1)
                                             .minimumScaleFactor(0.78)
                                     }
@@ -112,7 +112,7 @@ struct SpyderMotionSettingsView: View {
                             }
                         }
                         Text("12 стилей · выбранный аватар будет использоваться в профиле.")
-                            .font(.system(size: 12))
+                            .font(.footnote)
                             .foregroundStyle(WalletTheme.secondary)
                     }
 
@@ -161,7 +161,7 @@ struct SpyderMotionSettingsView: View {
                         Toggle("Заставка при каждом запуске", isOn: $launchEveryTime)
                             .disabled(!motionEnabled || currentLaunch == .simple)
                         Text("Если анимации отключены или в iPhone включено «Уменьшение движения», показываем статичный логотип. По умолчанию заставка проигрывается только один раз, при первом открытии.")
-                            .font(.system(size: 12))
+                            .font(.footnote)
                             .foregroundStyle(WalletTheme.secondary)
                     }
                     .tint(currentAccent.color)
@@ -240,7 +240,7 @@ private struct SpyderLaunchPreview: View {
                 }
                 Spacer()
                 Text("Предпросмотр · можно закрыть в любой момент")
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(.white.opacity(0.55))
             }
             .padding(24)

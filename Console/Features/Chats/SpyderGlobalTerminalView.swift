@@ -130,18 +130,9 @@ private final class SpyderGlobalTerminalBindings: ObservableObject {
         }
         try? host.register("settings.theme.set") { request in
             try Self.validateGlobal(request)
-            let names: [String: WalletAppearance] = [
-                "dark": .dark, "темная": .dark, "тёмная": .dark,
-                "light": .light, "светлая": .light,
-                "system": .system, "системная": .system
-            ]
-            guard let name = request.parameters["theme"]?.lowercased(),
-                  let appearance = names[name] else {
-                throw TerminalHostError.invalidParameter("theme (dark / light / system)")
-            }
-            UserDefaults.standard.set(appearance.rawValue, forKey: "spyder.wallet.appearance")
-            let label = Self.localize(request, ru: "Тема приложения", en: "App theme")
-            return TerminalActionResult(message: "\(label): \(appearance.rawValue)")
+            return TerminalActionResult(message: Self.localize(request,
+                ru: "Смена темы пока недоступна. Используется светлая тема; настройки не изменены.",
+                en: "Theme switching is unavailable. The light theme stays active; no settings were changed."))
         }
         try? host.register("settings.notifications.enable") { [weak chat] request in
             try Self.validateGlobal(request)

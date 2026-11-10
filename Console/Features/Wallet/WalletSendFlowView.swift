@@ -193,16 +193,28 @@ struct WalletSendFlowView: View {
                                 .textContentType(.none)
                                 .font(.system(size: 14, design: .monospaced))
                                 .onChange(of: recipient) { _, _ in clearQuote() }
-                            HStack(spacing: 16) {
+                            HStack(spacing: 8) {
                                 Button {
                                     if let text = UIPasteboard.general.string { recipient = text }
-                                } label: { Label("Вставить", systemImage: "doc.on.clipboard") }
-                                Button { showAddressBook = true } label: { Label("Получатели", systemImage: "person.crop.rectangle.stack") }
+                                } label: { Label("Вставить", systemImage: "doc.on.clipboard")
+                                    .frame(minHeight: 44).contentShape(Rectangle()) }
+                                .accessibilityHint("Вставить адрес получателя из буфера обмена")
+                                Spacer(minLength: 0)
+                                Button { showAddressBook = true } label: {
+                                    Label("Получатели", systemImage: "person.crop.rectangle.stack")
+                                        .frame(minHeight: 44).contentShape(Rectangle())
+                                }
                                 if recipientValid {
-                                    Button { showSaveRecipient = true } label: { Label("Сохранить", systemImage: "bookmark") }
+                                    Spacer(minLength: 0)
+                                    Button { showSaveRecipient = true } label: {
+                                        Label("Сохранить", systemImage: "bookmark")
+                                            .frame(minHeight: 44).contentShape(Rectangle())
+                                    }
+                                    .accessibilityHint("Сохранить проверенный адрес в адресную книгу")
                                 }
                             }
                             .font(.footnote)
+                            .buttonStyle(.plain)
                             if !recipient.isEmpty && !recipientValid {
                                 if case .invalid(let detail) = WalletAddressValidator.check(recipient, for: selected) {
                                     Label(detail, systemImage: "exclamationmark.triangle")

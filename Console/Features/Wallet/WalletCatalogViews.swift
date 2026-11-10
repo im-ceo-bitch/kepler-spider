@@ -59,7 +59,7 @@ struct WalletCatalogSection: View {
                     ? String(format: NSLocalizedString("Найдено: %d", comment: ""), visibleCoins.count)
                     : String(format: NSLocalizedString("Показано %d из %d", comment: ""),
                                     visibleCoins.count, catalog.availableCount))
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(WalletTheme.secondary)
             }
             HStack(spacing: 10) {
@@ -69,8 +69,12 @@ struct WalletCatalogSection: View {
                     .autocorrectionDisabled()
                     .accessibilityLabel("Поиск криптовалют")
                 if !query.isEmpty {
-                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
-                        .accessibilityLabel("Очистить поиск")
+                    Button { query = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Очистить поиск")
                 }
             }
             .font(.system(size: 15))
@@ -80,33 +84,40 @@ struct WalletCatalogSection: View {
             .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 16))
 
             HStack(spacing: 8) {
-                Menu {
-                    ForEach(WalletCatalogOrder.allCases) { option in
-                        Button {
-                            order = option
+                // Scroll filters when Dynamic Type grows; refresh remains visible.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        Menu {
+                            ForEach(WalletCatalogOrder.allCases) { option in
+                                Button {
+                                    order = option
+                                } label: {
+                                    if order == option { Label(option.title, systemImage: "checkmark") }
+                                    else { Text(option.title) }
+                                }
+                            }
                         } label: {
-                            if order == option { Label(option.title, systemImage: "checkmark") }
-                            else { Text(option.title) }
+                            Label(order.title, systemImage: "arrow.up.arrow.down")
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(WalletTheme.ink)
+                                .padding(.horizontal, 13)
+                                .frame(minHeight: 44)
+                                .background(WalletTheme.surface, in: Capsule())
                         }
+                        .accessibilityLabel("Сортировка криптовалют")
+                        .accessibilityValue(order.title)
+                        Button { favoritesOnly.toggle() } label: {
+                            Label("Избранное", systemImage: favoritesOnly ? "star.fill" : "star")
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(favoritesOnly ? WalletTheme.contrast : WalletTheme.ink)
+                                .padding(.horizontal, 13)
+                                .frame(minHeight: 44)
+                                .background(favoritesOnly ? WalletTheme.accent : WalletTheme.surface, in: Capsule())
+                        }
+                        .accessibilityAddTraits(favoritesOnly ? .isSelected : [])
+                        .accessibilityValue(favoritesOnly ? "Включено" : "Выключено")
                     }
-                } label: {
-                    Label(order.title, systemImage: "arrow.up.arrow.down")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(WalletTheme.ink)
-                        .padding(.horizontal, 13)
-                        .frame(minHeight: 44)
-                        .background(WalletTheme.surface, in: Capsule())
                 }
-                Button { favoritesOnly.toggle() } label: {
-                    Label("Избранное", systemImage: favoritesOnly ? "star.fill" : "star")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(favoritesOnly ? WalletTheme.contrast : WalletTheme.ink)
-                        .padding(.horizontal, 13)
-                        .frame(minHeight: 44)
-                        .background(favoritesOnly ? WalletTheme.accent : WalletTheme.surface, in: Capsule())
-                }
-                .accessibilityAddTraits(favoritesOnly ? .isSelected : [])
-                Spacer(minLength: 2)
                 Button { Task { await catalog.refresh(force: true) } } label: {
                     Image(systemName: "arrow.clockwise")
                         .symbolEffect(.pulse, value: catalog.isLoading)
@@ -120,7 +131,7 @@ struct WalletCatalogSection: View {
             .foregroundStyle(WalletTheme.ink)
 
             Text(NSLocalizedString("Топ-250 по капитализации · поиск по всему списку", comment: ""))
-                .font(.system(size: 12))
+                .font(.footnote)
                 .foregroundStyle(WalletTheme.secondary)
             if let date = catalog.lastRefresh {
                 HStack(spacing: 7) {
@@ -129,12 +140,12 @@ struct WalletCatalogSection: View {
                         Text("· " + NSLocalizedString("Данные устарели", comment: ""))
                     }
                 }
-                .font(.system(size: 11))
+                .font(.footnote)
                 .foregroundStyle(WalletTheme.secondary)
             }
             if let error = catalog.error {
                 Label(error, systemImage: "wifi.exclamationmark")
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(WalletTheme.secondary)
             }
             if catalog.coins.isEmpty && catalog.isLoading {
@@ -188,16 +199,19 @@ struct WalletCatalogSection: View {
                     .background(WalletTheme.surface, in: Capsule())
                 }
                 .disabled(catalog.isLoading)
-                .accessibilityLabel("Открыть ещё 50 криптовалют")
+                .accessibilityLabel("Открыть ещё криптовалюты")
             }
-            Text("BTC, ETH, SOL: LIVE Coinbase при подключении. Остальные курсы: CoinGecko, обновление около 2 минут; источник кэширует данные 1–5 минут.")
-                .font(.system(size: 11))
+            DisclosureGroup("Источники цен и ограничения") {
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("BTC, ETH, SOL: LIVE Coinbase при подключении. Остальные курсы: CoinGecko, обновление около 2 минут; источник кэширует данные 1–5 минут.")
+                    Text("Рыночный каталог не означает поддержку хранения или отправки каждой монеты. Цены ориентировочные, не торговые котировки.")
+                }
+                .font(.footnote)
                 .foregroundStyle(WalletTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Рыночный каталог не означает поддержку хранения или отправки каждой монеты. Цены ориентировочные, не торговые котировки.")
-                .font(.system(size: 11))
-                .foregroundStyle(WalletTheme.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.footnote)
+            .tint(WalletTheme.secondary)
         }
         .sheet(item: $selectedCoin) { coin in
             WalletCatalogDetailView(coin: coin, catalog: catalog)
@@ -244,7 +258,7 @@ private struct WalletCatalogIcon: View {
     }
     private var fallback: some View {
         Text(String(coin.symbol.prefix(2)))
-            .font(.system(size: 13, weight: .bold, design: .rounded))
+            .font(.system(.footnote, design: .rounded, weight: .bold))
             .foregroundStyle(WalletTheme.ink)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -276,6 +290,7 @@ private struct WalletCatalogSparkline: View {
 private struct WalletCatalogRow: View {
     let coin: WalletCatalogCoin
     @EnvironmentObject private var live: WalletLiveMarketStore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private var liveTick: WalletLiveTick? {
         guard ["bitcoin", "ethereum", "solana"].contains(coin.id) else { return nil }
         return live.tick(coin.symbol)
@@ -285,50 +300,51 @@ private struct WalletCatalogRow: View {
             WalletCatalogIcon(coin: coin)
             VStack(alignment: .leading, spacing: 3) {
                 Text(coin.name)
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 Text("\(coin.rank.map { "#\($0) · " } ?? "")\(coin.symbol)")
-                    .font(.system(size: 11))
+                    .font(.footnote)
                     .foregroundStyle(WalletTheme.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if coin.sparkline7d.count >= 2 {
+            if !dynamicTypeSize.isAccessibilitySize && coin.sparkline7d.count >= 2 {
                 WalletCatalogSparkline(values: coin.sparkline7d,
                     positive: (coin.sparkline7d.last ?? 0) >= (coin.sparkline7d.first ?? 0))
             }
             VStack(alignment: .trailing, spacing: 3) {
                 Text(WalletMarketFormatting.price(liveTick?.usdPrice ?? coin.priceUSD))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .font(.system(.footnote, design: .rounded, weight: .semibold))
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                    .minimumScaleFactor(0.85)
                 if liveTick != nil {
                     Text("LIVE · Coinbase")
                         .foregroundStyle(Color.green)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                     if coin.isStale() {
                         Text(NSLocalizedString("Изменение за 24ч устарело", comment: ""))
                             .foregroundStyle(WalletTheme.secondary)
-                            .font(.system(size: 10))
+                            .font(.footnote)
                     } else if let change = coin.change24h {
                         Text(String(format: "%+.2f%% · 24ч", change))
                             .foregroundStyle(change >= 0 ? Color.green : Color.red)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.footnote.weight(.medium))
                     }
                 } else if coin.isStale() {
                     Text(NSLocalizedString("Данные устарели", comment: ""))
                         .foregroundStyle(WalletTheme.secondary)
-                        .font(.system(size: 10))
+                        .font(.footnote)
                 } else if let change = coin.change24h {
                     Text(String(format: "%+.2f%%", change))
                         .foregroundStyle(change >= 0 ? Color.green : Color.red)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .font(.system(.footnote, design: .rounded, weight: .medium))
                 } else {
                     Text("— 24ч").foregroundStyle(WalletTheme.secondary)
-                        .font(.system(size: 11))
+                        .font(.footnote)
                 }
             }
             .frame(minWidth: 78, alignment: .trailing)
             Image(systemName: "chevron.right")
-                .font(.system(size: 10, weight: .medium))
+                .font(.footnote.weight(.medium))
                 .foregroundStyle(WalletTheme.secondary)
         }
         .foregroundStyle(WalletTheme.ink)
@@ -381,7 +397,7 @@ private struct WalletCatalogDetailView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(coin.name).font(.system(size: 24, weight: .bold))
                             Text(coin.symbol + " · " + NSLocalizedString("Рыночные данные", comment: ""))
-                                .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
                         }
                         Spacer()
                         Button(action: toggleFavorite) {
@@ -396,7 +412,7 @@ private struct WalletCatalogDetailView: View {
                         VStack(alignment: .leading, spacing: 11) {
                             Text(NSLocalizedString("Рыночная цена USD", comment: ""))
                                 .foregroundStyle(WalletTheme.secondary)
-                                .font(.system(size: 13))
+                                .font(.footnote)
                             Text(WalletMarketFormatting.price(activePoint?.usdPrice ?? coin.priceUSD))
                                 .font(.system(size: 34, weight: .semibold, design: .rounded))
                                 .monospacedDigit()
@@ -409,7 +425,7 @@ private struct WalletCatalogDetailView: View {
                             }
                             if let point = activePoint {
                                 Text(point.timestamp.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.system(size: 12))
+                                    .font(.footnote)
                                     .foregroundStyle(WalletTheme.secondary)
                             }
                             if let points = historical?.points, points.count >= 2 {
@@ -454,30 +470,33 @@ private struct WalletCatalogDetailView: View {
                                 VStack(spacing: 9) {
                                     Image(systemName: "chart.xyaxis.line")
                                     Text(catalog.chartError[chartKey] ?? "История цен пока недоступна")
-                                        .font(.system(size: 13)).multilineTextAlignment(.center)
+                                        .font(.footnote).multilineTextAlignment(.center)
                                 }
                                 .foregroundStyle(WalletTheme.secondary)
                                 .frame(maxWidth: .infinity).frame(height: 220)
                             }
-                            HStack(spacing: 7) {
-                                ForEach(WalletChartPeriod.allCases) { option in
-                                    Button {
-                                        selectedTime = nil
-                                        if reduceMotion { period = option }
-                                        else { withAnimation(.easeInOut(duration: 0.2)) { period = option } }
-                                    } label: {
-                                        Text(option.label)
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .frame(maxWidth: .infinity)
-                                            .frame(height: 36)
-                                            .foregroundStyle(period == option ? WalletTheme.contrast : WalletTheme.secondary)
-                                            .background(period == option ? WalletTheme.accent : WalletTheme.canvas, in: Capsule())
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 7) {
+                                    ForEach(WalletChartPeriod.allCases) { option in
+                                        Button {
+                                            selectedTime = nil
+                                            if reduceMotion { period = option }
+                                            else { withAnimation(.easeInOut(duration: 0.2)) { period = option } }
+                                        } label: {
+                                            Text(option.label)
+                                                .font(.footnote.weight(.semibold))
+                                                .frame(minWidth: 54, minHeight: 44)
+                                                .foregroundStyle(period == option ? WalletTheme.contrast : WalletTheme.secondary)
+                                                .background(period == option ? WalletTheme.accent : WalletTheme.canvas, in: Capsule())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityAddTraits(period == option ? .isSelected : [])
+                                        .accessibilityLabel("Период графика: " + option.label)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
                             Text("CoinGecko · " + coin.providerUpdatedAt.formatted(date: .omitted, time: .shortened))
-                                .font(.system(size: 11))
+                                .font(.footnote)
                                 .foregroundStyle(WalletTheme.secondary)
                         }
                     }
@@ -496,7 +515,7 @@ private struct WalletCatalogDetailView: View {
                         }
                     }
                     Text("Эта монета отображается в рыночном каталоге. Поддержка её сети, хранения и переводов в кошельке не гарантируется.")
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(WalletTheme.secondary)
                 }
                 .foregroundStyle(WalletTheme.ink)
@@ -523,11 +542,11 @@ private struct WalletCatalogDetailView: View {
     private func metric(_ title: String, value: Double?) -> some View {
         HStack(spacing: 10) {
             Text(LocalizedStringKey(title))
-                .font(.system(size: 13))
+                .font(.footnote)
                 .foregroundStyle(WalletTheme.secondary)
             Spacer()
             Text(value.map { WalletMarketFormatting.price($0) } ?? "—")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(.system(.footnote, design: .rounded, weight: .semibold))
         }
     }
 }

@@ -109,15 +109,13 @@ private final class SpyderTerminalChatBindings: ObservableObject {
                 guard let wallpaper = Self.wallpaper(for: name) else {
                     throw TerminalHostError.invalidParameter("background (Chrome, Cyberpunk, Thunder)")
                 }
-                var appearance = SpyderChatAppearanceStore.load(peer: peerID, persona: chat.activePersonaID)
-                appearance.wallpaper = wallpaper
-                SpyderChatAppearanceStore.save(appearance, peer: peerID, persona: chat.activePersonaID)
-                NotificationCenter.default.post(name: .spyderTerminalChatAppearanceChanged,
-                                                object: nil, userInfo: ["peerID": peerID])
-                return TerminalActionResult(message: Self.localize(request, ru: "Фон изменён", en: "Background updated") + ": \(wallpaper.title)")
+                _ = wallpaper
+                return TerminalActionResult(message: Self.localize(request,
+                    ru: "Декоративные фоны отключены в новом дизайне чатов. Настройки не изменены.",
+                    en: "Decorative backgrounds are disabled in the new chat design. No settings were changed."))
             }
             self?.showAppearance = true
-            return TerminalActionResult(message: Self.localize(request, ru: "Открыт выбор фона чата", en: "Chat background picker opened"))
+            return TerminalActionResult(message: Self.localize(request, ru: "Открыты настройки оформления чата", en: "Chat appearance settings opened"))
         }
         try? host.register("chat.theme.set") { [weak chat] request in
             let chat = try Self.validatePeer(request, peerID: peerID, chat: chat)
@@ -125,12 +123,10 @@ private final class SpyderTerminalChatBindings: ObservableObject {
                   let wallpaper = Self.wallpaper(for: name) else {
                 throw TerminalHostError.invalidParameter("theme (Chrome, Cyberpunk, Thunder)")
             }
-            var appearance = SpyderChatAppearanceStore.load(peer: peerID, persona: chat.activePersonaID)
-            appearance.wallpaper = wallpaper
-            SpyderChatAppearanceStore.save(appearance, peer: peerID, persona: chat.activePersonaID)
-            NotificationCenter.default.post(name: .spyderTerminalChatAppearanceChanged,
-                                            object: nil, userInfo: ["peerID": peerID])
-            return TerminalActionResult(message: Self.localize(request, ru: "Тема чата изменена", en: "Chat theme updated") + ": \(wallpaper.title)")
+            _ = wallpaper
+            return TerminalActionResult(message: Self.localize(request,
+                ru: "Декоративные темы чатов больше не поддерживаются. Настройки не изменены.",
+                en: "Decorative chat themes are no longer supported. No settings were changed."))
         }
         try? host.register("chat.send", execute: { [weak chat] request in
             let chat = try Self.validatePeer(request, peerID: peerID, chat: chat)
@@ -186,14 +182,9 @@ private final class SpyderTerminalChatBindings: ObservableObject {
         }
         try? host.register("settings.theme.set") { [weak chat] request in
             _ = try Self.validatePeer(request, peerID: peerID, chat: chat)
-            let names: [String: WalletAppearance] = [
-                "dark": .dark, "темная": .dark, "тёмная": .dark,
-                "light": .light, "светлая": .light, "system": .system, "системная": .system
-            ]
-            guard let raw = request.parameters["theme"]?.lowercased(),
-                  let appearance = names[raw] else { throw TerminalHostError.invalidParameter("theme") }
-            UserDefaults.standard.set(appearance.rawValue, forKey: "spyder.wallet.appearance")
-            return TerminalActionResult(message: Self.localize(request, ru: "Тема приложения", en: "App theme") + ": \(appearance.rawValue)")
+            return TerminalActionResult(message: Self.localize(request,
+                ru: "Смена темы пока недоступна. Spyder Wallet использует светлую тему; настройки не изменены.",
+                en: "Theme switching is not available. Spider Wallet uses the light theme; no settings were changed."))
         }
         // These are device push preferences, NOT a per-contact server mute.
         // Keep chat.mute/unmute unavailable until an authenticated per-chat mute exists.

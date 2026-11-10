@@ -1,4 +1,4 @@
-"""Native dual-theme live market regression gates. These do NOT replace xcodebuild."""
+"""Live market data and truthful appearance regression gates. Not an Xcode test."""
 import platform
 import shutil
 import subprocess
@@ -8,19 +8,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 class DualThemeLiveGates(unittest.TestCase):
-    def test_live_market_ui_and_global_theming(self):
+    def test_live_market_ui_and_honest_light_mode(self):
         ui = (ROOT / 'Console/Features/Wallet/WalletLiveStageView.swift').read_text()
         home = (ROOT / 'Console/Features/Wallet/WalletHomeView.swift').read_text()
         preview = (ROOT / 'Console/Features/Wallet/WalletMarketViews.swift').read_text()
         app = (ROOT / 'Console/ConsoleApp.swift').read_text()
-        for token in ('WalletAppearance.allCases', 'spyder.wallet.appearance',
-                      '.chartOverlay', 'AxisMarks(position: .trailing',
+        for token in ('.chartOverlay', 'AxisMarks(position: .trailing',
                       'PointMark', 'DragGesture(minimumDistance: 0)',
                       'Coinbase Exchange', 'walletMarket'):
             if token == 'walletMarket':
                 continue
             self.assertIn(token, ui)
+        # The root app is currently light-only; the live chart must not advertise
+        # a theme setting that cannot affect its presentation.
+        self.assertRegex(app, r'private var preferredScheme: ColorScheme\?\s*\{\s*\.light\s*\}')
         self.assertIn('.preferredColorScheme(preferredScheme)', app)
+        self.assertNotIn('WalletAppearance.allCases', ui)
+        self.assertNotIn('spyder.wallet.appearance', ui)
         self.assertIn('WalletLiveStageView(ticker: selection.ticker)', home)
         self.assertIn('WalletLiveStageView(ticker: ticker)', preview)
         self.assertIn('reduceMotion', ui)

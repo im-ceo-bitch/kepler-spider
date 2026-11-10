@@ -7,6 +7,7 @@ struct WalletSettingsView: View {
     @State private var showBackup = false
     @State private var backupCloudSuccess = false
     @State private var backupCloudBusy = false
+    @State private var confirmingCloudBackup = false
     @State private var showDevnetSettings = false
     @State private var showDeveloperOptions = false
     @State private var vaultError: String?
@@ -31,7 +32,7 @@ struct WalletSettingsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                 }
-                Button { saveCloudBackup() } label: {
+                Button { confirmingCloudBackup = true } label: {
                     HStack(spacing: 10) {
                         Label(
                             LocalizedStringKey(backupCloudSuccess ? "Копия в iCloud Keychain добавлена" : "Сохранить в iCloud Keychain (необязательно)"),
@@ -49,7 +50,7 @@ struct WalletSettingsView: View {
             } header: {
                 Text("Фраза восстановления")
             } footer: {
-                Text("Храни фразу офлайн. Даже Spyder не сможет восстановить её при потере телефона без твоей резервной копии.")
+                Text("Запиши фразу офлайн. Не сохраняй её в фото, заметки и обычные облачные файлы. Дополнительная копия в iCloud Keychain — отдельная защищённая опция с рисками доступа к Apple Account.")
             }
 
             Section {
@@ -106,6 +107,12 @@ struct WalletSettingsView: View {
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(30)
         }
+        .confirmationDialog("Сохранить фразу в iCloud Keychain?", isPresented: $confirmingCloudBackup, titleVisibility: .visible) {
+            Button("Сохранить в iCloud Keychain") { saveCloudBackup() }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Это дополнительная синхронизируемая резервная копия в защищённом хранилище Apple, а не обычный облачный файл. Доступ к Apple Account и доверенным устройствам требует защиты. Сохрани отдельную офлайн-копию.")
+        }
         .alert("Не удалось показать фразу", isPresented: Binding(
             get: { vaultError != nil },
             set: { if !$0 { vaultError = nil } }
@@ -159,7 +166,7 @@ private struct WalletRecoverySheet: View {
                     Spacer()
                     SpyderNavigationButton(symbol: "xmark", label: "Закрыть") { dismiss() }
                 }
-                Text("Никому не показывай её. Запиши на бумаге. Не делай скриншот и не копируй в облако.")
+                Text("Никому не показывай слова. Запиши их на бумаге. Не сохраняй скриншоты, заметки или обычные файлы в облаке. Копия iCloud Keychain — отдельная необязательная функция в настройках.")
                     .font(.subheadline)
                     .foregroundStyle(WalletTheme.secondary)
                 if revealed {

@@ -211,19 +211,8 @@ struct SpyderChatTerminalView: View {
     private func perform(_ match: TerminalMatch) {
         let a = match.parameters
         switch match.commandID {
-        case "chat.theme.set":
-            if let wallpaper = Self.wallpaper(a["theme"] ?? "") {
-                onWallpaper(wallpaper)
-                append("Тема этого чата изменена: \(wallpaper.title).")
-            } else { append("Тема не найдена. Доступно: Chrome, Cyberpunk, Thunder.") }
-        case "chat.background.change":
-            if let name = a["background"], let wallpaper = Self.wallpaper(name) {
-                onWallpaper(wallpaper)
-                append("Фон изменён: \(wallpaper.title).")
-            } else {
-                onBackgroundPicker()
-                append("Открыта панель выбора фона текущего чата.")
-            }
+        case "chat.theme.set", "chat.background.change":
+            append("Декоративные фоны и темы чатов больше не поддерживаются в светлом дизайне. Настройки не изменены.")
         case "chat.send":
             guard chat.encryptionReady else {
                 append("Отправка недоступна: ожидаем защищённое E2EE-соединение.")
@@ -282,14 +271,7 @@ struct SpyderChatTerminalView: View {
             append("Открываю историю операций кошелька.")
             onOpenActivity()
         case "settings.theme.set":
-            let theme = (a["theme"] ?? "").lowercased()
-            switch theme {
-            case "dark", "темная", "тёмная", "черная", "чёрная": walletAppearance = WalletAppearance.dark.rawValue
-            case "light", "светлая": walletAppearance = WalletAppearance.light.rawValue
-            case "system", "системная": walletAppearance = WalletAppearance.system.rawValue
-            default: append("Тема приложения: dark / light / system."); return
-            }
-            append("Тема приложения: \(walletAppearance).")
+            append("Смена темы пока недоступна. Приложение использует светлую тему; настройки не изменены.")
         case "settings.language.set":
             let value = (a["language"] ?? "").lowercased()
             switch value {

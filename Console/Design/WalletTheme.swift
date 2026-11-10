@@ -49,7 +49,7 @@ struct WalletDemoLabel: View {
             Image(systemName: "testtube.2")
             Text("DEMO · БЕЗ РЕАЛЬНЫХ СРЕДСТВ")
         }
-        .font(.system(size: 10, weight: .semibold, design: .rounded))
+        .font(.system(.footnote, design: .rounded, weight: .semibold))
         .tracking(0.3)
         .foregroundStyle(WalletTheme.secondary)
     }

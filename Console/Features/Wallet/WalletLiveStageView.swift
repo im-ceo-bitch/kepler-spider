@@ -38,7 +38,6 @@ struct WalletLiveStageView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var market: WalletMarketStore
     @EnvironmentObject private var live: WalletLiveMarketStore
-    @AppStorage("spyder.wallet.appearance") private var appearance = WalletAppearance.system.rawValue
     @StateObject private var candles = WalletLiveCandlesStore()
     @State private var window: WalletLiveWindow = .live
     @State private var inspecting: Date?
@@ -144,23 +143,6 @@ struct WalletLiveStageView: View {
                         Text(ticker + " / USD")
                             .font(.system(size: 16, weight: .semibold))
                         Spacer(minLength: 0)
-                        Menu {
-                            ForEach(WalletAppearance.allCases) { option in
-                                Button {
-                                    appearance = option.rawValue
-                                } label: {
-                                    if appearance == option.rawValue {
-                                        Label(option.title, systemImage: "checkmark")
-                                    } else { Text(option.title) }
-                                }
-                            }
-                        } label: {
-                            Image(systemName: colorScheme == .dark ? "moon.stars" : "sun.max")
-                                .font(.system(size: 19))
-                                .frame(width: 44, height: 44)
-                                .background(controlFill, in: Circle())
-                        }
-                        .accessibilityLabel("Тема оформления")
                     }
                     .buttonStyle(.plain)
 
@@ -188,7 +170,7 @@ struct WalletLiveStageView: View {
                                     .foregroundStyle(secondaryText)
                             }
                         }
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         HStack(spacing: 7) {
                             Circle()
                                 .fill(currentTick != nil ? Color.green : secondaryText)
@@ -198,7 +180,7 @@ struct WalletLiveStageView: View {
                                 Text("· " + pointed.timestamp.formatted(date: .abbreviated, time: .standard))
                             }
                         }
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(secondaryText)
                     }
 
@@ -214,14 +196,15 @@ struct WalletLiveStageView: View {
                                 else { withAnimation(.easeInOut(duration: 0.18)) { window = option } }
                             } label: {
                                 Text(option.label)
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.footnote.weight(.semibold))
                                     .foregroundStyle(window == option ? (colorScheme == .dark ? Color.black : .white) : secondaryText)
                                     .frame(maxWidth: .infinity)
-                                    .frame(height: 40)
+                                    .frame(minHeight: 44)
                                     .background(window == option ? primaryText : controlFill, in: Capsule())
                             }
                             .buttonStyle(.plain)
                             .accessibilityAddTraits(window == option ? .isSelected : [])
+                            .accessibilityLabel("Период графика: " + option.label)
                         }
                     }
 
@@ -238,7 +221,7 @@ struct WalletLiveStageView: View {
                         }
                         Text("Биржевая котировка, не гарантированная цена покупки или продажи. Обновляется только при открытом приложении.")
                     }
-                    .font(.system(size: 11))
+                    .font(.footnote)
                     .foregroundStyle(secondaryText)
                     .padding(.top, 4)
                 }
@@ -313,7 +296,7 @@ struct WalletLiveStageView: View {
                     ProgressView()
                 } else { Image(systemName: "waveform.path.ecg").font(.system(size: 28)) }
                 Text("Ожидаем реальные рыночные точки…")
-                    .font(.system(size: 13))
+                    .font(.footnote)
                     .multilineTextAlignment(.center)
             }
             .foregroundStyle(secondaryText)

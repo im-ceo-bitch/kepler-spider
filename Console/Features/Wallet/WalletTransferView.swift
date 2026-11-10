@@ -34,7 +34,7 @@ struct WalletTransferView: View {
                 SpyderNavigationButton(symbol: "xmark", label: "Закрыть", action: { dismiss() })
                 Spacer()
                 Text(isRequest ? "ДЕМО-ЗАПРОС" : "TEST DEVNET")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(WalletTheme.secondary)
             }
             .padding(.horizontal, 22)
@@ -50,7 +50,7 @@ struct WalletTransferView: View {
                             .font(.system(size: 26, weight: .bold))
                         if !contact.id.isEmpty {
                             Text("Контакт: \(contact.name) · адрес нужно ввести отдельно")
-                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -59,7 +59,7 @@ struct WalletTransferView: View {
                         VStack(alignment: .leading, spacing: 14) {
                             if !isRequest {
                                 Text("Адрес получателя · Spider Chain")
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.footnote.weight(.semibold))
                                 TextField("spider1…", text: $recipient)
                                     .font(.system(size: 14, design: .monospaced))
                                     .textInputAutocapitalization(.never)
@@ -69,14 +69,14 @@ struct WalletTransferView: View {
                                 Divider()
                             }
                             Text("Сумма · SPD")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                             TextField("0.000000000", text: $amount)
                                 .font(.system(size: 31, weight: .semibold, design: .rounded))
                                 .keyboardType(.decimalPad)
                                 .onChange(of: amount) { _, _ in isReview = false }
                             Text(isRequest ? "Только просмотр запроса без публикации" :
                                  (spider.connected ? "Доступно: \(spider.balanceText) тестовых SPD" : "Для отправки требуется подключённый Devnet в профиле"))
-                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
                             if isRequest {
                                 Divider()
                                 TextField("Комментарий (необязательно)", text: $note)
@@ -104,13 +104,13 @@ struct WalletTransferView: View {
                                     .font(.system(size: 24, weight: .semibold))
                                 if !isRequest {
                                     Text(recipient)
-                                        .font(.system(size: 12, design: .monospaced))
+                                        .font(.system(.footnote, design: .monospaced))
                                         .textSelection(.enabled)
                                     Text("Комиссия зависит от параметров тестовой сети. Отправка подписывается на устройстве после Face ID.")
-                                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
                                 } else {
                                     Text("Это только демонстрация. Сетевой запрос не создаётся.")
-                                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
                                 }
                             }
                         }
@@ -124,12 +124,12 @@ struct WalletTransferView: View {
                             VStack(alignment: .leading, spacing: 9) {
                                 Label(pending.queued ? "В очереди, ещё не подтверждено" : "Статус отправки неизвестен", systemImage: "clock")
                                     .font(.system(size: 15, weight: .semibold))
-                                Text(pending.id).font(.system(size: 11, design: .monospaced))
+                                Text(pending.id).font(.system(.footnote, design: .monospaced))
                                     .textSelection(.enabled)
                                 Button("Проверить финализацию") { Task { await spider.refresh() } }
                                     .disabled(spider.refreshing)
                                 Text("До подтверждения не запускайте повторный перевод с этим nonce.")
-                                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
                             }
                         }
                     }
@@ -275,13 +275,13 @@ struct WalletReceiveView: View {
                         Text("Получить криптовалюту")
                             .font(.system(size: 26, weight: .bold, design: .rounded))
                         Text(access.activeAccountName)
-                            .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
+                            .font(.footnote).foregroundStyle(WalletTheme.secondary)
                     }
                     Spacer()
                     SpyderNavigationButton(symbol: "xmark", label: "Закрыть", action: { dismiss() })
                 }
                 Text("Выберите актив и точную сеть перевода")
-                    .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
+                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 9) {
                     ForEach(WalletReceiveAsset.supportedMainnet) { item in
@@ -300,7 +300,7 @@ struct WalletReceiveView: View {
                                     Image(systemName: selected == item ? "checkmark.circle.fill" : "circle")
                                 }
                                 Text(item.network)
-                                    .font(.system(size: 13))
+                                    .font(.footnote)
                                     .lineLimit(2)
                                     .foregroundStyle(WalletTheme.secondary)
                             }
@@ -316,14 +316,14 @@ struct WalletReceiveView: View {
                 WalletCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Label(selected.network, systemImage: "network.badge.shield.half.filled")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.footnote.weight(.semibold))
                         Text(LocalizedStringKey(selected.risk))
-                            .font(.system(size: 12))
+                            .font(.footnote)
                             .foregroundStyle(WalletTheme.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         if selected != .spdDevnet {
                             Label("Получение на проверенный адрес доступно. Отправка с произвольного адреса пока недоступна; USDT ERC-20 можно отправить только через подтверждённые реквизиты в чате.", systemImage: "exclamationmark.triangle.fill")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(WalletTheme.ink)
                         }
                         if let contract = selected.contract {
@@ -355,7 +355,7 @@ struct WalletReceiveView: View {
                                     .frame(maxWidth: .infinity)
                                     .privacySensitive()
                                 Text(address)
-                                    .font(.system(size: 13, design: .monospaced))
+                                    .font(.system(.footnote, design: .monospaced))
                                     .multilineTextAlignment(.center)
                                     .textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -382,7 +382,7 @@ struct WalletReceiveView: View {
                                     .font(.footnote)
                                     .foregroundStyle(WalletTheme.secondary)
                                 Label("Адрес повторно проверен по ключам кошелька", systemImage: "checkmark.shield")
-                                    .font(.system(size: 11))
+                                    .font(.footnote)
                                     .foregroundStyle(WalletTheme.secondary)
                             } else {
                                 VStack(alignment: .leading, spacing: 12) {
@@ -408,7 +408,7 @@ struct WalletReceiveView: View {
                                 .font(.system(size: 35))
                                 .foregroundStyle(WalletTheme.secondary)
                             Text("Проверить адрес через Face ID или код iPhone")
-                                .font(.system(size: 13))
+                                .font(.footnote)
                                 .multilineTextAlignment(.center)
                             Button {
                                 if selected == .spdDevnet { spider.deriveAddress() }
@@ -441,17 +441,17 @@ struct WalletReceiveView: View {
                                 .monospacedDigit()
                             if let updated = assets.updatedAt {
                                 Text("Обновлено: " + updated.formatted(date: .omitted, time: .shortened))
-                                    .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
                             }
                             if let balanceError {
                                 Label("Ошибка сети: " + balanceError, systemImage: "wifi.exclamationmark")
-                                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
                             }
                             Divider()
-                            Text("Последние входящие операции").font(.system(size: 13, weight: .semibold))
+                            Text("Последние входящие операции").font(.footnote.weight(.semibold))
                             if receiveEntries.isEmpty {
                                 Text("Нет обнаруженных зачислений. Сведения провайдера могут поступать с задержкой.")
-                                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
                             }
                             ForEach(receiveEntries) { entry in
                                 Link(destination: entry.explorerURL) {
@@ -461,7 +461,7 @@ struct WalletReceiveView: View {
                                             Text(canVerifyERC20 ? "Найдено индексатором · проверьте RPC" :
                                                 (entry.state == .confirmed ? "Подтверждено" : "Ожидает подтверждения"))
                                             Text(String(entry.hash.prefix(10)) + "…")
-                                                .font(.system(size: 10, design: .monospaced))
+                                                .font(.system(.footnote, design: .monospaced))
                                                 .foregroundStyle(WalletTheme.secondary)
                                         }
                                         Spacer()
@@ -469,7 +469,7 @@ struct WalletReceiveView: View {
                                             WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + selected.ticker
                                         } ?? "—")
                                     }
-                                    .font(.system(size: 12))
+                                    .font(.footnote)
                                     .foregroundStyle(WalletTheme.ink)
                                 }
                             }
@@ -480,12 +480,12 @@ struct WalletReceiveView: View {
                                     Task { await verifyDeposit() }
                                 } label: {
                                     Label("Проверить последнее зачисление через Ethereum RPC", systemImage: "checkmark.shield")
-                                        .font(.system(size: 12, weight: .medium))
+                                        .font(.footnote.weight(.medium))
                                 }
                             }
                             Button { Task { await refreshNetwork() } } label: {
                                 Label("Обновить зачисления", systemImage: "arrow.clockwise")
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.footnote.weight(.semibold))
                             }
                             .disabled(assets.loading)
                         }
@@ -498,11 +498,11 @@ struct WalletReceiveView: View {
                             Label("Проверить ERC-20 зачисление", systemImage: "checkmark.shield")
                                 .font(.system(size: 16, weight: .semibold))
                             Text("Вставьте хеш операции из отправляющего кошелька. Проверка сверяет контракт токена, ваш адрес, квитанцию и подтверждения через Ethereum RPC.")
-                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
                             TextField("0x… хеш транзакции", text: $depositHash)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
-                                .font(.system(size: 12, design: .monospaced))
+                                .font(.system(.footnote, design: .monospaced))
                                 .onChange(of: depositHash) { _, _ in resetDepositCheck() }
                             Button { Task { await verifyDeposit() } } label: {
                                 HStack(spacing: 8) {
@@ -530,9 +530,9 @@ struct WalletReceiveView: View {
                                     .foregroundStyle(.orange)
                             }
                             Text("Проверка RPC не гарантирует окончательность транзакции и не означает готовность кошелька к реальным переводам.")
-                                .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
                         }
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .padding(.top, 12)
                         } label: {
                             Label("Проверить зачисление по хешу · дополнительно", systemImage: "checkmark.shield")
@@ -541,7 +541,7 @@ struct WalletReceiveView: View {
                     }
                 }
                 Text("Проверка адреса не равна аудиту кошелька. Перед значительным переводом выполните минимальный тест, дождитесь подтверждений и проверьте доступность восстановления и отправки средств.")
-                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
                 DisclosureGroup("Тестовая сеть Spider Chain") {
                     Button {
                         selected = .spdDevnet
@@ -549,7 +549,7 @@ struct WalletReceiveView: View {
                         copied = false
                     } label: { Label("SPD · Devnet (не реальные средства)", systemImage: "network") }
                 }
-                .font(.system(size: 12))
+                .font(.footnote)
                 .foregroundStyle(WalletTheme.secondary)
             }
             .foregroundStyle(WalletTheme.ink)

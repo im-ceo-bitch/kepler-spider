@@ -5,8 +5,8 @@
     "requiredParameters": [
       "theme"
     ],
-    "title": "Chat theme",
-    "summary": "Change theme of current chat",
+    "title": "Decorative themes unavailable",
+    "summary": "Legacy chat themes are disabled in the new chat design",
     "standard": [
       "sp change chat theme to {theme}",
       "sp chat theme {theme}",
@@ -26,8 +26,8 @@
     "id": "chat.background.change",
     "risk": "write",
     "requiredParameters": [],
-    "title": "Chat background",
-    "summary": "Open background picker or update wallpaper",
+    "title": "Chat appearance",
+    "summary": "Open simplified chat settings; decorative backgrounds are disabled",
     "standard": [
       "sp change background",
       "sp change background to {background}",
@@ -306,8 +306,8 @@
     "requiredParameters": [
       "theme"
     ],
-    "title": "App theme",
-    "summary": "Set application appearance",
+    "title": "Theme unavailable",
+    "summary": "Theme switching is not available: the app uses a light theme",
     "standard": [
       "sp app theme {theme}",
       "sp change app theme to {theme}",

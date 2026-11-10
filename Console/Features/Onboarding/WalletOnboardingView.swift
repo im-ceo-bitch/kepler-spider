@@ -193,10 +193,23 @@ struct WalletOnboardingView: View {
                 .font(.footnote)
                 .foregroundStyle(WalletTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Toggle("Я записал все 12 слов офлайн", isOn: $confirmOffline)
-                .tint(WalletTheme.ink)
-                .font(.system(size: 14, weight: .medium))
+            Button { confirmOffline.toggle() } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: confirmOffline ? "checkmark.square.fill" : "square")
+                        .font(.title3)
+                    Text("Подтверждаю: 12 слов записаны офлайн")
+                        .font(.subheadline.weight(.medium))
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: 0)
+                }
                 .foregroundStyle(WalletTheme.ink)
+                .frame(minHeight: 48)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Подтверждаю, что записал 12 слов офлайн")
+            .accessibilityValue(confirmOffline ? "Подтверждено" : "Не подтверждено")
+            .accessibilityHint("Нужно подтвердить, чтобы перейти к проверке трёх слов")
             Button { reveal = false; step = .verify } label: {
                 Text("Продолжить").spyderPrimaryButton()
             }
@@ -244,7 +257,7 @@ struct WalletOnboardingView: View {
 
     private var importFlow: some View {
         VStack(alignment: .leading, spacing: 20) {
-            heading("Восстановить кошелёк", subtitle: "Вставь 12 или 24 английских слова BIP-39 в исходном порядке.")
+            heading("Восстановить кошелёк", subtitle: "Вставь 12 или 24 слова восстановления в исходном порядке.")
             Button { restoreFromICloud() } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "icloud.and.arrow.down")
@@ -260,7 +273,7 @@ struct WalletOnboardingView: View {
             WalletCard {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Фраза восстановления")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(WalletTheme.secondary)
                     SecureField("12 или 24 слова, через пробел", text: $importText)
                         .textInputAutocapitalization(.never)
@@ -280,16 +293,29 @@ struct WalletOnboardingView: View {
                     .font(.system(size: 14, weight: .semibold))
             }
             .buttonStyle(.plain)
-            Label("Если в предыдущем кошельке использовалась дополнительная BIP-39 passphrase, сейчас импортировать его нельзя.", systemImage: "info.circle")
+            Label("Если у старого кошелька был дополнительный пароль к фразе восстановления, этот способ импорта пока не поддерживается.", systemImage: "info.circle")
                 .font(.footnote)
                 .foregroundStyle(WalletTheme.secondary)
             Text("Тестовая версия не прошла аудит. Не вводите фразу от кошелька с реальными средствами.")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(WalletTheme.ink)
-            Toggle("Это фраза только от тестового кошелька", isOn: $testPhraseOnly)
-                .tint(WalletTheme.ink)
-                .font(.system(size: 14))
+            Button { testPhraseOnly.toggle() } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: testPhraseOnly ? "checkmark.square.fill" : "square")
+                        .font(.title3)
+                    Text("Подтверждаю: это тестовый кошелёк без реальных средств")
+                        .font(.subheadline.weight(.medium))
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: 0)
+                }
                 .foregroundStyle(WalletTheme.ink)
+                .frame(minHeight: 48)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Подтверждаю, что фраза от тестового кошелька")
+            .accessibilityValue(testPhraseOnly ? "Подтверждено" : "Не подтверждено")
+            .accessibilityHint("Импорт кошелька с реальными средствами в этой тестовой версии запрещён")
             Button {
                 focusedImport = false
                 do {
@@ -382,7 +408,7 @@ struct WalletOnboardingView: View {
             ForEach(Array(words.enumerated()), id: \.offset) { index, word in
                 HStack(spacing: 8) {
                     Text(String(format: "%02d", index + 1))
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .font(.system(.footnote, design: .monospaced, weight: .medium))
                         .foregroundStyle(WalletTheme.secondary)
                     Text(word)
                         .font(.system(size: 14, weight: .semibold, design: .rounded))

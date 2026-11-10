@@ -34,7 +34,7 @@ struct WalletAddressBookView: View {
                     }
                     recipientList
                     Text("Адресная книга хранится только в Keychain этого iPhone. Адрес может быть корректным, но принадлежать мошеннику — проверяйте получателя перед отправкой.")
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(WalletTheme.secondary)
                 }
                 .padding(20)
@@ -123,7 +123,7 @@ struct WalletAddressBookView: View {
             Text(entry.name)
                 .font(.system(size: 16, weight: .semibold))
             Text(subtitle)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(.footnote, design: .monospaced))
                 .foregroundStyle(WalletTheme.secondary)
                 .lineLimit(1)
         }
@@ -213,7 +213,7 @@ struct WalletAddressBookAddView: View {
             TextField("Публичный адрес", text: $address, axis: .vertical)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .font(.system(size: 13, design: .monospaced))
+                .font(.system(.footnote, design: .monospaced))
                 .lineLimit(2...4)
             Button("Вставить из буфера") {
                 if let value = UIPasteboard.general.string {

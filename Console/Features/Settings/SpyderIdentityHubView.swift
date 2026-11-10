@@ -94,7 +94,7 @@ struct SpyderIdentityHubView: View {
             if !chat.myStatus.isEmpty { Text(chat.myStatus).font(.caption).foregroundStyle(WalletTheme.secondary) }
             Label(chat.connected ? "Сеть доступна" : "Соединение восстанавливается",
                   systemImage: chat.connected ? "checkmark.shield" : "wifi.slash")
-                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                .font(.footnote).foregroundStyle(WalletTheme.secondary)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 18)
     }
@@ -225,11 +225,14 @@ struct SpyderIdentityHubView: View {
                 .frame(width: 31)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.system(size: 15, weight: .semibold))
-                Text(detail).font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(WalletTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 5)
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(WalletTheme.secondary)
         }
         .frame(minHeight: 63)

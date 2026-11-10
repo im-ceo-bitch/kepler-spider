@@ -25,7 +25,7 @@ struct SpyderWalletProfilePage: View {
                             .background(WalletTheme.canvas, in: RoundedRectangle(cornerRadius: 24))
                         VStack(alignment: .leading, spacing: 5) {
                             Text("Мой кошелёк")
-                                .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
                             Text(access.activeAccountName)
                                 .font(.system(size: 24, weight: .bold))
                                 .lineLimit(2)
@@ -104,7 +104,7 @@ struct SpyderWalletProfilePage: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(address.chain.name).font(.subheadline.weight(.semibold))
                         Text(address.shortened)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(.system(.footnote, design: .monospaced))
                             .foregroundStyle(WalletTheme.secondary)
                     }
                     Spacer(minLength: 4)
@@ -128,10 +128,13 @@ struct SpyderWalletProfilePage: View {
                 Image(systemName: symbol).frame(width: 33).font(.system(size: 18))
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title).font(.system(size: 15, weight: .semibold))
-                    Text(detail).font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                    Text(detail)
+                        .font(.footnote)
+                        .foregroundStyle(WalletTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 4)
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
                     .foregroundStyle(WalletTheme.secondary)
             }
             .frame(minHeight: 66).contentShape(Rectangle())

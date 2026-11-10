@@ -316,7 +316,7 @@ struct SpyderDevnetChatsHomeView: View {
                         Text(item.peer.name).font(.headline).lineLimit(1)
                         Spacer()
                         if let timestamp = item.last_message?.created_at {
-                            Text(SpyderConversationClock.text(timestamp)).font(.caption2).foregroundStyle(WalletTheme.secondary)
+                            Text(SpyderConversationClock.text(timestamp)).font(.caption).foregroundStyle(WalletTheme.secondary)
                         }
                     }
                     HStack {
@@ -328,17 +328,19 @@ struct SpyderDevnetChatsHomeView: View {
                             .font(.subheadline).foregroundStyle(item.typing ? WalletTheme.ink : WalletTheme.secondary)
                             .lineLimit(1)
                         Spacer(minLength: 3)
-                        if item.preferences.muted { Image(systemName: "bell.slash.fill").font(.caption2) }
-                        if item.preferences.pinned == true { Image(systemName: "pin.fill").font(.caption2) }
+                        if item.preferences.muted { Image(systemName: "bell.slash.fill").font(.caption) }
+                        if item.preferences.pinned == true { Image(systemName: "pin.fill").font(.caption) }
                         if item.unread_count > 0 {
                             Text(item.unread_count > 99 ? "99+" : String(item.unread_count))
-                                .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
-                                .padding(6).background(WalletTheme.ink, in: Capsule())
+                                .font(.footnote.weight(.bold)).foregroundStyle(.white)
+                                .padding(.horizontal, 7).padding(.vertical, 5)
+                                .background(WalletTheme.ink, in: Capsule())
+                                .accessibilityLabel("Непрочитанных сообщений: " + String(item.unread_count))
                         }
                     }
                     if chat.personaIDs.count > 1 {
                         Label(personaLabel(peer: item.id), systemImage: "person.crop.circle")
-                            .font(.caption2).foregroundStyle(WalletTheme.secondary).lineLimit(1)
+                            .font(.caption).foregroundStyle(WalletTheme.secondary).lineLimit(1)
                     }
                 }
             }
@@ -358,31 +360,31 @@ struct SpyderDevnetChatsHomeView: View {
                         Label("Сервис сообщений пока не подключён", systemImage: "wifi.exclamationmark")
                             .font(.system(size: 16, weight: .semibold))
                         Text("Spyder Chat станет доступен после активации сервера сети. Кошелёк и ключи работают независимо от чата.")
-                            .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
+                            .font(.footnote).foregroundStyle(WalletTheme.secondary)
                     }.foregroundStyle(WalletTheme.ink)
                 }
             }
             WalletCard {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Имя для чата").font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                    Text("Имя для чата").font(.footnote).foregroundStyle(WalletTheme.secondary)
                     TextField("Как тебя зовут?", text: $name).font(.system(size: 16))
                         .foregroundStyle(WalletTheme.ink)
                     Divider()
-                    Text("Username · уникальный, публичный").font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                    Text("Username · уникальный, публичный").font(.footnote).foregroundStyle(WalletTheme.secondary)
                     TextField("your_username", text: $username)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .font(.system(size: 16)).foregroundStyle(WalletTheme.ink)
                     Text("3–20 символов: a–z, 0–9, _. Начинай с буквы.")
-                        .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
+                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
                     Toggle("Показывать мой @username в поиске", isOn: $visibleInSearch)
                         .font(.system(size: 14))
                     Text("Если включено, другие пользователи Spyder смогут найти твой профиль и сразу начать переписку.")
-                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
                 }
             }
             if let status = chat.serverStatus, chat.hasConfiguredServer {
                 Label(status, systemImage: "network")
-                    .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
             }
             Button {
                 Task { await chat.register(name: name, username: username, discoverable: visibleInSearch) }
@@ -390,7 +392,7 @@ struct SpyderDevnetChatsHomeView: View {
                 Text(chat.working ? "Подключаем…" : "Начать общение").spyderPrimaryButton()
             }.buttonStyle(.plain).disabled(!chat.hasConfiguredServer || chat.working || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || username.count < 3)
             Text("После создания профиля найди друга по @username. Чат появится сразу после подключения. Никогда не делись фразой восстановления.")
-                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                .font(.footnote).foregroundStyle(WalletTheme.secondary)
         }.spyderReveal(0.08)
     }
 

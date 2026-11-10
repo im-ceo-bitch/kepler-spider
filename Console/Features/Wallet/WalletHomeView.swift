@@ -69,7 +69,7 @@ struct WalletHomeView: View {
                                     Text("Spider Chain")
                                         .font(.system(size: 15, weight: .semibold))
                                     Text("Тестовая сеть · SPD")
-                                        .font(.system(size: 12))
+                                        .font(.footnote)
                                         .foregroundStyle(WalletTheme.secondary)
                                 }
                             }
@@ -226,7 +226,7 @@ struct WalletHomeView: View {
                 .foregroundStyle(WalletTheme.ink)
                 .privacySensitive()
             Text("Основные сети")
-                .font(.caption2.weight(.semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(WalletTheme.secondary)
             Text(publicAssets.totalUSD == nil ? "Ожидаем данные из сетей" :
                  publicAssets.isPartialEstimate ? "Неполная оценка портфеля" : "Оценка по текущим котировкам")
@@ -307,7 +307,7 @@ struct WalletHomeView: View {
                 Text(live.ticks.values.contains(where: { $0.isFresh() })
                      ? NSLocalizedString("LIVE · Coinbase / CoinGecko 24ч", comment: "")
                      : NSLocalizedString("CoinGecko · USD", comment: ""))
-                    .font(.system(size: 11))
+                    .font(.footnote)
                     .foregroundStyle(WalletTheme.secondary)
             }
             ScrollView(.horizontal, showsIndicators: false) {
@@ -316,7 +316,7 @@ struct WalletHomeView: View {
                         Button { expandedMarket = WalletMarketSelection(ticker: chain.ticker) } label: {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(chain.ticker)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.footnote.weight(.semibold))
                                     .foregroundStyle(WalletTheme.secondary)
                                 Text(live.tick(chain.ticker).map { WalletMarketFormatting.price($0.usdPrice) } ?? market.quote(chain.ticker).flatMap { $0.isStale() ? nil : WalletMarketFormatting.price($0.usdPrice) } ?? "—")
                                     .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -335,7 +335,7 @@ struct WalletHomeView: View {
             }
             if let error = market.quoteError {
                 Label(error, systemImage: "wifi.exclamationmark")
-                    .font(.system(size: 11))
+                    .font(.footnote)
                     .foregroundStyle(WalletTheme.secondary)
             }
         }
@@ -372,7 +372,7 @@ struct WalletHomeView: View {
                         Label("Открыть адреса кошелька", systemImage: "key.horizontal")
                             .font(.system(size: 16, weight: .semibold))
                         Text("Подтверди Face ID или код устройства, чтобы показать адреса и загрузить балансы.")
-                            .font(.system(size: 13))
+                            .font(.footnote)
                             .foregroundStyle(WalletTheme.secondary)
                         Button { chains.activate() } label: {
                             HStack {
@@ -398,7 +398,7 @@ struct WalletHomeView: View {
                 }
                 if publicAssets.updatedAt != nil && (publicAssets.isPartialEstimate || !publicAssets.failures.isEmpty || !publicAssets.stablecoinFailures.isEmpty) {
                     Label("Часть балансов или курсов пока недоступна. Пустое значение не означает ноль.", systemImage: "info.circle")
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(WalletTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -418,7 +418,7 @@ struct WalletHomeView: View {
                     .font(.system(size: 15, weight: .semibold))
                 HStack(spacing: 5) {
                     Text(chain.ticker)
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(WalletTheme.secondary)
                     WalletMarketChangeView(ticker: chain.ticker)
                 }
@@ -431,12 +431,12 @@ struct WalletHomeView: View {
                 Text(privacyHidden ? "••••" : (publicAssets.balances[chain].map {
                     WalletPublicAssetsStore.formatted($0, fractionDigits: 7) + " " + chain.ticker
                 } ?? "— " + chain.ticker))
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(WalletTheme.secondary)
                     .monospacedDigit()
             }
             Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(WalletTheme.secondary)
         }
         .foregroundStyle(WalletTheme.ink)
@@ -451,7 +451,7 @@ struct WalletHomeView: View {
                 Text(token.name).font(.system(size: 15, weight: .semibold))
                 HStack(spacing: 5) {
                     Text("ERC-20")
-                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
                     WalletMarketChangeView(ticker: token.ticker)
                 }
             }
@@ -463,12 +463,12 @@ struct WalletHomeView: View {
                 Text(privacyHidden ? "••••" : (publicAssets.stablecoins[token.ticker].map {
                     WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + token.ticker
                 } ?? "— " + token.ticker))
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(WalletTheme.secondary)
                     .monospacedDigit()
             }
             Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(WalletTheme.secondary)
         }
         .foregroundStyle(WalletTheme.ink)
@@ -501,8 +501,10 @@ struct WalletHomeView: View {
                     .font(.title3.weight(.semibold))
                 Spacer()
                 Button("Все") { onActivity() }
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(WalletTheme.secondary)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityLabel("Открыть всю историю операций")
             }
             .foregroundStyle(WalletTheme.ink)
             WalletCard {
@@ -517,7 +519,7 @@ struct WalletHomeView: View {
                             Text(history.loading.isEmpty ? "Нет загруженных операций" : "Обновляем историю…")
                                 .font(.system(size: 15, weight: .semibold))
                             Text(history.loading.isEmpty ? "Открой историю для проверки сетей и статуса загрузки." : "Получаем последние подтверждения из сетей.")
-                                .font(.system(size: 12))
+                                .font(.footnote)
                                 .foregroundStyle(WalletTheme.secondary)
                         }
                         Spacer(minLength: 0)
@@ -536,14 +538,14 @@ struct WalletHomeView: View {
                                         Text(item.direction + " · " + item.symbol)
                                             .font(.system(size: 14, weight: .semibold))
                                         Text(item.timestamp?.formatted(date: .abbreviated, time: .shortened) ?? "Дата неизвестна")
-                                            .font(.system(size: 11))
+                                            .font(.footnote)
                                             .foregroundStyle(WalletTheme.secondary)
                                     }
                                     Spacer(minLength: 3)
                                     Text(privacyHidden ? "••••" : (item.amount.map {
                                         WalletPublicAssetsStore.formatted($0, fractionDigits: 6) + " " + item.symbol
                                     } ?? "—"))
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .font(.footnote.weight(.semibold))
                                         .monospacedDigit()
                                 }
                                 .foregroundStyle(WalletTheme.ink)
@@ -563,7 +565,7 @@ struct WalletHomeView: View {
                 Text("Spider Chain")
                     .font(.system(size: 23, weight: .bold)).foregroundStyle(WalletTheme.ink)
                 Spacer()
-                Text("TEST DEVNET").font(.system(size: 11, weight: .semibold))
+                Text("TEST DEVNET").font(.footnote.weight(.semibold))
                     .foregroundStyle(WalletTheme.secondary)
             }
             WalletCard {
@@ -576,7 +578,7 @@ struct WalletHomeView: View {
                                 .font(.system(size: 16, weight: .semibold))
                             Text(spider.connected ? "Сертифицированная сеть · блок \(spider.certifiedHeight ?? 0)" :
                                  (spider.hasConfiguration ? "Нет подтверждённого соединения" : "HTTPS-шлюз не настроен"))
-                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
                         }
                         Spacer(minLength: 4)
                         Circle().fill(spider.connected ? Color.green : WalletTheme.secondary)
@@ -584,7 +586,7 @@ struct WalletHomeView: View {
                     }
                     if let address = spider.address {
                         Text(address)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(.system(.footnote, design: .monospaced))
                             .textSelection(.enabled)
                             .privacySensitive()
                         HStack(spacing: 14) {
@@ -600,7 +602,7 @@ struct WalletHomeView: View {
                                 }.disabled(spider.refreshing)
                             }
                         }
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         if spider.connected {
                             Text(privacyHidden ? "Баланс: •••• SPD" : "Баланс: \(spider.balanceText) тестовых SPD")
                                 .font(.system(size: 18, weight: .semibold, design: .rounded))
@@ -610,9 +612,9 @@ struct WalletHomeView: View {
                             Divider()
                             Label(pending.queued ? "Ожидает финализации SpiderBFT" : "Отправка не подтверждена — проверить статус",
                                   systemImage: "clock.arrow.circlepath")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                             Text(privacyHidden ? "Tx \(pending.id.prefix(14))… · •••• SPD" : "Tx \(pending.id.prefix(14))… · \(SpiderDevnetStore.displayAmount(pending.amountAtomic)) SPD")
-                                .font(.system(size: 12, design: .monospaced))
+                                .font(.system(.footnote, design: .monospaced))
                                 .textSelection(.enabled)
                             if pending.signed != nil {
                                 Button {
@@ -622,16 +624,16 @@ struct WalletHomeView: View {
                                     }
                                 } label: {
                                     Label("Повторить доставку той же транзакции", systemImage: "arrow.clockwise.circle")
-                                        .font(.system(size: 12, weight: .medium))
+                                        .font(.footnote.weight(.medium))
                                 }
                                 .disabled(spider.sending || spider.refreshing || !spider.connected)
                             }
                             Text("Повтор использует прежнюю подпись и ID, не создаёт новый nonce. До финализации перевод не считается завершённым.")
-                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
                         }
                         if let confirmed = spider.latestConfirmed {
                             Label("Подтверждено в блоке \(confirmed.height)", systemImage: "checkmark.seal")
-                                .font(.system(size: 13, weight: .medium))
+                                .font(.footnote.weight(.medium))
                         }
                     } else {
                         Button { spider.deriveAddress() } label: {
@@ -641,7 +643,7 @@ struct WalletHomeView: View {
                         }.disabled(spider.busy)
                     }
                     Text("Только тестовые SPD. Никаких настоящих токенов или USDT. Статус 202 — очередь, не успешный перевод.")
-                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundStyle(WalletTheme.ink)
