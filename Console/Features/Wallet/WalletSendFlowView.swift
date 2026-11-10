@@ -57,7 +57,7 @@ struct WalletSendFlowView: View {
         if transfers.busy { return "Подтверждение и отправка…" }
         if submitted != nil { return "Вернуться в чат" }
         if quoteLoading { return "Проверка сети…" }
-        if reviewing { return canSendUSDT ? "Подтвердить и отправить USDT" : "Вернуться к реквизитам" }
+        if reviewing { return canSendUSDT ? "Подтвердить и отправить USDT" : "Изменить реквизиты" }
         return "Проверить реквизиты"
     }
 
@@ -139,6 +139,12 @@ struct WalletSendFlowView: View {
                         .symbolEffect(.bounce, value: reviewing)
                     Text(chatRecipient == nil ? "Здесь можно проверить адрес, сумму и комиссию. Отправка средств с произвольного адреса недоступна." : "Отправка USDT доступна только с подтверждёнными реквизитами собеседника.")
                         .font(.subheadline).foregroundStyle(WalletTheme.secondary)
+                    Label(submitted != nil ? "Результат перевода" : (reviewing ? "Шаг 2 из 2 · Проверка" : "Шаг 1 из 2 · Реквизиты"),
+                          systemImage: reviewing ? "checkmark.circle" : "1.circle")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WalletTheme.secondary)
+                        .accessibilityAddTraits(.isHeader)
+                    if !reviewing && submitted == nil {
                     WalletCard {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Актив и сеть").font(.system(size: 14, weight: .semibold))
@@ -218,11 +224,20 @@ struct WalletSendFlowView: View {
                                 .font(.footnote).foregroundStyle(WalletTheme.secondary)
                         }
                     }
+                    }
                     if reviewing {
                         WalletCard {
                             VStack(alignment: .leading, spacing: 12) {
-                                Label("Проверь реквизиты", systemImage: "checkmark.shield")
-                                    .font(.system(size: 17, weight: .semibold))
+                                HStack(spacing: 12) {
+                                    Label("Итоговая проверка", systemImage: "checkmark.shield")
+                                        .font(.system(size: 17, weight: .semibold))
+                                    Spacer(minLength: 8)
+                                    if submitted == nil && !transfers.busy {
+                                        Button("Изменить") { clearQuote() }
+                                            .font(.subheadline.weight(.semibold))
+                                            .frame(minHeight: 44)
+                                    }
+                                }
                                 Text("Сеть: \(selected.name)")
                                 Text("Сумма: \(amount) \(selected == .ethereum ? evmAsset.rawValue : selected.ticker)")
                                     .font(.system(size: 20, weight: .medium))
@@ -234,19 +249,27 @@ struct WalletSendFlowView: View {
                                     Label("Проверено по Ethereum Mainnet", systemImage: "checkmark.shield")
                                         .font(.subheadline).foregroundStyle(.green)
                                     Text("Макс. комиссия: \(quote.maxFeeETH) ETH")
-                                    Text("Gas limit: \(quote.gasLimit) · Pending nonce: \(quote.nonce)")
-                                    Text("RPC: \(quote.provider) · данные на момент проверки")
-                                        .font(.caption).foregroundStyle(WalletTheme.secondary)
+                                    DisclosureGroup("Технические сведения о сети") {
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text("Gas limit: \(quote.gasLimit) · nonce: \(quote.nonce)")
+                                            Text("Провайдер: \(quote.provider)")
+                                        }
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(WalletTheme.secondary)
+                                        .padding(.top, 6)
+                                    }
                                     Text("Комиссия приблизительная: сеть может изменить её до включения транзакции в блок.")
                                         .font(.caption).foregroundStyle(WalletTheme.secondary)
                                 } else {
                                     Label("Сетевая комиссия не рассчитана", systemImage: "exclamationmark.shield")
                                         .font(.footnote).foregroundStyle(.orange)
                                 }
-                                Text(chatRecipient?.payment.asset == .usdtEthereum
-                                    ? "После подтверждения сумма и получатель будут подписаны на этом устройстве. Перевод необратим; комиссия списывается в ETH."
-                                    : "Для этого актива доступна только подготовка. Подпись и публикация пока отключены.")
-                                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                                Label(chatRecipient?.payment.asset == .usdtEthereum
+                                    ? "После Face ID перевод будет отправлен в Ethereum. Отменить его нельзя; комиссия списывается в ETH."
+                                    : "Это предпросмотр. Отправка выбранного актива здесь недоступна.",
+                                    systemImage: canSendUSDT ? "exclamationmark.shield" : "info.circle")
+                                    .font(.footnote)
+                                    .foregroundStyle(canSendUSDT ? Color.orange : WalletTheme.secondary)
                                 if selected == .ethereum {
                                     Text("Адрес проверен по формату, но EIP-55 checksum пока не проверяется. Перед отправкой сверяйте его с получателем.")
                                         .font(.caption).foregroundStyle(.orange)
@@ -290,6 +313,7 @@ struct WalletSendFlowView: View {
                 .padding(20)
                 .disabled(transfers.busy || submitted != nil)
             }
+            .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .bottom) {
                 Button {
                     if submitted != nil { dismiss() }
@@ -302,6 +326,7 @@ struct WalletSendFlowView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(transfers.busy || (submitted == nil && (!reviewing && (!validToReview || quoteLoading))))
+                .accessibilityHint(reviewing && canSendUSDT ? "Откроется отдельное подтверждение перед подписью перевода" : "Сохранённые средства не списываются без подтверждения")
                 .padding(.horizontal, 20).padding(.vertical, 10)
                 .background(WalletTheme.canvas)
             }

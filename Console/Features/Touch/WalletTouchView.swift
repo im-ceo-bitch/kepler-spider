@@ -22,6 +22,11 @@ struct WalletTouchView: View {
     @State private var opened = false
     @State private var attempt = UUID()
 
+    private var needsLocalNetworkPermission: Bool {
+        guard let error = touch.error?.lowercased() else { return false }
+        return error.contains("локальн") || error.contains("разрешен") || error.contains("разреши")
+    }
+    private var unavailableOnDevice: Bool { touch.error?.contains("UWB") == true }
     private var visualStage: SpyderTouchConnectionVisual.Stage {
         if connected != nil { return .connected }
         if connecting || [.request, .waiting, .exchanged].contains(touch.phase) { return .encounter }
@@ -47,7 +52,11 @@ struct WalletTouchView: View {
                             ownAvatar: chat.myAvatar, ownSeed: owner ?? "",
                             peerAvatar: peerAvatar, peerSeed: connected?.id)
 
-                        if (touch.phase == .request || touch.phase == .waiting) && promptReady {
+                        if (touch.phase == .request || touch.phase == .waiting) && !promptReady {
+                            ProgressView("Проверяем устройство рядом…")
+                                .frame(maxWidth: .infinity, minHeight: 52)
+                                .accessibilityAddTraits(.updatesFrequently)
+                        } else if (touch.phase == .request || touch.phase == .waiting) && promptReady {
                             connectionRequest
                                 .transition(.opacity)
                         } else if connecting {
@@ -78,14 +87,20 @@ struct WalletTouchView: View {
                         if let message = notice ?? touch.error {
                             Label(LocalizedStringKey(message), systemImage: "info.circle").font(.callout)
                         }
-                        if touch.phase == .failed {
-                            Button("Открыть настройки Spyder") {
+                        if needsLocalNetworkPermission {
+                            Button("Открыть настройки доступа к локальной сети") {
                                 if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                            }.font(.headline).frame(minHeight: 44)
+                            }
+                            .buttonStyle(SpyderActionButtonStyle(.secondary))
                         }
-                        if connected == nil && !connecting && [.idle, .failed, .exchanged].contains(touch.phase) {
+                        if connected == nil && !connecting && [.idle, .failed, .exchanged].contains(touch.phase) && !unavailableOnDevice {
                             Button("Повторить поиск") { start() }
-                                .spyderPrimaryButton().buttonStyle(.plain)
+                                .buttonStyle(SpyderActionButtonStyle(.primary))
+                        }
+                        if unavailableOnDevice || touch.phase == .failed {
+                            Button("Подключиться другим способом") { cancel(); dismiss() }
+                                .buttonStyle(SpyderActionButtonStyle(.secondary))
+                                .accessibilityHint("Вернуться к поиску по имени, QR-коду и приглашениям")
                         }
                     }
                     .frame(maxWidth: 430, alignment: .leading)
@@ -160,11 +175,13 @@ struct WalletTouchView: View {
                 Button("Отменить", role: .cancel) { cancel() }.font(.subheadline).frame(minHeight: 44)
             } else {
                 Button("Подключиться") { if scenePhase == .active && promptReady { touch.approve() } }
-                    .spyderPrimaryButton().buttonStyle(.plain).disabled(scenePhase != .active)
+                    .buttonStyle(SpyderActionButtonStyle(.primary))
+                    .disabled(scenePhase != .active || !promptReady || touch.ambiguous)
+                    .accessibilityHint("Подтвердить совпадение кода на двух устройствах")
                 Button("Не сейчас", role: .cancel) { touch.decline() }
                     .font(.subheadline).foregroundStyle(WalletTheme.secondary).frame(minHeight: 44)
             }
-            Text("Вы делитесь приглашением личности «\(chat.myName)». Деньги не отправляются.")
+            Text("После подтверждения откроется чат с личностью «\(chat.myName)». Деньги и доступ к кошельку не передаются.")
                 .font(.caption).foregroundStyle(WalletTheme.secondary).multilineTextAlignment(.center)
         }
         .padding(18)

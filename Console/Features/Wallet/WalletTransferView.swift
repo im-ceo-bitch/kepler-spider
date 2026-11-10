@@ -12,6 +12,7 @@ struct WalletTransferView: View {
     @State private var note = ""
     @State private var isReview = false
     @State private var didSubmit = false
+    @State private var isSubmitting = false
     @State private var transferError: String?
 
     private var amountIsValid: Bool {
@@ -105,7 +106,7 @@ struct WalletTransferView: View {
                                     Text(recipient)
                                         .font(.system(size: 12, design: .monospaced))
                                         .textSelection(.enabled)
-                                    Text("Сетевая комиссия по текущему контракту: 0.000021 SPD. Отправка подписывается на устройстве после Face ID.")
+                                    Text("Комиссия зависит от параметров тестовой сети. Отправка подписывается на устройстве после Face ID.")
                                         .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
                                 } else {
                                     Text("Это только демонстрация. Сетевой запрос не создаётся.")
@@ -113,6 +114,10 @@ struct WalletTransferView: View {
                                 }
                             }
                         }
+                    }
+                    if isReview && !didSubmit && !isRequest && !spider.sending && !isSubmitting {
+                        Button("Изменить реквизиты") { isReview = false }
+                            .buttonStyle(SpyderActionButtonStyle(.secondary))
                     }
                     if !isRequest, let pending = spider.pendingForAddress {
                         WalletCard {
@@ -137,12 +142,14 @@ struct WalletTransferView: View {
                 .padding(20)
             }
             Button {
-                if !isReview {
+                if didSubmit { dismiss() }
+                else if !isReview {
                     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { isReview = true }
-                } else if isRequest {
-                    dismiss()
-                } else {
+                } else if isRequest { dismiss() }
+                else if !isSubmitting {
+                    isSubmitting = true
                     Task {
+                        defer { isSubmitting = false }
                         do {
                             try await spider.send(to: recipient, amountText: amount)
                             didSubmit = true
@@ -151,12 +158,12 @@ struct WalletTransferView: View {
                 }
             } label: {
                 HStack {
-                    if spider.sending { ProgressView().tint(WalletTheme.contrast) }
-                    Text(isReview ? (isRequest ? "Закрыть предпросмотр" : "Подписать и отправить в Devnet") : "Продолжить")
+                    if spider.sending || isSubmitting { ProgressView().tint(WalletTheme.contrast) }
+                    Text(didSubmit ? "Готово" :
+                        (isReview ? (isRequest ? "Закрыть предпросмотр" : "Подписать и отправить тестовые SPD") : "Проверить реквизиты"))
                 }.spyderPrimaryButton()
             }
-            .disabled(!canContinue || didSubmit)
-            .opacity((canContinue && !didSubmit) ? 1 : 0.45)
+            .disabled(!didSubmit && (!canContinue || isSubmitting))
             .padding(.horizontal, 20)
             .padding(.bottom, 25)
         }
@@ -320,13 +327,18 @@ struct WalletReceiveView: View {
                                 .foregroundStyle(WalletTheme.ink)
                         }
                         if let contract = selected.contract {
-                            Divider()
-                            Text("Проверенный контракт · Ethereum")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text(contract)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(WalletTheme.secondary)
-                                .textSelection(.enabled)
+                            DisclosureGroup("Адрес контракта токена · дополнительно") {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Контракт ERC-20 · Ethereum")
+                                        .font(.footnote.weight(.semibold))
+                                    Text(contract)
+                                        .font(.footnote.monospaced())
+                                        .textSelection(.enabled)
+                                }
+                                .padding(.top, 6)
+                            }
+                            .font(.footnote)
+                            .foregroundStyle(WalletTheme.secondary)
                         }
                     }
                 }
@@ -362,6 +374,13 @@ struct WalletReceiveView: View {
                                           systemImage: copied ? "checkmark.circle.fill" : "doc.on.doc")
                                 }
                                 .buttonStyle(SpyderActionButtonStyle(.primary))
+                                ShareLink(item: address) {
+                                    Label("Поделиться адресом", systemImage: "square.and.arrow.up")
+                                }
+                                .buttonStyle(SpyderActionButtonStyle(.secondary))
+                                Text("Публичный адрес будет доступен выбранному приложению. Перед отправкой убедитесь, что сеть совпадает: \(selected.network).")
+                                    .font(.footnote)
+                                    .foregroundStyle(WalletTheme.secondary)
                                 Label("Адрес повторно проверен по ключам кошелька", systemImage: "checkmark.shield")
                                     .font(.system(size: 11))
                                     .foregroundStyle(WalletTheme.secondary)
@@ -474,6 +493,7 @@ struct WalletReceiveView: View {
                 }
                 if canVerifyERC20, verifiedAddress != nil {
                     WalletCard {
+                        DisclosureGroup {
                         VStack(alignment: .leading, spacing: 12) {
                             Label("Проверить ERC-20 зачисление", systemImage: "checkmark.shield")
                                 .font(.system(size: 16, weight: .semibold))
@@ -513,6 +533,11 @@ struct WalletReceiveView: View {
                                 .font(.system(size: 11)).foregroundStyle(WalletTheme.secondary)
                         }
                         .font(.system(size: 12))
+                        .padding(.top, 12)
+                        } label: {
+                            Label("Проверить зачисление по хешу · дополнительно", systemImage: "checkmark.shield")
+                                .font(.subheadline.weight(.semibold))
+                        }
                     }
                 }
                 Text("Проверка адреса не равна аудиту кошелька. Перед значительным переводом выполните минимальный тест, дождитесь подтверждений и проверьте доступность восстановления и отправки средств.")

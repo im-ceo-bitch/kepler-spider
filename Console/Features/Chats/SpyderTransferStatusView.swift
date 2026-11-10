@@ -9,16 +9,16 @@ struct SpyderTransferStatusView: View {
     @State private var assessment: WalletEVMOutgoingAssessment?
     @State private var error: String?
     @State private var checkedAt: Date?
+    @State private var retryCount = 0
 
     private var status: LocalizedStringKey {
-        if error != nil { return "Проверка сети недоступна" }
         switch assessment {
         case .confirmed: return outgoing ? "Перевод подтверждён в Ethereum" : "Получено в Ethereum"
         case .reverted: return "Транзакция завершилась ошибкой"
         case .observed(let proof, let providers): return "В блоке · \(String(proof.confirmations)) подтверждений · \(String(providers))/2 источников"
         case .pending: return "Ожидает включения в блок"
         case .notSeen: return "Результат отправки пока неизвестен"
-        case nil: return "Проверяем транзакцию…"
+        case nil: return error == nil ? "Проверяем транзакцию…" : "Проверка сети недоступна"
         }
     }
     var body: some View {
@@ -40,7 +40,13 @@ struct SpyderTransferStatusView: View {
             } else if case .notSeen = assessment {
                 Text("Не повторяй перевод, пока не выяснен результат этой попытки.").font(.caption).foregroundStyle(.secondary)
             }
-            if let error { Text(error).font(.caption).foregroundStyle(.secondary) }
+            if let error {
+                Label("Не удалось обновить статус: " + error, systemImage: "wifi.exclamationmark")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Повторить проверку") { retryCount += 1 }
+                    .buttonStyle(SpyderActionButtonStyle(.tertiary))
+                    .disabled(!enabled || scenePhase != .active || !sectionActive)
+            }
             if let checkedAt {
                 Text("Проверено в \(checkedAt.formatted(date: .omitted, time: .shortened))")
                     .font(.caption).foregroundStyle(.secondary)
@@ -59,7 +65,7 @@ struct SpyderTransferStatusView: View {
                 .padding(.top, 8)
             }.font(.subheadline).tint(.primary)
         }
-        .task(id: "\(transfer.txHash)-\(scenePhase == .active)-\(sectionActive)-\(enabled)") {
+        .task(id: "\(transfer.txHash)-\(scenePhase == .active)-\(sectionActive)-\(enabled)-\(retryCount)") {
             guard enabled, scenePhase == .active, sectionActive else { return }
             while !Task.isCancelled {
                 do {

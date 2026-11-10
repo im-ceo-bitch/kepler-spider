@@ -23,7 +23,7 @@ checks = {
     "no generic send promise on wallet home": 'actionButton("Подготовить перевод"' in home,
     "receive uses explicit acknowledgment": 'Label("Показать адрес и QR"' in receive and 'Toggle("Я проверил сеть' not in receive,
     "receiving asset choice marked selected": ".accessibilityAddTraits(selected == item ? .isSelected : [])" in receive,
-    "unsupported send returns to review": '"Вернуться к реквизитам"' in send and 'showUnavailable' not in send,
+    "unsupported send returns to edit (stage 3)": ('"Вернуться к реквизитам"' in send or '"Изменить реквизиты"' in send) and 'showUnavailable' not in send,
     "disabled send offers address feedback": '"Адрес не соответствует выбранной сети."' in send,
     "market filter touch targets": 'frame(width: 44, height: 44)' in catalog and catalog.count('frame(minHeight: 44)') >= 2,
     "chat payment uses shared action styles": 'ChatPaymentPrimaryButton' not in payment and 'SpyderActionButtonStyle' in payment,

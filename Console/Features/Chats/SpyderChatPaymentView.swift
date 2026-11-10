@@ -58,7 +58,19 @@ struct SpyderChatPaymentView: View {
                     assetSection
                     if let request = incomingRequest { shareSection(request) }
                     else { recipientSection }
-                    if let notice { Text(LocalizedStringKey(notice)).font(.footnote) }
+                    if sending {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Подтверждаем и отправляем реквизиты…")
+                        }
+                        .font(.subheadline)
+                        .accessibilityAddTraits(.updatesFrequently)
+                    }
+                    if let notice {
+                        Label(LocalizedStringKey(notice), systemImage: "info.circle")
+                            .font(.footnote)
+                            .accessibilityAddTraits(.updatesFrequently)
+                    }
                     if let error = chat.errorMessage { Text(error).font(.footnote).foregroundStyle(.red) }
                     historySection
                 }
@@ -240,6 +252,8 @@ struct SpyderChatPaymentView: View {
                       chat.serverAddress == server, scenePhase != .background, let payload = signed.payload else { return }
                 if await chat.sendMessage(to: contact.id, text: payload) {
                     notice = "Адрес подтверждён подписью кошелька и отправлен собеседнику. Средства не переводились."
+                } else if addressGeneration == action {
+                    notice = chat.errorMessage ?? "Не удалось отправить реквизиты. Проверьте соединение и повторите действие."
                 }
             } catch { if addressGeneration == action { notice = error.localizedDescription } }
         }
@@ -250,6 +264,8 @@ struct SpyderChatPaymentView: View {
         Task {
             if await chat.sendMessage(to: contact.id, text: payload) {
                 notice = envelope.kind == .request ? "Запрос отправлен. Ожидаем реквизиты собеседника." : "Реквизиты отправлены. Деньги не переводились."
+            } else {
+                notice = chat.errorMessage ?? "Не удалось отправить сообщение. Попробуйте ещё раз после восстановления соединения."
             }
             sending = false
         }
