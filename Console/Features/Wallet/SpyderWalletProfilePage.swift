@@ -97,11 +97,12 @@ struct SpyderWalletProfilePage: View {
                 Toggle(isOn: $privacyHidden) {
                     Label("Скрывать балансы", systemImage: "eye.slash")
                 }
+                .toggleStyle(.switch)
                 .tint(WalletTheme.accent)
                 .padding(18)
                 .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 22))
 
-                pageRow("Настройки кошелька", detail: "Тема, язык и финансовые параметры", symbol: "gearshape", action: onSettings)
+                pageRow("Настройки кошелька", detail: "Язык, восстановление, Devnet", symbol: "gearshape", action: onSettings)
                     .padding(.horizontal, 18)
                     .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 22))
                 Text("Spyder ID и криптографические ключи сообщений не входят в финансовый профиль.")

@@ -144,11 +144,11 @@ struct SpyderChatPaymentView: View {
             if !canShare {
                 Button(chains.isLoading ? "Подтверждаем кошелёк…" : "Подтвердить адрес через Face ID / код") {
                     chains.selectAccount(access.activeWalletID); chains.activate()
-                }.buttonStyle(.bordered).disabled(chains.isLoading || !access.unlocked || !request.isValid())
+                }.buttonStyle(SpyderActionButtonStyle(.secondary)).disabled(chains.isLoading || !access.unlocked || !request.isValid())
             }
             Button { confirmShare = true } label: {
                 actionLabel("Поделиться реквизитами", icon: "arrow.up")
-            }.buttonStyle(ChatPaymentPrimaryButton()).disabled(!canShare || sending || !chat.encryptionReady)
+            }.buttonStyle(SpyderActionButtonStyle(.primary)).disabled(!canShare || sending || !chat.encryptionReady)
             if let error = chains.errorMessage { Text(error).font(.footnote).foregroundStyle(.red) }
         }
     }
@@ -173,7 +173,7 @@ struct SpyderChatPaymentView: View {
                         reviewRecipient = recipientContext
                         preparing = reviewRecipient != nil
                     } label: { actionLabel("Выбрать сумму и комиссию", icon: "arrow.right") }
-                        .buttonStyle(ChatPaymentPrimaryButton()).disabled(!access.unlocked)
+                        .buttonStyle(SpyderActionButtonStyle(.primary)).disabled(!access.unlocked)
                     requestButton(primary: false)
                 }
             } else {
@@ -190,8 +190,8 @@ struct SpyderChatPaymentView: View {
         } label: {
             actionLabel(sending ? "Отправляем запрос…" : "Запросить реквизиты", icon: "arrow.up.right")
         }.disabled(sending || !chat.encryptionReady)
-        if primary { button.buttonStyle(ChatPaymentPrimaryButton()) }
-        else { button.buttonStyle(.bordered).tint(.primary) }
+        if primary { button.buttonStyle(SpyderActionButtonStyle(.primary)) }
+        else { button.buttonStyle(SpyderActionButtonStyle(.secondary)) }
     }
 
     private func addressLabel(_ address: String) -> some View {
@@ -253,16 +253,5 @@ struct SpyderChatPaymentView: View {
             }
             sending = false
         }
-    }
-}
-
-private struct ChatPaymentPrimaryButton: ButtonStyle {
-    @Environment(\.isEnabled) private var enabled
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.headline)
-            .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 50)
-            .foregroundStyle(Color(uiColor: .systemBackground))
-            .background(Color.primary, in: RoundedRectangle(cornerRadius: 14))
-            .opacity(enabled ? (configuration.isPressed ? 0.78 : 1) : 0.48)
     }
 }

@@ -159,7 +159,7 @@ struct SpyderDevnetChatsHomeView: View {
                                 .frame(width: 44, height: 44)
                                 .foregroundStyle(WalletTheme.canvas)
                                 .background(WalletTheme.ink, in: Circle())
-                        }.buttonStyle(.plain).accessibilityLabel("Пригласить")
+                        }.buttonStyle(.plain).accessibilityLabel("Новый чат")
                     }
                 }
                 if !chat.hasIdentity { setup }
@@ -176,7 +176,9 @@ struct SpyderDevnetChatsHomeView: View {
                         TextField("Создать @username", text: $claim)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                         Button("Сохранить username") { Task { _ = await chat.claimUsername(claim) } }
+                            .buttonStyle(SpyderActionButtonStyle(.secondary))
                             .disabled(claim.count < 3)
+                            .accessibilityHint(claim.count < 3 ? Text("Введите не менее трёх символов") : Text("Сделать имя доступным для поиска"))
                     }
                     Picker("Раздел", selection: $showingContacts) {
                         Text("Переписки").tag(false)
@@ -203,7 +205,19 @@ struct SpyderDevnetChatsHomeView: View {
                         }
                     }
                     if chat.contactPreferences.values.contains(where: { $0.hidden }) {
-                        Toggle("Показать скрытые", isOn: $showHidden).font(.caption)
+                        Button {
+                            showHidden.toggle()
+                            UISelectionFeedbackGenerator().selectionChanged()
+                        } label: {
+                            Label(showHidden ? "Скрытые показаны" : "Показать скрытые",
+                                  systemImage: showHidden ? "eye" : "eye.slash")
+                                .font(.subheadline.weight(.medium))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .frame(minHeight: 44)
+                        }
+                        .buttonStyle(SpyderChoiceButtonStyle(selected: showHidden))
+                        .accessibilityAddTraits(showHidden ? .isSelected : [])
                     }
                 }
             }
@@ -248,7 +262,10 @@ struct SpyderDevnetChatsHomeView: View {
                     Text(!search.isEmpty ? "Переписки не найдены" : archived ? "Архив пуст" : "Пока нет переписок").font(.headline)
                     Text(!search.isEmpty ? "Попробуй другое имя или username." : archived ? "Здесь появятся архивированные чаты." : "Пригласи контакт, чтобы начать общение.")
                         .font(.caption).foregroundStyle(WalletTheme.secondary)
-                    if !archived && search.isEmpty { Button("Пригласить", action: onAdd) }
+                    if !archived && search.isEmpty {
+                        Button("Новый чат", action: onAdd)
+                            .buttonStyle(SpyderActionButtonStyle(.secondary))
+                    }
                 }.padding(.vertical, 15).listRowBackground(Color.clear)
             }
             ForEach(filtered) { item in

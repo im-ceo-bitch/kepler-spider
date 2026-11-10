@@ -59,9 +59,8 @@ struct SpyderInvitePage: View {
                         .font(.caption).foregroundStyle(WalletTheme.secondary)
                     Text(chat.myName).font(.title2.bold())
                     Button { showingTouch = true } label: {
-                        Label("Spyder Touch · подключиться рядом", systemImage: "iphone.radiowaves.left.and.right")
-                            .frame(maxWidth: .infinity)
-                    }.buttonStyle(.borderedProminent).tint(.black)
+                        Label("Spyder Touch · рядом", systemImage: "iphone.radiowaves.left.and.right")
+                    }.buttonStyle(SpyderActionButtonStyle(.secondary))
                     .disabled(!chat.hasIdentity)
                     if let image = qrImage {
                         Image(uiImage: image).interpolation(.none).resizable().scaledToFit()
@@ -73,7 +72,8 @@ struct SpyderInvitePage: View {
                     Text("QR и ссылка дают доступ к подключению этой личности. Отправляй их тем, с кем хочешь общаться.")
                         .font(.caption).foregroundStyle(WalletTheme.secondary)
                     if let url = SpyderInviteLink.url(code: chat.inviteCode) {
-                        ShareLink(item: url) { Label("Поделиться ссылкой", systemImage: "square.and.arrow.up") }
+                        ShareLink(item: url) { Label("Поделиться приглашением", systemImage: "square.and.arrow.up") }
+                            .buttonStyle(SpyderActionButtonStyle(.secondary))
                         Text("Ссылка открывается при установленном Spyder Wallet.")
                             .font(.caption).foregroundStyle(WalletTheme.secondary)
                     }
@@ -89,9 +89,10 @@ struct SpyderInvitePage: View {
                     PhotosPicker(selection: $photo, matching: .images) {
                         Label("Считать QR с изображения", systemImage: "qrcode.viewfinder")
                     }
-                    Button("Подключить") { connectCode() }
-                        .buttonStyle(.borderedProminent)
+                    Button("Подключиться по коду") { connectCode() }
+                        .buttonStyle(SpyderActionButtonStyle(.primary))
                         .disabled(busy || SpyderInviteLink.code(from: input) == nil)
+                        .accessibilityHint(Text(SpyderInviteLink.code(from: input) == nil ? "Введите корректный код или ссылку приглашения" : "Добавить контакт из приглашения"))
                     Divider()
                     Text("Найти по @username").font(.headline)
                     TextField("@username", text: $lookup)
@@ -113,21 +114,25 @@ struct SpyderInvitePage: View {
                             Button(chat.contacts.contains(where: { $0.id == person.id }) ? "Открыть" : "Написать") {
                                 if chat.contacts.contains(where: { $0.id == person.id }) { open(person) }
                                 else { connectUsername(person) }
-                            }.disabled(busy)
+                            }
+                            .buttonStyle(SpyderActionButtonStyle(.tertiary))
+                            .disabled(busy)
                         }
                     }
                     if let person = connectedPeer {
                         Button { open(person) } label: {
                             Label("Открыть чат: " + person.name, systemImage: "message.fill")
-                        }.buttonStyle(.borderedProminent)
+                        }.buttonStyle(SpyderActionButtonStyle(.primary))
                     }
                     if busy { ProgressView("Подключение…") }
                     if let notice { Text(notice).font(.callout) }
                     Divider()
-                    Toggle("Ограничить неизвестных", isOn: Binding(
+                    Toggle("Приглашения только по коду или QR", isOn: Binding(
                         get: { chat.limitUnknownContacts },
                         set: { enabled in Task { await chat.setLimitUnknownContacts(enabled) } }
                     ))
+                    .toggleStyle(.switch)
+                    .tint(WalletTheme.ink)
                     Text("При включении новые контакты смогут подключиться только по твоему коду, QR или ссылке. Поиск по имени не даёт разрешения на подключение.")
                         .font(.caption).foregroundStyle(WalletTheme.secondary)
                     if !chat.inviteHistory.isEmpty {

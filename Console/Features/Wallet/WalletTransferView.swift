@@ -293,19 +293,16 @@ struct WalletReceiveView: View {
                                     Image(systemName: selected == item ? "checkmark.circle.fill" : "circle")
                                 }
                                 Text(item.network)
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 13))
                                     .lineLimit(2)
                                     .foregroundStyle(WalletTheme.secondary)
                             }
-                            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                            .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
                             .padding(12)
-                            .foregroundStyle(WalletTheme.ink)
-                            .background(selected == item ? WalletTheme.canvas : WalletTheme.surface,
-                                        in: RoundedRectangle(cornerRadius: 16))
-                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(
-                                selected == item ? WalletTheme.ink : WalletTheme.divider, lineWidth: 1))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(SpyderChoiceButtonStyle(selected: selected == item))
+                        .accessibilityLabel(Text("\(item.ticker), сеть \(item.network)"))
+                        .accessibilityAddTraits(selected == item ? .isSelected : [])
                     }
                 }
 
@@ -318,7 +315,7 @@ struct WalletReceiveView: View {
                             .foregroundStyle(WalletTheme.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         if selected != .spdDevnet {
-                            Label("Отправка настоящих криптовалют из Spyder Wallet пока отключена. До использования реальных средств проверьте восстановление в совместимом кошельке.", systemImage: "exclamationmark.triangle.fill")
+                            Label("Получение на проверенный адрес доступно. Отправка с произвольного адреса пока недоступна; USDT ERC-20 можно отправить только через подтверждённые реквизиты в чате.", systemImage: "exclamationmark.triangle.fill")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(WalletTheme.ink)
                         }
@@ -338,6 +335,9 @@ struct WalletReceiveView: View {
                     VStack(spacing: 15) {
                         if let address = verifiedAddress {
                             if acknowledged {
+                                Text("Адрес для сети " + selected.network)
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                 SpyderQRView(address: address)
                                     .frame(width: 216, height: 216)
                                     .frame(maxWidth: .infinity)
@@ -360,17 +360,29 @@ struct WalletReceiveView: View {
                                 } label: {
                                     Label(copied ? "Адрес скопирован" : "Скопировать адрес",
                                           systemImage: copied ? "checkmark.circle.fill" : "doc.on.doc")
-                                        .spyderPrimaryButton()
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(SpyderActionButtonStyle(.primary))
                                 Label("Адрес повторно проверен по ключам кошелька", systemImage: "checkmark.shield")
                                     .font(.system(size: 11))
                                     .foregroundStyle(WalletTheme.secondary)
                             } else {
-                                Toggle("Я проверил сеть и тип актива. Понимаю, что перевод из другой сети может привести к потере средств.",
-                                       isOn: $acknowledged)
-                                    .font(.system(size: 13))
-                                    .tint(WalletTheme.ink)
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Label("Проверьте сеть перед получением", systemImage: "exclamationmark.shield")
+                                        .font(.headline)
+                                    Text("Выбран \(selected.ticker) в сети \(selected.network). Отправка из другой сети может привести к потере средств.")
+                                        .font(.subheadline)
+                                        .foregroundStyle(WalletTheme.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Button {
+                                        acknowledged = true
+                                        UISelectionFeedbackGenerator().selectionChanged()
+                                    } label: {
+                                        Label("Показать адрес и QR", systemImage: "qrcode")
+                                    }
+                                    .buttonStyle(SpyderActionButtonStyle(.primary))
+                                    .accessibilityHint("Подтвердить выбор сети и открыть адрес для получения")
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         } else {
                             Image(systemName: "lock.shield")
@@ -387,9 +399,8 @@ struct WalletReceiveView: View {
                                     if chains.isLoading || spider.busy { ProgressView().tint(WalletTheme.contrast) }
                                     Label("Проверить адрес", systemImage: "faceid")
                                 }
-                                .spyderPrimaryButton()
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(SpyderActionButtonStyle(.primary))
                             .disabled(chains.isLoading || spider.busy)
                         }
                     }
@@ -478,9 +489,8 @@ struct WalletReceiveView: View {
                                     if depositChecking { ProgressView() }
                                     Label("Проверить по блокчейну", systemImage: "network")
                                 }
-                                .spyderPrimaryButton()
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(SpyderActionButtonStyle(.primary))
                             .disabled(depositChecking || depositHash.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             if let depositStatus {
                                 switch depositStatus {

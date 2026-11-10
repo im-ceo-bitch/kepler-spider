@@ -94,7 +94,7 @@ struct WalletCatalogSection: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(WalletTheme.ink)
                         .padding(.horizontal, 13)
-                        .frame(height: 38)
+                        .frame(minHeight: 44)
                         .background(WalletTheme.surface, in: Capsule())
                 }
                 Button { favoritesOnly.toggle() } label: {
@@ -102,7 +102,7 @@ struct WalletCatalogSection: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(favoritesOnly ? WalletTheme.contrast : WalletTheme.ink)
                         .padding(.horizontal, 13)
-                        .frame(height: 38)
+                        .frame(minHeight: 44)
                         .background(favoritesOnly ? WalletTheme.accent : WalletTheme.surface, in: Capsule())
                 }
                 .accessibilityAddTraits(favoritesOnly ? .isSelected : [])
@@ -110,7 +110,7 @@ struct WalletCatalogSection: View {
                 Button { Task { await catalog.refresh(force: true) } } label: {
                     Image(systemName: "arrow.clockwise")
                         .symbolEffect(.pulse, value: catalog.isLoading)
-                        .frame(width: 38, height: 38)
+                        .frame(width: 44, height: 44)
                         .background(WalletTheme.surface, in: Circle())
                 }
                 .accessibilityLabel("Обновить котировки")

@@ -55,6 +55,63 @@ struct WalletDemoLabel: View {
     }
 }
 
+// UX Stage 1: one action language and touch geometry across Wallet and Chats.
+// Buttons do not promise success: business logic and enabled state stay at the call site.
+enum SpyderActionKind {
+    case primary, secondary, tertiary, destructive
+
+    var foreground: Color {
+        switch self {
+        case .primary, .destructive: WalletTheme.contrast
+        case .secondary, .tertiary: WalletTheme.ink
+        }
+    }
+    var fill: Color {
+        switch self {
+        case .primary: WalletTheme.accent
+        case .secondary: WalletTheme.surface
+        case .tertiary: .clear
+        case .destructive: .red
+        }
+    }
+}
+
+struct SpyderActionButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    let kind: SpyderActionKind
+
+    init(_ kind: SpyderActionKind = .primary) { self.kind = kind }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
+            .frame(minHeight: kind == .tertiary ? 44 : 52)
+            .foregroundStyle(kind.foreground)
+            .background(kind.fill, in: Capsule())
+            .overlay(Capsule().strokeBorder(kind == .secondary ? WalletTheme.divider : .clear, lineWidth: 1))
+            .contentShape(Capsule())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.45)
+    }
+}
+
+/// A visual choice, not an on/off switch. A selected option stays readable.
+struct SpyderChoiceButtonStyle: ButtonStyle {
+    let selected: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(WalletTheme.ink)
+            .background(selected ? WalletTheme.canvas : WalletTheme.surface,
+                        in: RoundedRectangle(cornerRadius: WalletTheme.cornerRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: WalletTheme.cornerRadius, style: .continuous)
+                .strokeBorder(selected ? WalletTheme.ink : WalletTheme.divider, lineWidth: selected ? 1.5 : 1))
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .contentShape(RoundedRectangle(cornerRadius: WalletTheme.cornerRadius))
+    }
+}
+
+// Keep old call sites compatible while making their primary actions consistent.
 extension View {
     func spyderPrimaryButton() -> some View {
         modifier(SpyderPrimaryButtonStyle())
@@ -62,13 +119,16 @@ extension View {
 }
 
 private struct SpyderPrimaryButtonStyle: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
     func body(content: Content) -> some View {
         content
             .font(.headline)
             .foregroundStyle(WalletTheme.contrast)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .frame(minHeight: 50)
-            .background(WalletTheme.accent, in: RoundedRectangle(cornerRadius: WalletTheme.cornerRadius, style: .continuous))
+            .padding(.horizontal, 16)
+            .frame(minHeight: 52)
+            .background(WalletTheme.accent, in: Capsule())
+            .opacity(isEnabled ? 1 : 0.45)
+            .contentShape(Capsule())
     }
 }

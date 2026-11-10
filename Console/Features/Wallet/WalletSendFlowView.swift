@@ -22,7 +22,6 @@ struct WalletSendFlowView: View {
     @State private var recipient = ""
     @State private var amount = ""
     @State private var reviewing = false
-    @State private var showUnavailable = false
     @State private var confirmUSDT = false
     @State private var approvedWalletID: String?
     @State private var submitted: WalletUSDTTransferRecord?
@@ -58,8 +57,8 @@ struct WalletSendFlowView: View {
         if transfers.busy { return "Подтверждение и отправка…" }
         if submitted != nil { return "Вернуться в чат" }
         if quoteLoading { return "Проверка сети…" }
-        if reviewing { return canSendUSDT ? "Подтвердить и отправить USDT" : "Обновить реквизиты или расчёт" }
-        return "Проверить перевод"
+        if reviewing { return canSendUSDT ? "Подтвердить и отправить USDT" : "Вернуться к реквизитам" }
+        return "Проверить реквизиты"
     }
 
     private var normalizedRecipient: String { recipient.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -135,10 +134,10 @@ struct WalletSendFlowView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Label(LocalizedStringKey(reviewing ? "Проверка перевода" : "Отправить криптовалюту"), systemImage: reviewing ? "checkmark.shield" : "arrow.up.right")
+                    Label(LocalizedStringKey(reviewing ? "Проверка реквизитов" : (chatRecipient == nil ? "Подготовить перевод" : "Перевод в чате")), systemImage: reviewing ? "checkmark.shield" : "arrow.up.right")
                         .font(.system(size: 28, weight: .bold))
                         .symbolEffect(.bounce, value: reviewing)
-                    Text(chatRecipient == nil ? "Подготовка транзакции Mainnet · неподписанная" : "Собеседник выбран в чате · подготовка перевода")
+                    Text(chatRecipient == nil ? "Здесь можно проверить адрес, сумму и комиссию. Отправка средств с произвольного адреса недоступна." : "Отправка USDT доступна только с подтверждёнными реквизитами собеседника.")
                         .font(.subheadline).foregroundStyle(WalletTheme.secondary)
                     WalletCard {
                         VStack(alignment: .leading, spacing: 16) {
@@ -157,12 +156,12 @@ struct WalletSendFlowView: View {
                                 clearQuote(); evmAsset = chatRecipient?.payment.asset.evmAsset ?? .eth; amount = ""
                             }
                             if selected == .ethereum {
-                                Picker("Монета Ethereum", selection: $evmAsset) {
+                                Picker("Актив Ethereum", selection: $evmAsset) {
                                     ForEach(WalletEVMAsset.allCases) { asset in
                                         Text(asset.rawValue).tag(asset)
                                     }
                                 }
-                                .pickerStyle(.segmented)
+                                .pickerStyle(.menu)
                                 .onChange(of: evmAsset) { _, _ in clearQuote(); amount = "" }
                                 Text(evmAsset == .eth ? "Нативная монета Ethereum Mainnet" : "ERC-20 · сеть Ethereum Mainnet")
                                     .font(.caption).foregroundStyle(WalletTheme.secondary)
@@ -269,6 +268,21 @@ struct WalletSendFlowView: View {
                             .foregroundStyle(.orange)
                             .font(.footnote)
                     }
+                    if !reviewing && submitted == nil {
+                        if normalizedRecipient.isEmpty {
+                            Label("Введите публичный адрес получателя.", systemImage: "info.circle")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        } else if !recipientValid {
+                            Label("Адрес не соответствует выбранной сети.", systemImage: "exclamationmark.circle")
+                                .font(.footnote).foregroundStyle(.orange)
+                        } else if parsedAmount == nil {
+                            Label("Введите сумму больше нуля в допустимом формате.", systemImage: "info.circle")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        } else if !validToReview {
+                            Label("Проверка недоступна: проверьте баланс и актуальность реквизитов.", systemImage: "info.circle")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
                     Label("Никогда не вставляйте сюда seed-фразу или приватный ключ. Нужен только публичный адрес получателя.", systemImage: "lock.shield")
                         .font(.footnote).foregroundStyle(WalletTheme.secondary)
                 }
@@ -281,15 +295,13 @@ struct WalletSendFlowView: View {
                     if submitted != nil { dismiss() }
                     else if !reviewing { prepareReview() }
                     else if canSendUSDT { confirmUSDT = true }
-                    else if chatRecipient?.payment.asset == .usdtEthereum && recipientContextValid { clearQuote(); prepareReview() }
-                    else { showUnavailable = true }
+                    else { clearQuote() }
                 } label: {
                     Label(LocalizedStringKey(primaryButtonTitle), systemImage: reviewing ? "lock.shield" : "arrow.right")
                         .spyderPrimaryButton()
                 }
                 .buttonStyle(.plain)
-                .disabled(transfers.busy || (submitted == nil && (!validToReview || quoteLoading)))
-                .opacity(submitted != nil || (validToReview && !quoteLoading) ? 1 : 0.45)
+                .disabled(transfers.busy || (submitted == nil && (!reviewing && (!validToReview || quoteLoading))))
                 .padding(.horizontal, 20).padding(.vertical, 10)
                 .background(WalletTheme.canvas)
             }
@@ -331,11 +343,6 @@ struct WalletSendFlowView: View {
         }
         .sheet(isPresented: $showSaveRecipient) {
             WalletAddressBookAddView(chain: selected, address: normalizedRecipient)
-        }
-        .alert("Отправка ещё не включена", isPresented: $showUnavailable) {
-            Button("Понятно", role: .cancel) { }
-        } message: {
-            Text("Если это USDT, заново запроси подписанные реквизиты и обнови расчёт комиссии. ETH и USDC пока не отправляются из этого экрана. Вы не отправили средства. Для продолжения нужны действующие реквизиты и свежий расчёт.")
         }
     }
     private func sendUSDT() {

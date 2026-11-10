@@ -98,14 +98,12 @@ struct SpyderIdentityHubView: View {
                 Label("Мой QR", systemImage: "qrcode")
                     .frame(maxWidth: .infinity).frame(height: 48)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(WalletTheme.accent)
-            .foregroundStyle(WalletTheme.contrast)
+            .buttonStyle(SpyderActionButtonStyle(.primary))
             ShareLink(item: SpyderInviteLink.url(code: chat.inviteCode)?.absoluteString ?? chat.inviteCode) {
                 Label("Поделиться", systemImage: "square.and.arrow.up")
                     .frame(maxWidth: .infinity).frame(height: 48)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(SpyderActionButtonStyle(.secondary))
         }
     }
 
@@ -169,9 +167,12 @@ struct SpyderIdentityHubView: View {
                             }
                             Spacer(minLength: 0)
                             if chat.personaPrivacy == mode { Image(systemName: "checkmark.circle.fill").foregroundStyle(accent) }
-                        }.foregroundStyle(WalletTheme.ink).padding(.vertical, 5)
-                    }.buttonStyle(.plain).disabled(!chat.hasIdentity || savingPrivacy)
-                        .accessibilityAddTraits(chat.personaPrivacy == mode ? .isSelected : [])
+                        }.foregroundStyle(WalletTheme.ink).padding(12)
+                            .frame(minHeight: 60)
+                    }
+                    .buttonStyle(SpyderChoiceButtonStyle(selected: chat.personaPrivacy == mode))
+                    .disabled(!chat.hasIdentity || savingPrivacy)
+                    .accessibilityAddTraits(chat.personaPrivacy == mode ? .isSelected : [])
                 }
                 if savingPrivacy { ProgressView() }
                 Text("Для Public нужен @username. Hidden не удаляет старые чаты и не делает личность анонимной перед сервером. Личности, созданные приватными, по-прежнему не передают APNs-токен.")

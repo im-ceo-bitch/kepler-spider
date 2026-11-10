@@ -71,6 +71,7 @@ struct SpyderNotificationSettingsView: View {
                                     .foregroundStyle(accent)
                             }
                             Toggle("Звук отправки", isOn: $sendingSound)
+                                .toggleStyle(.switch).tint(WalletTheme.ink)
                             Button {
                                 SpyderSonicPlayer.shared.preview("spyder_sent")
                             } label: {
@@ -104,12 +105,12 @@ struct SpyderNotificationSettingsView: View {
                                 Task { await reloadDiagnostics() }
                             }
                             .disabled(checking || !chat.hasIdentity)
-                            .buttonStyle(.bordered)
+                            .buttonStyle(SpyderActionButtonStyle(.secondary))
                             Button("Отправить тестовое уведомление") {
                                 Task { await chat.sendTestPush() }
                             }
                             .disabled(!chat.pushEnabled || chat.pushRegisteredOnServer != true)
-                            .foregroundStyle(accent)
+                            .buttonStyle(SpyderActionButtonStyle(.tertiary))
                             Text("Успешная постановка в очередь APNs не гарантирует появления баннера. Для проверки заблокируй iPhone и проверь режим «Фокусирование».")
                                 .font(.caption).foregroundStyle(WalletTheme.secondary)
                         }

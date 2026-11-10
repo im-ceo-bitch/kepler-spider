@@ -6,7 +6,7 @@ import UIKit
 private enum WalletHomeSection: String, CaseIterable, Identifiable {
     case assets, cryptocurrencies
     var id: String { rawValue }
-    var title: String { self == .assets ? NSLocalizedString("Активы", comment: "") : NSLocalizedString("Криптовалюты", comment: "") }
+    var title: String { self == .assets ? NSLocalizedString("Портфель", comment: "") : NSLocalizedString("Рынок", comment: "") }
 }
 
 private struct WalletMarketSelection: Identifiable {
@@ -234,7 +234,7 @@ struct WalletHomeView: View {
                 .lineLimit(1)
                 .foregroundStyle(WalletTheme.ink)
                 .privacySensitive()
-            Text("Mainnet")
+            Text("Основные сети")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(WalletTheme.secondary)
             Text(publicAssets.totalUSD == nil ? "Ожидаем данные из сетей" :
@@ -328,7 +328,7 @@ struct WalletHomeView: View {
             ? AnyLayout(VStackLayout(spacing: 8))
             : AnyLayout(HStackLayout(spacing: 10))
         return layout {
-            actionButton("Отправить", symbol: "arrow.up.right", primary: true) { onAction(.send) }
+            actionButton("Подготовить перевод", symbol: "arrow.up.right", primary: true) { onAction(.send) }
             actionButton("Получить", symbol: "arrow.down.left", primary: false) { onAction(.receive) }
         }
     }
@@ -336,20 +336,16 @@ struct WalletHomeView: View {
     private func actionButton(_ title: String, symbol: String, primary: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(LocalizedStringKey(title), systemImage: symbol)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .foregroundStyle(primary ? WalletTheme.contrast : WalletTheme.ink)
-                .background(primary ? WalletTheme.accent : WalletTheme.surface,
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SpyderActionButtonStyle(primary ? .primary : .secondary))
+        .accessibilityHint(Text(primary ? "Проверить реквизиты и комиссию. Отправка зависит от актива и способа подключения." : "Показать проверенный адрес и QR-код"))
     }
 
     private var assetsSection: some View {
         VStack(alignment: .leading, spacing: 13) {
-            Text("5 активов · 3 сети")
+            Text("Поддерживаемые активы · 3 сети")
                 .font(.caption)
                 .foregroundStyle(WalletTheme.secondary)
             if chains.addresses.isEmpty {
