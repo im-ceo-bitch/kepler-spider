@@ -11,6 +11,8 @@ struct SpyderIdentityHubView: View {
     @State private var dragging = false
     @State private var showingViewer = false
     @State private var savingPrivacy = false
+    @State private var savingInvites = false
+    @State private var showingTechnicalSettings = false
     @AppStorage(SpyderMotionKeys.avatar) private var avatarValue = SpyderAvatarMotion.pulse.rawValue
     @AppStorage(SpyderMotionKeys.accent) private var accentValue = SpyderSignalAccent.red.rawValue
     @AppStorage(SpyderMotionKeys.enabled) private var motionEnabled = true
@@ -58,7 +60,12 @@ struct SpyderIdentityHubView: View {
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(isPresented: $showingViewer) { SpyderIdentityViewer() }
         .onChange(of: chat.activePersonaID) { _, _ in showingViewer = false; pull = 0; peakPull = 0 }
-        .task { if chat.hasIdentity { await chat.refresh() } }
+        .task {
+            if chat.hasIdentity {
+                await chat.refresh()
+                await chat.loadInviteSettings()
+            }
+        }
         .alert("Spyder ID", isPresented: Binding(
             get: { chat.errorMessage != nil }, set: { if !$0 { chat.errorMessage = nil } }
         )) { Button("Понятно", role: .cancel) { chat.errorMessage = nil } }
@@ -142,8 +149,14 @@ struct SpyderIdentityHubView: View {
                 identityRow("Аватар", detail: "Нативный аватар профиля", symbol: "paintpalette")
             }
             Divider()
-            NavigationLink { SpyderChatConnectionSettingsView() } label: {
-                identityRow("Сеть и диагностика", detail: "Подключение и состояние сервера", symbol: "network")
+            DisclosureGroup(isExpanded: $showingTechnicalSettings) {
+                NavigationLink { SpyderChatConnectionSettingsView() } label: {
+                    identityRow("Сеть и диагностика", detail: "Подключение к сервису сообщений", symbol: "network")
+                }
+            } label: {
+                Label("Дополнительно", systemImage: "gearshape.2")
+                    .font(.subheadline.weight(.medium))
+                    .frame(minHeight: 56)
             }
         }
         .padding(.horizontal, 16)
@@ -153,7 +166,30 @@ struct SpyderIdentityHubView: View {
     private var discoverabilityGroup: some View {
         WalletCard {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Уровень приватности").font(.headline)
+                Text("Приватность и приглашения").font(.headline)
+                Toggle(isOn: Binding(
+                    get: { chat.limitUnknownContacts },
+                    set: { enabled in
+                        savingInvites = true
+                        Task {
+                            await chat.setLimitUnknownContacts(enabled)
+                            savingInvites = false
+                        }
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Только по приглашению").font(.subheadline.weight(.medium))
+                        Text("Новые контакты подключаются по коду, ссылке или QR.")
+                            .font(.caption)
+                            .foregroundStyle(WalletTheme.secondary)
+                    }
+                }
+                .tint(WalletTheme.ink)
+                .disabled(!chat.hasIdentity || savingInvites)
+                if savingInvites { ProgressView("Сохраняем настройку…") }
+                Divider()
+                Text("Видимость профиля")
+                    .font(.subheadline.weight(.semibold))
                 ForEach(SpyderPersonaPrivacy.allCases) { mode in
                     Button {
                         savingPrivacy = true

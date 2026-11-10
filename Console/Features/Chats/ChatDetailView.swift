@@ -53,10 +53,10 @@ struct ChatDetailView: View {
                                     .font(.title2.weight(.medium)).frame(width: 56, height: 56)
                                     .background(WalletTheme.surface, in: Circle())
                                 Text("Переписка с \(contact.name)").font(.headline)
-                                Text("Напиши первое сообщение или запроси реквизиты для перевода.")
+                                Text("Напиши первое сообщение или начни оформление перевода.")
                                     .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                                 Button { openPayment() } label: {
-                                    Label("Перевести", systemImage: "arrow.up.right")
+                                    Label("Начать перевод", systemImage: "arrow.up.right")
                                         .font(.subheadline.weight(.semibold)).padding(.horizontal, 18).frame(minHeight: 44)
                                         .background(WalletTheme.ink, in: Capsule()).foregroundStyle(WalletTheme.canvas)
                                 }.buttonStyle(.plain)
@@ -104,7 +104,7 @@ struct ChatDetailView: View {
                         .foregroundStyle(WalletTheme.canvas).frame(width: 32, height: 32)
                         .background(WalletTheme.ink, in: Circle()).frame(width: 44, height: 44)
                 }
-                    .accessibilityLabel("Перевести")
+                    .accessibilityLabel("Начать перевод")
                     .accessibilityIdentifier("spyder.chat.transfer")
             }
         }
@@ -152,14 +152,13 @@ struct ChatDetailView: View {
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 9) {
             Menu {
-                Button { openPayment() } label: { Label("Перевести", systemImage: "arrow.up.right") }
                 Button(action: onOpenContact) { Label("Профиль собеседника", systemImage: "person.crop.circle") }
                 Button { choosingPersona = true } label: { Label("Личность: " + chat.myName, systemImage: "person.crop.circle.badge.checkmark") }
                 Button { showingSecurity = true } label: { Label("Проверить ключи", systemImage: "lock.shield") }
             } label: {
                 Image(systemName: "plus").font(.body.weight(.medium)).frame(width: 44, height: 44)
                     .background(WalletTheme.surface, in: Circle())
-            }.accessibilityLabel("Действия в чате")
+            }.accessibilityLabel("Другие действия в чате")
             TextField("Сообщение…", text: $draft, axis: .vertical)
                 .font(.body).lineLimit(1...5).focused($composerFocused)
                 .submitLabel(.send).onSubmit(send)

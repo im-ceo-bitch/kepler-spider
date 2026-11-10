@@ -3,10 +3,8 @@ import UIKit
 
 /// Wallet-only presentation. All financial values come from verified store responses;
 /// absent balances and prices are never replaced with plausible sample numbers.
-private enum WalletHomeSection: String, CaseIterable, Identifiable {
+private enum WalletHomeSection: String {
     case assets, cryptocurrencies
-    var id: String { rawValue }
-    var title: String { self == .assets ? NSLocalizedString("Портфель", comment: "") : NSLocalizedString("Рынок", comment: "") }
 }
 
 private struct WalletMarketSelection: Identifiable {
@@ -28,7 +26,7 @@ struct WalletHomeView: View {
     @EnvironmentObject private var spider: SpiderDevnetStore
     @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
     @StateObject private var catalog = WalletCatalogStore()
-    @AppStorage("spyder.wallet.home.section") private var selectedSection = WalletHomeSection.assets.rawValue
+    @State private var selectedSection = WalletHomeSection.assets.rawValue
     @State private var selectedToken: WalletVerifiedToken?
     @State private var expandedMarket: WalletMarketSelection?
     @State private var showDevnet = false
@@ -47,19 +45,20 @@ struct WalletHomeView: View {
                 .zIndex(1)
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 24) {
-                    portfolioCard
-                    quickActions
-                    walletSectionPicker
                     if selectedSection == WalletHomeSection.cryptocurrencies.rawValue {
+                        marketNavigationHeader
                         marketStrip
                         WalletCatalogSection(catalog: catalog)
                             .environmentObject(market)
                             .environmentObject(live)
                     } else {
+                        portfolioCard
+                        quickActions
                         assetsSection
                         recentSection
+                        marketEntry
                     }
-                    if spider.hasConfiguration {
+                    if selectedSection == WalletHomeSection.assets.rawValue && spider.hasConfiguration {
                         DisclosureGroup(isExpanded: $showDevnet) {
                             spiderSection
                                 .padding(.top, 16)
@@ -86,6 +85,7 @@ struct WalletHomeView: View {
                 .frame(maxWidth: 700)
                 .frame(maxWidth: .infinity)
             }
+            .id(selectedSection) // New section always starts at the top, not at the old scroll offset.
             .refreshable {
                 if selectedSection == WalletHomeSection.cryptocurrencies.rawValue {
                     await catalog.refresh(force: true)
@@ -94,15 +94,6 @@ struct WalletHomeView: View {
                 }
             }
         }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 28, coordinateSpace: .local).onEnded { value in
-                // An edge-only gesture avoids stealing pan gestures from market charts.
-                guard value.startLocation.x <= 26,
-                      value.translation.width > 95,
-                      abs(value.translation.height) < 65 else { return }
-                onControlCenter()
-            }
-        )
         // Keep scrolling content below the actual iOS status-bar safe area.
         // The header is a sibling of ScrollView, not its first scrolling row.
         .background(WalletTheme.canvas.ignoresSafeArea())
@@ -253,31 +244,58 @@ struct WalletHomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var walletSectionPicker: some View {
-        HStack(spacing: 22) {
-            ForEach(WalletHomeSection.allCases) { section in
-                let active = selectedSection == section.rawValue
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
-                        selectedSection = section.rawValue
-                    }
-                    UISelectionFeedbackGenerator().selectionChanged()
-                } label: {
-                    Text(section.title)
-                        .font(.headline)
-                        .foregroundStyle(active ? WalletTheme.ink : WalletTheme.secondary)
-                        .padding(.vertical, 12)
-                        .frame(minHeight: 44)
-                        .overlay(alignment: .bottom) {
-                            if active { Rectangle().fill(WalletTheme.ink).frame(height: 2) }
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(active ? .isSelected : [])
+    private var marketEntry: some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                selectedSection = WalletHomeSection.cryptocurrencies.rawValue
             }
-            Spacer(minLength: 0)
+            UISelectionFeedbackGenerator().selectionChanged()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.title3)
+                    .frame(width: 36, height: 44)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Рынок криптовалют")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Курсы и каталог · не баланс кошелька")
+                        .font(.caption)
+                        .foregroundStyle(WalletTheme.secondary)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(WalletTheme.secondary)
+            }
+            .foregroundStyle(WalletTheme.ink)
+            .padding(16)
+            .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 22))
+            .contentShape(Rectangle())
         }
-        .background(alignment: .bottom) { Divider() }
+        .buttonStyle(.plain)
+        .accessibilityHint("Посмотреть курсы. Это не средства на вашем кошельке.")
+    }
+
+    private var marketNavigationHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                    selectedSection = WalletHomeSection.assets.rawValue
+                }
+                UISelectionFeedbackGenerator().selectionChanged()
+            } label: {
+                Label("Вернуться в кошелёк", systemImage: "chevron.left")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            Text("Рынок криптовалют")
+                .font(.title2.bold())
+            Text("Курсы и наблюдение. Монеты из каталога не добавлены к вашему балансу.")
+                .font(.subheadline)
+                .foregroundStyle(WalletTheme.secondary)
+        }
+        .foregroundStyle(WalletTheme.ink)
     }
 
     private var marketStrip: some View {

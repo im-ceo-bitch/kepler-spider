@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WalletSettingsView: View {
     @AppStorage("spyder.wallet.language") private var language = "ru"
+    @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
     @State private var backupWords: [String] = []
     @State private var showBackup = false
     @State private var backupCloudSuccess = false
@@ -52,6 +53,10 @@ struct WalletSettingsView: View {
             }
 
             Section {
+                Toggle(isOn: $privacyHidden) {
+                    Label("Скрывать суммы на экранах кошелька", systemImage: "eye.slash")
+                }
+                .tint(WalletTheme.ink)
                 Picker(selection: $language) {
                     Text("Русский").tag("ru")
                     Text("English").tag("en")

@@ -5,7 +5,7 @@ import UIKit
 struct SpyderWalletProfilePage: View {
     @EnvironmentObject private var access: WalletAccess
     @EnvironmentObject private var chains: WalletChainStore
-    @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
+    @State private var showAddresses = false
 
     let onAccounts: () -> Void
     let onSecurity: () -> Void
@@ -59,50 +59,25 @@ struct SpyderWalletProfilePage: View {
                 .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 25))
 
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Адреса активного кошелька")
-                        .font(.system(size: 19, weight: .semibold))
-                    if chains.addresses.isEmpty {
-                        Text("Адреса ещё не загружены. Открой кошелёк и дождись завершения проверки.")
-                            .font(.subheadline).foregroundStyle(WalletTheme.secondary)
-                    } else {
-                        ForEach(chains.addresses) { address in
-                            HStack(spacing: 12) {
-                                Image(systemName: address.chain.symbol)
-                                    .frame(width: 30)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(address.chain.name).font(.subheadline.weight(.semibold))
-                                    Text(address.shortened)
-                                        .font(.system(size: 12, design: .monospaced))
-                                        .foregroundStyle(WalletTheme.secondary)
-                                }
-                                Spacer(minLength: 4)
-                                Button {
-                                    UIPasteboard.general.string = address.value
-                                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                                } label: { Image(systemName: "doc.on.doc") }
-                                    .accessibilityLabel("Скопировать адрес " + address.chain.name)
-                            }
-                            if address.id != chains.addresses.last?.id { Divider() }
+                    DisclosureGroup(isExpanded: $showAddresses) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            addressesContent
                         }
+                        .padding(.top, 8)
+                    } label: {
+                        Label("Адреса активного кошелька", systemImage: "qrcode")
+                            .font(.system(size: 16, weight: .semibold))
+                            .frame(minHeight: 44)
                     }
                     Button(action: onReceive) {
                         Label("Получить криптовалюту", systemImage: "arrow.down.left")
-                            .spyderPrimaryButton()
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(SpyderActionButtonStyle(.secondary))
                 }
                 .padding(19)
                 .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 25))
 
-                Toggle(isOn: $privacyHidden) {
-                    Label("Скрывать балансы", systemImage: "eye.slash")
-                }
-                .toggleStyle(.switch)
-                .tint(WalletTheme.accent)
-                .padding(18)
-                .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 22))
-
-                pageRow("Настройки кошелька", detail: "Язык, восстановление, Devnet", symbol: "gearshape", action: onSettings)
+                pageRow("Настройки кошелька", detail: "Приватность, язык, восстановление", symbol: "gearshape", action: onSettings)
                     .padding(.horizontal, 18)
                     .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 22))
                 Text("Spyder ID и криптографические ключи сообщений не входят в финансовый профиль.")
@@ -113,6 +88,38 @@ struct SpyderWalletProfilePage: View {
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
         .navigationTitle("Кошелёк")
+    }
+
+    @ViewBuilder
+    private var addressesContent: some View {
+        if chains.addresses.isEmpty {
+            Text("Адреса ещё не загружены. Открой кошелёк и дождись завершения проверки.")
+                .font(.subheadline)
+                .foregroundStyle(WalletTheme.secondary)
+        } else {
+            ForEach(chains.addresses) { address in
+                HStack(spacing: 12) {
+                    Image(systemName: address.chain.symbol)
+                        .frame(width: 30)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(address.chain.name).font(.subheadline.weight(.semibold))
+                        Text(address.shortened)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(WalletTheme.secondary)
+                    }
+                    Spacer(minLength: 4)
+                    Button {
+                        UIPasteboard.general.string = address.value
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("Скопировать адрес " + address.chain.name)
+                }
+                if address.id != chains.addresses.last?.id { Divider() }
+            }
+        }
     }
 
     private func pageRow(_ title: String, detail: String, symbol: String, action: @escaping () -> Void) -> some View {
