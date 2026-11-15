@@ -14,8 +14,33 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         presentPicker(domains: [identity.serviceIdentifier.identifier], selected: identity.recordIdentifier, configuration: false)
     }
     override func prepareInterfaceToProvideCredential(for request: any ASCredentialRequest) {
+        if let passkey = request as? ASPasskeyCredentialRequest,
+           let identity = passkey.credentialIdentity as? ASPasskeyCredentialIdentity {
+            presentPasskey(.assertion(relyingParty: identity.relyingPartyIdentifier,
+                clientDataHash: passkey.clientDataHash, allowed: [identity.credentialID],
+                selected: identity.credentialID, userHandle: identity.userHandle))
+            return
+        }
         guard let identity = request.credentialIdentity as? ASPasswordCredentialIdentity else { cancel(); return }
         prepareInterfaceToProvideCredential(for: identity)
+    }
+    override func prepareCredentialList(for identifiers: [ASCredentialServiceIdentifier], requestParameters: ASPasskeyCredentialRequestParameters) {
+        presentPasskey(.assertion(relyingParty: requestParameters.relyingPartyIdentifier,
+            clientDataHash: requestParameters.clientDataHash, allowed: requestParameters.allowedCredentials,
+            selected: nil, userHandle: nil))
+    }
+    override func prepareInterface(forPasskeyRegistration registrationRequest: any ASCredentialRequest) {
+        guard let request = registrationRequest as? ASPasskeyCredentialRequest,
+              let identity = request.credentialIdentity as? ASPasskeyCredentialIdentity else { cancel(); return }
+        presentPasskey(.registration(relyingParty: identity.relyingPartyIdentifier, username: identity.userName,
+            userHandle: identity.userHandle, clientDataHash: request.clientDataHash,
+            supportsES256: request.supportedAlgorithms.contains(.ES256)))
+    }
+    private func presentPasskey(_ operation: SIDPasskeyOperation) {
+        install(SIDPasskeyProviderView(operation: operation,
+            registration: { [weak self] credential in self?.extensionContext.completeRegistrationRequest(using: credential, completionHandler: nil) },
+            assertion: { [weak self] credential in self?.extensionContext.completeAssertionRequest(using: credential, completionHandler: nil) },
+            cancel: { [weak self] in self?.cancel() }))
     }
     override func prepareInterfaceForExtensionConfiguration() {
         presentPicker(domains: [], selected: nil, configuration: true)
@@ -34,8 +59,11 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
                     self.extensionContext.completeRequest(withSelectedCredential: ASPasswordCredential(user: item.username, password: item.password), completionHandler: nil)
                 } else { self.extensionContext.completeExtensionConfigurationRequest() }
             }, cancel: { [weak self] in self?.cancel() })
+        install(picker)
+    }
+    private func install<Content: View>(_ content: Content) {
         host?.willMove(toParent: nil); host?.view.removeFromSuperview(); host?.removeFromParent()
-        let hosting = UIHostingController(rootView: picker)
+        let hosting = UIHostingController(rootView: content)
         addChild(hosting); view.addSubview(hosting.view)
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([hosting.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -103,7 +131,7 @@ private struct SIDCredentialPicker: View {
             let all = try SpyderIDRepository.load(key: key)
             SpyderIDRepository.index(all)
             records = all.filter { record in
-                record.kind == .passwords && record.isDraft != true &&
+                record.kind == .passwords && record.passkey == nil && record.isDraft != true &&
                 (selected == nil || record.id.uuidString == selected) &&
                 (domains.isEmpty || domains.contains { SpyderIDRepository.matches(record, host: $0) })
             }

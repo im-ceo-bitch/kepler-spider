@@ -18,6 +18,7 @@ struct SIDBackupView: View {
     @State private var recovery = ""
     @State private var exporting = false
     @State private var importing = false
+    @State private var passkeyIDs: [UUID] = []
     @State private var restoreData: Data?
     @State private var importKey = ""
     @State private var confirmRestore = false
@@ -29,6 +30,7 @@ struct SIDBackupView: View {
                 Button(sidText("Подготовить копию", "Prepare backup")) {
                     do {
                         let result = try store.backup()
+                        passkeyIDs = result.passkeyIDs
                         document = SIDTransferDocument(data: result.data); recovery = result.recovery; message = nil
                     } catch { message = error.localizedDescription }
                 }
@@ -39,7 +41,7 @@ struct SIDBackupView: View {
                 }
             }
             Section(sidText("Восстановить из файла", "Restore from file")) {
-                Text(sidText("Записи будут добавлены. Существующие данные не перезаписываются; конфликтующие записи сохраняются отдельными копиями.", "Items will be added. Existing data is not overwritten; conflicting items are added as separate copies."))
+                Text(sidText("Записи будут добавлены. Существующие данные не перезаписываются. Повторные passkeys объединяются; повреждённые или противоречивые ключи отклоняются.", "Items will be added. Existing data is not overwritten. Duplicate passkeys are merged; inconsistent keys are rejected."))
                 SecureField(sidText("Ключ восстановления", "Recovery key"), text: $importKey)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                 Button(sidText("Выбрать зашифрованную копию", "Choose encrypted backup")) { importing = true }
@@ -51,7 +53,10 @@ struct SIDBackupView: View {
         .privacySensitive().modifier(SIDPrivacyShield())
         .fileExporter(isPresented: $exporting, document: document, contentType: .data, defaultFilename: "Spyder-ID-backup.spyderid") { result in
             switch result {
-            case .success: message = sidText("Зашифрованная копия экспортирована. Убедитесь, что ключ сохранён отдельно.", "Encrypted backup exported. Check that the key is saved separately.")
+            case .success:
+                do { try store.markPasskeysBackedUp(passkeyIDs) }
+                catch { message = error.localizedDescription; return }
+                message = sidText("Зашифрованная копия экспортирована. Убедитесь, что ключ сохранён отдельно.", "Encrypted backup exported. Check that the key is saved separately.")
             case .failure(let error): message = error.localizedDescription
             }
         }

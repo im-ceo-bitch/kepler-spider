@@ -50,7 +50,7 @@ final class SpyderIDStore: ObservableObject {
         value.modified = Date()
         records = try SpyderIDRepository.mutate(key: key) { current in
             if let index = current.firstIndex(where: { $0.id == value.id }) {
-                guard current[index].modified == previousDate else { throw SpyderIDFailure.conflict }
+                guard current[index].modified == previousDate, current[index].passkey == value.passkey else { throw SpyderIDFailure.conflict }
                 current[index] = value
             } else {
                 // An item deleted in another process must not silently reappear.
@@ -69,12 +69,21 @@ final class SpyderIDStore: ObservableObject {
         }
         SpyderIDRepository.index(records)
     }
-    func backup() throws -> (data: Data, recovery: String) {
+    func backup() throws -> (data: Data, recovery: String, passkeyIDs: [UUID]) {
         guard let key, unlocked else { throw SpyderIDFailure.locked }
         let latest = try SpyderIDRepository.load(key: key)
         let recovery = SymmetricKey(size: .bits256)
         let bytes = recovery.withUnsafeBytes { Data($0) }
-        return (try SpyderIDCodec.seal(latest, key: recovery), bytes.base64EncodedString())
+        return (try SpyderIDCodec.seal(latest, key: recovery), bytes.base64EncodedString(), latest.filter { $0.passkey != nil }.map(\.id))
+    }
+    func markPasskeysBackedUp(_ ids: [UUID]) throws {
+        guard let key, unlocked else { throw SpyderIDFailure.locked }
+        records = try SpyderIDRepository.mutate(key: key) { current in
+            for i in current.indices where ids.contains(current[i].id) && current[i].passkey != nil {
+                current[i].passkey?.backedUp = true
+                current[i].modified = Date()
+            }
+        }
     }
     func restore(_ data: Data, recovery: String) throws -> Int {
         guard let key, unlocked else { throw SpyderIDFailure.locked }
@@ -85,6 +94,16 @@ final class SpyderIDStore: ObservableObject {
         records = try SpyderIDRepository.mutate(key: key) { current in
             // Exact duplicates skipped; conflicts imported as independent records, never overwrite.
             for var item in imported {
+                if var passkey = item.passkey {
+                    if let index = current.firstIndex(where: { $0.passkey?.relyingParty == passkey.relyingParty && $0.passkey?.credentialID == passkey.credentialID }) {
+                        guard current[index].passkey?.privateKey == passkey.privateKey,
+                              current[index].passkey?.userHandle == passkey.userHandle else { throw SpyderIDFailure.conflict }
+                        current[index].passkey?.backedUp = true
+                        current[index].modified = Date()
+                        continue
+                    }
+                    passkey.backedUp = true; item.passkey = passkey
+                }
                 if current.contains(where: { $0 == item }) { continue }
                 if current.contains(where: { $0.id == item.id }) { item.id = UUID() }
                 current.append(item)

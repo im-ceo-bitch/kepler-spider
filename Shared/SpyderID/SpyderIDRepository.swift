@@ -109,7 +109,11 @@ enum SpyderIDRepository {
         guard !record.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               record.title.count <= 500, record.website.count <= 4096, record.username.count <= 4096,
               record.password.count <= 16384, record.note.count <= 200000 else { throw SpyderIDFailure.invalidRecord }
-        if record.kind == .passwords && (record.password.isEmpty || record.username.isEmpty) { throw SpyderIDFailure.invalidRecord }
+        if let passkey = record.passkey {
+            guard record.kind == .passwords, record.website == passkey.relyingParty, record.password.isEmpty, record.isDraft != true else { throw SpyderIDFailure.invalidRecord }
+            try SpyderIDWebAuthn.validate(passkey)
+        }
+        if record.kind == .passwords && record.passkey == nil && (record.password.isEmpty || record.username.isEmpty) { throw SpyderIDFailure.invalidRecord }
         if record.kind == .documents && record.fileData == nil { throw SpyderIDFailure.invalidRecord }
         if record.kind == .notes && record.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw SpyderIDFailure.invalidRecord }
         if (record.fileData?.count ?? 0) > 10 * 1024 * 1024 { throw SpyderIDFailure.tooLarge }
@@ -145,17 +149,21 @@ enum SpyderIDRepository {
         return host.hasSuffix(".") ? String(host.dropLast()) : host
     }
     static func matches(_ record: SpyderIDRecord, host: String) -> Bool {
-        record.kind == .passwords && self.host(record.website) == self.host(host)
+        record.kind == .passwords && record.passkey == nil && self.host(record.website) == self.host(host)
     }
     static func index(_ records: [SpyderIDRecord]) {
-        let identities = records.filter { $0.kind == .passwords && $0.isDraft != true }.compactMap { record -> ASPasswordCredentialIdentity? in
+        let identities = records.filter { $0.kind == .passwords && $0.isDraft != true }.compactMap { record -> (any ASCredentialIdentity)? in
+            if let passkey = record.passkey {
+                return ASPasskeyCredentialIdentity(relyingPartyIdentifier: passkey.relyingParty, userName: record.username,
+                    credentialID: passkey.credentialID, userHandle: passkey.userHandle, recordIdentifier: record.id.uuidString)
+            }
             guard let domain = host(record.website) else { return nil }
             return ASPasswordCredentialIdentity(serviceIdentifier: ASCredentialServiceIdentifier(identifier: domain, type: .domain),
                 user: record.username, recordIdentifier: record.id.uuidString)
         }
         ASCredentialIdentityStore.shared.getState { state in
             guard state.isEnabled else { return }
-            ASCredentialIdentityStore.shared.replaceCredentialIdentities(with: identities) { _, _ in }
+            ASCredentialIdentityStore.shared.replaceCredentialIdentities(identities) { _, _ in }
         }
     }
 }

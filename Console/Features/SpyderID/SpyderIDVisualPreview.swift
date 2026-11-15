@@ -130,11 +130,11 @@ struct SpyderIDVisualPreview: View {
                         ForEach(matches) { item in
                             NavigationLink(value: item.id) {
                                 HStack(spacing: 14) {
-                                    Image(systemName: item.kind.symbol).frame(width: 44, height: 44)
+                                    Image(systemName: item.passkey == nil ? item.kind.symbol : "person.badge.key.fill").frame(width: 44, height: 44)
                                         .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 12)).accessibilityHidden(true)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(item.title + (item.isDraft == true ? sidText(" · Черновик", " · Draft") : "")).font(.headline)
-                                        Text(item.kind == .passwords ? item.username : (item.fileName ?? sidText("Личная заметка", "Personal note")))
+                                        Text(item.kind == .passwords ? (item.passkey == nil ? item.username : "Passkey · " + item.username) : (item.fileName ?? sidText("Личная заметка", "Personal note")))
                                             .font(.footnote).foregroundStyle(WalletTheme.secondary)
                                     }
                                     Spacer(minLength: 0)
@@ -183,7 +183,12 @@ private struct SIDEditView: View {
             Form {
                 Section {
                     TextField(sidText("Название", "Title"), text: $value.title)
-                    if value.kind == .passwords {
+                    if let passkey = value.passkey {
+                        Label("Passkey", systemImage: "person.badge.key.fill")
+                        Text(passkey.relyingParty)
+                        Text(value.username)
+                        Text(sidText("Ключ и привязку к сайту нельзя изменять вручную.", "The key and website binding cannot be edited manually.")).font(.footnote)
+                    } else if value.kind == .passwords {
                         TextField(sidText("Сайт", "Website"), text: $value.website)
                             .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                         TextField(sidText("Логин", "Username"), text: $value.username)
@@ -289,7 +294,18 @@ private struct SIDRecordView: View {
         SIDPage {
             if let record {
                 Label(record.title, systemImage: record.kind.symbol).font(.title.weight(.semibold))
-                if record.kind == .passwords {
+                if let passkey = record.passkey {
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 18) {
+                            Label("Passkey", systemImage: "person.badge.key.fill")
+                            detail(sidText("Сайт", "Website"), passkey.relyingParty)
+                            detail(sidText("Аккаунт", "Account"), record.username)
+                            Text(sidText("Выберите Spyder ID в системном окне входа на этом сайте. Сам ключ не нужно копировать.", "Choose Spyder ID in the system sign-in sheet on this website. You do not need to copy the key."))
+                            Text(passkey.backedUp ? sidText("Ключ включён в экспортированную или восстановленную копию.", "This key was exported or restored in an encrypted backup.") : sidText("Создайте зашифрованную резервную копию, чтобы не потерять доступ при смене телефона.", "Create an encrypted backup to preserve access when changing phones."))
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                } else if record.kind == .passwords {
                     WalletCard {
                         VStack(alignment: .leading, spacing: 18) {
                             detail(sidText("Сайт", "Website"), record.website)
@@ -409,6 +425,7 @@ private struct SIDSettingsView: View {
                         Text(sidText("Автозаполнение и Safari", "AutoFill and Safari")).font(.headline)
                         Text(sidText("В настройках iPhone включите Spyder ID как источник автозаполнения. В Safari включите расширение Spyder ID и разрешите доступ к нужному сайту. Вызывайте его через меню расширений браузера.", "Enable Spyder ID as an AutoFill provider in iPhone Settings. Enable the Spyder ID Safari extension and allow it on the website. Open it from the browser extensions menu."))
                             .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        Text(sidText("Для создания passkey откройте настройки безопасности аккаунта на сайте, нажмите «Создать ключ входа» и выберите Spyder ID в системном окне iOS.", "To create a passkey, open the website account security settings, choose Create passkey, then select Spyder ID in the iOS system sheet.")).font(.footnote).foregroundStyle(WalletTheme.secondary)
                         Button(sidText("Обновить подсказки аккаунтов", "Refresh account suggestions")) { store.reload() }
                     }
                 }

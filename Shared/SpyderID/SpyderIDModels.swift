@@ -35,6 +35,7 @@ struct SpyderIDRecord: Codable, Identifiable, Equatable {
     var modified = Date()
     var isDraft: Bool? = nil
     var categoryLabel: String? = nil
+    var passkey: SpyderIDPasskey? = nil
 }
 
 struct SpyderIDPayload: Codable {
@@ -64,7 +65,7 @@ enum SpyderIDFailure: LocalizedError {
 enum SpyderIDCodec {
     static let aad = Data("com.spyder.id.vault.v1".utf8)
     static func seal(_ records: [SpyderIDRecord], key: SymmetricKey) throws -> Data {
-        let clear = try JSONEncoder().encode(SpyderIDPayload(version: 1, records: records))
+        let clear = try JSONEncoder().encode(SpyderIDPayload(version: records.contains { $0.passkey != nil } ? 2 : 1, records: records))
         guard clear.count <= 30 * 1024 * 1024 else { throw SpyderIDFailure.tooLarge }
         guard let data = try AES.GCM.seal(clear, using: key, authenticating: aad).combined else {
             throw SpyderIDFailure.storage
@@ -74,7 +75,7 @@ enum SpyderIDCodec {
     static func open(_ data: Data, key: SymmetricKey) throws -> [SpyderIDRecord] {
         let plain = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: key, authenticating: aad)
         let payload = try JSONDecoder().decode(SpyderIDPayload.self, from: plain)
-        guard payload.version == 1 else { throw SpyderIDFailure.incompatible }
+        guard [1, 2].contains(payload.version) else { throw SpyderIDFailure.incompatible }
         return payload.records
     }
     static func password() throws -> String {
