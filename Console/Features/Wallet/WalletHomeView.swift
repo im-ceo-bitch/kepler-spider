@@ -30,6 +30,7 @@ struct WalletHomeView: View {
     @State private var selectedToken: WalletVerifiedToken?
     @State private var expandedMarket: WalletMarketSelection?
     @State private var showDevnet = false
+    @State private var showIDPreview = false
     let onAction: (WalletModal) -> Void
     let onActivity: () -> Void
     let onAsset: (SpyderChain) -> Void
@@ -54,6 +55,7 @@ struct WalletHomeView: View {
                     } else {
                         portfolioCard
                         quickActions
+                        SpyderIDPreviewEntry { showIDPreview = true }
                         assetsSection
                         recentSection
                         marketEntry
@@ -101,6 +103,9 @@ struct WalletHomeView: View {
             WalletLiveStageView(ticker: selection.ticker)
                 .environmentObject(market)
                 .environmentObject(live)
+        }
+        .sheet(isPresented: $showIDPreview) {
+            SpyderIDVisualPreview()
         }
         .sheet(item: $selectedToken) { token in
             WalletTokenDetailView(token: token)
