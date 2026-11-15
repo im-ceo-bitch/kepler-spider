@@ -17,7 +17,7 @@ class WalletCatalogBlock56Tests(unittest.TestCase):
         # stays the default; the market has an explicit entry and return action.
         self.assertIn('@State private var selectedSection = WalletHomeSection.assets.rawValue', HOME)
         self.assertRegex(HOME, r'if selectedSection == WalletHomeSection\.cryptocurrencies\.rawValue\s*\{\s*marketNavigationHeader\s+marketStrip\s+WalletCatalogSection\(catalog: catalog\)')
-        self.assertRegex(HOME, r'else\s*\{\s*portfolioCard\s+quickActions\s+assetsSection\s+recentSection\s+marketEntry')
+        self.assertRegex(HOME, r'else\s*\{\s*portfolioCard\s+quickActions\s+SpyderIDPreviewEntry\s*\{\s*showIDPreview\s*=\s*true\s*\}\s+assetsSection\s+recentSection\s+marketEntry')
         self.assertIn('selectedSection = WalletHomeSection.cryptocurrencies.rawValue', HOME)
         self.assertIn('selectedSection = WalletHomeSection.assets.rawValue', HOME)
         self.assertIn('Label("Вернуться в кошелёк", systemImage: "chevron.left")', HOME)

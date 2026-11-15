@@ -37,7 +37,16 @@ class WalletBlock12Integrity(unittest.TestCase):
 
     def test_no_unverified_mainnet_broadcast(self):
         source = self.source("Console/Features/Wallet/WalletSendFlowView.swift")
-        self.assertIn("Отправка пока недоступна", source)
+        # Only verified, explicitly authorized USDT chat transfers are supported.
+        # Manual-address sends and other assets remain review-only.
+        self.assertIn("guard let context = chatRecipient, context.payment.asset == .usdtEthereum", source)
+        self.assertIn("selected == .ethereum, evmAsset == .usdt", source)
+        self.assertIn("WalletEthereumSignature.verifyOwnership", source)
+        self.assertIn("quote.matches(sender:", source)
+        self.assertIn("guard canSendUSDT, !transfers.busy, !sendAttempted", source)
+        self.assertIn("Подтвердить через Face ID / код", source)
+        self.assertIn("transfers.send(intent: intent, quote: quote", source)
+        self.assertIn("access.activeWalletID == walletID", source)
         self.assertIn("Никогда не вставляйте сюда seed-фразу", source)
         self.assertNotIn("eth_sendRawTransaction", source)
         self.assertNotIn("sendTransaction(", source)

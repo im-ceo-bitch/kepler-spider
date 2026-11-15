@@ -21,8 +21,16 @@ final class SpyderIDPasskeyTests: XCTestCase {
         XCTAssertEqual(Data(data[129..<132]), Data([0x22, 0x58, 0x20]))
         XCTAssertEqual(Data(data[132..<164]), Data(publicKey[33..<65]))
         let object = try SpyderIDWebAuthn.attestation(key)
-        let prefix = Data([0xa3, 0x63]) + Data("fmt".utf8) + Data([0x64]) + Data("none".utf8)
-            + Data([0x67]) + Data("attStmt".utf8) + Data([0xa0, 0x68]) + Data("authData".utf8) + Data([0x58, 0xa4])
+        // Separate appends avoid a long overloaded '+' expression in the Swift type checker.
+        var prefix = Data([0xa3, 0x63])
+        prefix.append(Data("fmt".utf8))
+        prefix.append(0x64)
+        prefix.append(Data("none".utf8))
+        prefix.append(0x67)
+        prefix.append(Data("attStmt".utf8))
+        prefix.append(contentsOf: [0xa0, 0x68])
+        prefix.append(Data("authData".utf8))
+        prefix.append(contentsOf: [0x58, 0xa4])
         XCTAssertEqual(object, prefix + data)
     }
     func testAssertionSignatureVerifiesAndRejectsModifiedChallenge() throws {

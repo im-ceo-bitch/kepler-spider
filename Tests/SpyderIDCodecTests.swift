@@ -60,6 +60,15 @@ extension SpyderIDCodecTests {
         XCTAssertNil(SpyderIDRepository.host("https://user:secret@example.com"))
         XCTAssertNil(SpyderIDRepository.host("javascript:alert(1)"))
     }
+    func testInvalidDomainsNeverMatchEachOther() {
+        var record = SpyderIDRecord(kind: .passwords)
+        record.website = "https://user:secret@example.com"
+        XCTAssertFalse(SpyderIDRepository.matches(record, host: "https://other:secret@example.com"))
+        XCTAssertFalse(SpyderIDRepository.matches(record, host: ""))
+        record.website = ""
+        XCTAssertFalse(SpyderIDRepository.matches(record, host: ""))
+        XCTAssertFalse(SpyderIDRepository.matches(record, host: "example.com"))
+    }
     func testOldRecordWithoutDraftFlagStillDecodes() throws {
         let id = UUID()
         let json = "{\"id\":\"\(id.uuidString)\",\"kind\":\"passwords\",\"title\":\"Test\",\"website\":\"example.com\",\"username\":\"alex\",\"password\":\"secret\",\"note\":\"\",\"modified\":0}"

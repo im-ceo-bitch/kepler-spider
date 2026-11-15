@@ -37,6 +37,41 @@ def main() -> None:
     devnet_store = (ROOT / "Console/SpiderDevnet/SpiderDevnetStore.swift").read_text(encoding="utf-8")
     require(re.search(r"(?<![.\w])error\s*=\s*error\.localizedDescription\b", devnet_store) is None,
             "SpiderDevnetStore catch shadowing: assign to self.error")
+    # Spyder ID is compiled into the app and three signed extensions. Check the
+    # target wiring and checked-in plists before starting an expensive archive.
+    group = "group.com.spyder.wallet.id"
+    key_group = "$(AppIdentifierPrefix)com.spyder.wallet.id"
+    targets = {"Console": "com.spyder.wallet", "SpyderAutoFill": "com.spyder.wallet.id.autofill",
+               "SpyderSafari": "com.spyder.wallet.id.safari", "SpyderShare": "com.spyder.wallet.id.share"}
+    for name, bundle in targets.items():
+        config = plistlib.loads((ROOT / f"Config/{name}-Info.plist").read_bytes())
+        entitlements = plistlib.loads((ROOT / f"Config/{name}.entitlements").read_bytes())
+        require(group in entitlements.get("com.apple.security.application-groups", []), f"missing shared App Group: {name}")
+        require(key_group in entitlements.get("keychain-access-groups", []), f"missing shared Keychain group: {name}")
+        target = re.search(rf"^  {name}:\s*\n(.*?)(?=^  \w+:\s*$|\Z)", project, re.M | re.S)
+        require(target is not None, f"missing XcodeGen target: {name}")
+        require(f"PRODUCT_BUNDLE_IDENTIFIER: {bundle}" in target[1], f"wrong bundle ID: {name}")
+        require("path: Shared/SpyderID" in target[1], f"missing shared Swift sources: {name}")
+        if name != "Console":
+            require(config.get("CFBundleIdentifier") == bundle, f"wrong extension plist identifier: {name}")
+            require(config.get("CFBundleVersion") == "$(CURRENT_PROJECT_VERSION)" and
+                    config.get("CFBundleShortVersionString") == "$(MARKETING_VERSION)", f"extension version drift: {name}")
+            require(config.get("NSExtension", {}).get("NSExtensionPrincipalClass", "").startswith("$(PRODUCT_MODULE_NAME)."), f"missing extension principal class: {name}")
+            require("APPLICATION_EXTENSION_API_ONLY: YES" in target[1], f"extension API safety disabled: {name}")
+            require(re.search(rf"- target: {name}\s*\n\s+embed: true", project) is not None, f"extension not embedded: {name}")
+    autofill = plistlib.loads((ROOT / "Config/SpyderAutoFill-Info.plist").read_bytes())
+    caps = autofill["NSExtension"]["NSExtensionAttributes"]["ASCredentialProviderExtensionCapabilities"]
+    require(caps.get("ProvidesPasskeys") and caps.get("ProvidesPasswords"), "missing AutoFill capabilities")
+    require(plist.get("ASCredentialProviderExtensionCapabilities", {}).get("ProvidesPasskeys"), "missing app passkey capability")
+    for name in ("Console", "SpyderAutoFill"):
+        entitlements = plistlib.loads((ROOT / f"Config/{name}.entitlements").read_bytes())
+        require(entitlements.get("com.apple.developer.authentication-services.autofill-credential-provider"), f"missing AutoFill entitlement: {name}")
+    resources = ROOT / "Extensions/SpyderSafari/Resources"
+    manifest = json.loads((resources / "manifest.json").read_text())
+    require((resources / manifest["action"]["default_popup"]).is_file(), "missing Safari popup")
+    for name in ("popup.js", "form.js", "popup.css"):
+        require((resources / name).is_file(), f"missing Safari resource: {name}")
+    print("Spyder ID target, entitlement, bundle ID and Safari resource checks passed.")
     catalog = ROOT / "Console/Resources/Assets.xcassets"
     count = 0
     for json_path in catalog.rglob("Contents.json"):

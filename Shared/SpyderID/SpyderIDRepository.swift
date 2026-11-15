@@ -149,7 +149,9 @@ enum SpyderIDRepository {
         return host.hasSuffix(".") ? String(host.dropLast()) : host
     }
     static func matches(_ record: SpyderIDRecord, host: String) -> Bool {
-        record.kind == .passwords && record.passkey == nil && self.host(record.website) == self.host(host)
+        guard record.kind == .passwords, record.passkey == nil,
+              let savedHost = self.host(record.website), let requestedHost = self.host(host) else { return false }
+        return savedHost == requestedHost
     }
     static func index(_ records: [SpyderIDRecord]) {
         let identities = records.filter { $0.kind == .passwords && $0.isDraft != true }.compactMap { record -> (any ASCredentialIdentity)? in

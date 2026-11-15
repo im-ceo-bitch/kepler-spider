@@ -4,7 +4,7 @@ import subprocess
 import shutil
 import unittest
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 HOME = (ROOT / 'Console/Features/Wallet/WalletHomeView.swift').read_text()
 UI = (ROOT / 'Console/Features/Wallet/WalletCatalogViews.swift').read_text()
 STORE = (ROOT / 'Console/WalletCore/WalletCatalogStore.swift').read_text()

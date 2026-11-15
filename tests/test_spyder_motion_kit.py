@@ -18,9 +18,13 @@ class SpyderMotionKitTests(unittest.TestCase):
 
     def test_compatible_integration_points(self):
         app = (ROOT / 'Console' / 'ConsoleApp.swift').read_text()
-        settings = (ROOT / 'Console' / 'Features/Settings/WalletSettingsView.swift').read_text()
+        hub = (ROOT / 'Console' / 'Features/Settings/SpyderIdentityHubView.swift').read_text()
+        settings = (ROOT / 'Console' / 'Features/Settings/SpyderPersonaStyleView.swift').read_text()
         self.assertIn('SpyderBrandHandoff(', app)
-        self.assertIn('SpyderMotionSettingsView()', settings)
+        # Avatar customization moved from WalletSettingsView to the identity hub.
+        self.assertIn('NavigationLink { SpyderPersonaStyleView() }', hub)
+        self.assertIn('SpyderAvatarMotion.allCases', settings)
+        self.assertIn('chat.savePersonaStyle(', settings)
         self.assertIn('SpyderProfileAvatarView(', settings)
         self.assertIn('!introSeen', app)
         self.assertIn('onSkip: { showingBrand = false }', app)
