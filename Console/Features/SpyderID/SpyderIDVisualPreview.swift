@@ -1,11 +1,10 @@
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
+import PDFKit
+import AuthenticationServices
 
-// UI-only preview. No secrets, files, biometrics, clipboard, network or persistent storage.
-// All content is fictional; closing the sheet resets presentation state.
-private func sidText(_ ru: String, _ en: String) -> String {
-    Locale.current.language.languageCode?.identifier == "ru" ? ru : en
-}
-
+// Kept source-compatible with the stage-one WalletHomeView entry point.
 struct SpyderIDPreviewEntry: View {
     let open: () -> Void
     var body: some View {
@@ -14,57 +13,33 @@ struct SpyderIDPreviewEntry: View {
                 HStack {
                     Text("Spyder ID").font(.title2.weight(.semibold))
                     Spacer()
-                    Text("DEMO").font(.caption.weight(.semibold))
+                    Image(systemName: "lock").accessibilityHidden(true)
                 }
-                Text(sidText("Пароли. Документы. Всё важное рядом.", "Passwords. Documents. Your essentials together."))
-                    .font(.subheadline)
+                Text(sidText("Пароли, документы и заметки", "Passwords, documents and notes")).font(.subheadline)
                 HStack {
-                    Text(sidText("Посмотреть дизайн сейфа", "Explore the vault preview"))
+                    Text(sidText("Открыть сейф", "Open vault"))
                     Spacer()
                     Image(systemName: "arrow.up.right").accessibilityHidden(true)
                 }.font(.footnote.weight(.medium))
             }
-            .padding(20)
-            .foregroundStyle(WalletTheme.contrast)
+            .padding(20).foregroundStyle(WalletTheme.contrast)
             .background(WalletTheme.ink, in: RoundedRectangle(cornerRadius: WalletTheme.cornerRadius))
             .contentShape(RoundedRectangle(cornerRadius: WalletTheme.cornerRadius))
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint(sidText("Открывает демонстрацию. Реальные данные не сохраняются.", "Opens a demo. Real data is not saved."))
+        }.buttonStyle(.plain)
     }
 }
 
-private enum SIDCategory: Int, CaseIterable, Identifiable {
-    case passwords, documents, notes
-    var id: Int { rawValue }
-    var title: String {
-        switch self {
-        case .passwords: sidText("Пароли", "Passwords")
-        case .documents: sidText("Документы", "Documents")
-        case .notes: sidText("Заметки", "Notes")
-        }
-    }
-    var symbol: String {
-        switch self {
-        case .passwords: "key.horizontal"
-        case .documents: "doc.text"
-        case .notes: "note.text"
-        }
-    }
-}
-
-private struct SIDExample: Identifiable {
-    let id: Int
-    let category: SIDCategory
-    let title: String
-    let subtitle: String
-    let symbol: String
-    static var samples: [SIDExample] {
-        [SIDExample(id: 0, category: .passwords, title: "Resend", subtitle: "alex@example.com", symbol: "key.horizontal"),
-         SIDExample(id: 1, category: .passwords, title: "GitHub", subtitle: "alex.dev@example.com", symbol: "chevron.left.forwardslash.chevron.right"),
-         SIDExample(id: 2, category: .documents, title: sidText("Страховка автомобиля", "Car insurance"), subtitle: sidText("Автомобиль · Образец PDF", "Car · Sample PDF"), symbol: "car"),
-         SIDExample(id: 3, category: .documents, title: sidText("Документы на квартиру", "Property documents"), subtitle: sidText("Недвижимость · Образец PDF", "Property · Sample PDF"), symbol: "house"),
-         SIDExample(id: 4, category: .notes, title: sidText("Домашний Wi-Fi", "Home Wi-Fi"), subtitle: sidText("Личная заметка · Образец", "Personal note · Sample"), symbol: "wifi")]
+struct SIDPrivacyShield: ViewModifier {
+    @Environment(\.scenePhase) private var scenePhase
+    func body(content: Content) -> some View {
+        content
+            .accessibilityHidden(scenePhase != .active)
+            .overlay {
+                if scenePhase != .active {
+                    WalletTheme.canvas.ignoresSafeArea()
+                        .overlay(Image(systemName: "lock.fill").font(.largeTitle))
+                }
+            }
     }
 }
 
@@ -73,313 +48,374 @@ private struct SIDPage<Content: View>: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24, content: content)
-                .padding(WalletTheme.pageInset)
-                .frame(maxWidth: 620)
-                .frame(maxWidth: .infinity)
-        }
-        .background(WalletTheme.canvas)
-        .foregroundStyle(WalletTheme.ink)
-    }
-}
-
-private struct SIDDemoNotice: View {
-    var body: some View {
-        Label(sidText("Демо дизайна · Только вымышленные данные", "Design preview · Fictional data only"), systemImage: "rectangle.dashed")
-            .font(.footnote).foregroundStyle(WalletTheme.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+                .padding(WalletTheme.pageInset).frame(maxWidth: 620).frame(maxWidth: .infinity)
+        }.background(WalletTheme.canvas).foregroundStyle(WalletTheme.ink)
     }
 }
 
 struct SpyderIDVisualPreview: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
-    @State private var entered = false
-    @State private var category: SIDCategory = .passwords
+    @StateObject private var store = SpyderIDStore()
+    @State private var category: SpyderIDKind = .passwords
     @State private var query = ""
-    @State private var path = NavigationPath()
-    private var examples: [SIDExample] {
-        SIDExample.samples.filter {
-            $0.category == category && (query.isEmpty || ($0.title + $0.subtitle).localizedCaseInsensitiveContains(query))
-        }
+    @State private var path: [UUID] = []
+    @State private var editor: SpyderIDRecord?
+    @State private var settings = false
+    private var matches: [SpyderIDRecord] {
+        store.records.filter { $0.kind == category && (query.isEmpty ||
+            ($0.title + " " + $0.website + " " + $0.username + " " + ($0.fileName ?? "") + " " + $0.note + " " + ($0.categoryLabel ?? "")).localizedCaseInsensitiveContains(query)) }
+            .sorted { $0.modified > $1.modified }
     }
     var body: some View {
         NavigationStack(path: $path) {
-            Group {
-                if entered { vault } else { welcome }
-            }
-            .navigationTitle("Spyder ID")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(sidText("Закрыть", "Close")) { dismiss() }
-                }
-                if entered {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        NavigationLink { SIDSettingsPreview() } label: {
-                            Image(systemName: "slider.horizontal.3").frame(minWidth: 44, minHeight: 44)
-                        }.accessibilityLabel(sidText("Настройки сейфа", "Vault settings"))
+            Group { if store.unlocked { vault } else { locked } }
+                .navigationTitle("Spyder ID").navigationBarTitleDisplayMode(.inline)
+                .navigationDestination(for: UUID.self) { id in SIDRecordView(id: id).environmentObject(store) }
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(sidText("Закрыть", "Close")) { store.lock(); dismiss() }
+                    }
+                    if store.unlocked {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button { settings = true } label: {
+                                Image(systemName: "slider.horizontal.3").frame(minWidth: 44, minHeight: 44)
+                            }.accessibilityLabel(sidText("Настройки", "Settings"))
+                        }
                     }
                 }
-            }
         }
         .tint(WalletTheme.ink)
-        .presentationDragIndicator(.visible)
+        .privacySensitive().modifier(SIDPrivacyShield())
+        .sheet(item: $editor) { value in SIDEditView(initial: value).environmentObject(store) }
+        .sheet(isPresented: $settings) { SIDSettingsView().environmentObject(store) }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { path = NavigationPath(); entered = false }
+            if phase == .background { reset() }
+            else if phase == .active { store.reload() }
         }
+        .onChange(of: store.unlocked) { _, unlocked in
+            if !unlocked { path = []; editor = nil; settings = false; query = "" }
+        }
+        .onDisappear { store.lock() }
     }
-    private var welcome: some View {
+    private func reset() { editor = nil; settings = false; path = []; query = ""; store.lock() }
+    private var locked: some View {
         SIDPage {
             VStack(spacing: 20) {
                 Image(systemName: "faceid").font(.system(size: 56)).accessibilityHidden(true)
                 Text(sidText("Личный сейф", "Your personal vault")).font(.largeTitle.weight(.semibold))
-                Text(sidText("Пароли, документы и заметки внутри Spyder Wallet.", "Passwords, documents and notes inside Spyder Wallet."))
+                Text(sidText("Face ID или код-пароль устройства", "Face ID or device passcode"))
                     .foregroundStyle(WalletTheme.secondary)
-                Button(sidText("Открыть демо сейфа", "Open vault demo")) { entered = true }
-                    .buttonStyle(SpyderActionButtonStyle())
-                Text(sidText("Face ID пока не подключён. Эта версия показывает только дизайн.", "Face ID is not connected yet. This version previews the design only."))
-                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
-            }
-            .multilineTextAlignment(.center).padding(.vertical, 36)
-            SIDDemoNotice()
+                Button { Task { await store.unlock() } } label: {
+                    if store.busy { ProgressView().tint(WalletTheme.contrast) }
+                    else { Text(store.hasVault ? sidText("Открыть сейф", "Unlock vault") : sidText("Создать локальный сейф", "Create local vault")) }
+                }.buttonStyle(SpyderActionButtonStyle()).disabled(store.busy)
+                if let error = store.error { Text(error).foregroundStyle(.red).font(.footnote) }
+            }.multilineTextAlignment(.center).padding(.vertical, 24)
+            Label(sidText("Данные хранятся на устройстве. После создания сейфа экспортируйте зашифрованную копию и сохраните ключ восстановления отдельно.", "Data stays on this device. After creating a vault, export an encrypted backup and keep its recovery key separately."), systemImage: "iphone")
+                .font(.footnote).foregroundStyle(WalletTheme.secondary)
         }
     }
     private var vault: some View {
-        SIDPage {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 0) {
+            SIDPage {
                 Text(sidText("Всё важное рядом", "Your essentials, together")).font(.largeTitle.weight(.semibold))
-                SIDDemoNotice()
+                TextField(sidText("Поиск по названию, сайту или логину", "Search by title, website or login"), text: $query)
+                    .textFieldStyle(.roundedBorder).autocorrectionDisabled()
+                if matches.isEmpty {
+                    ContentUnavailableView(query.isEmpty ? sidText("Здесь пока пусто", "Nothing here yet") : sidText("Ничего не найдено", "No results"), systemImage: category.symbol,
+                        description: Text(query.isEmpty ? sidText("Добавьте первую запись в этот раздел.", "Add your first item to this section.") : sidText("Попробуйте другой запрос.", "Try another search.")))
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(matches) { item in
+                            NavigationLink(value: item.id) {
+                                HStack(spacing: 14) {
+                                    Image(systemName: item.kind.symbol).frame(width: 44, height: 44)
+                                        .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 12)).accessibilityHidden(true)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(item.title + (item.isDraft == true ? sidText(" · Черновик", " · Draft") : "")).font(.headline)
+                                        Text(item.kind == .passwords ? item.username : (item.fileName ?? sidText("Личная заметка", "Personal note")))
+                                            .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                                    }
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right").font(.caption).accessibilityHidden(true)
+                                }.padding(.vertical, 14).contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                            Divider()
+                        }
+                    }
+                }
+                Button(sidText("Добавить", "Add")) { editor = SpyderIDRecord(kind: category) }
+                    .buttonStyle(SpyderActionButtonStyle())
             }
-            TextField(sidText("Найти в сейфе", "Search the vault"), text: $query)
-                .textFieldStyle(.roundedBorder).autocorrectionDisabled()
-            Picker(sidText("Раздел сейфа", "Vault section"), selection: $category) {
-                ForEach(SIDCategory.allCases) { Text($0.title).tag($0) }
-            }.pickerStyle(.segmented)
-            VStack(spacing: 0) {
-                ForEach(examples) { item in
-                    NavigationLink { SIDDetailPreview(item: item) } label: {
-                        SIDExampleRow(item: item)
+            HStack(spacing: 0) {
+                ForEach(SpyderIDKind.allCases) { kind in
+                    Button { category = kind; query = "" } label: {
+                        VStack(spacing: 5) {
+                            Image(systemName: kind.symbol).font(.title3)
+                            Text(kind.title).font(.caption)
+                        }.frame(maxWidth: .infinity, minHeight: 56)
+                            .foregroundStyle(category == kind ? WalletTheme.ink : WalletTheme.secondary)
+                            .background(category == kind ? WalletTheme.surface : WalletTheme.canvas, in: RoundedRectangle(cornerRadius: 12))
                     }.buttonStyle(.plain)
-                    Divider()
+                        .accessibilityAddTraits(category == kind ? [.isSelected] : [])
                 }
-                if examples.isEmpty {
-                    ContentUnavailableView.search(text: query)
-                }
-            }
-            NavigationLink { SIDAddPreview() } label: {
-                Text(sidText("Добавить", "Add"))
-            }.buttonStyle(SpyderActionButtonStyle())
+            }.padding(.horizontal, 12).padding(.vertical, 8).background(WalletTheme.canvas)
         }
     }
 }
 
-private struct SIDExampleRow: View {
-    let item: SIDExample
+private struct SIDEditView: View {
+    @EnvironmentObject private var store: SpyderIDStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var value: SpyderIDRecord
+    @State private var importer = false
+    @State private var error: String?
+    @State private var assistantDescription = ""
+    @State private var proposedTitle: String?
+    @State private var proposedCategory: String?
+    @State private var consent = false
+    @State private var processing = false
+    @AppStorage("spyder.id.gemini.model") private var model = "gemini-3.5-flash"
+    init(initial: SpyderIDRecord) { _value = State(initialValue: initial) }
     var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: item.symbol).font(.title3)
-                .frame(width: 44, height: 44)
-                .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(item.title).font(.headline)
-                Text(item.subtitle).font(.footnote).foregroundStyle(WalletTheme.secondary)
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(sidText("Название", "Title"), text: $value.title)
+                    if value.kind == .passwords {
+                        TextField(sidText("Сайт", "Website"), text: $value.website)
+                            .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        TextField(sidText("Логин", "Username"), text: $value.username)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        SecureField(sidText("Пароль", "Password"), text: $value.password).textContentType(.newPassword)
+                        Button(sidText("Создать надёжный пароль", "Generate a strong password")) {
+                            do { value.password = try SpyderIDCodec.password() } catch { self.error = error.localizedDescription }
+                        }
+                    } else if value.kind == .documents {
+                        if let name = value.fileName { Label(name, systemImage: "doc") }
+                        TextField(sidText("Категория", "Category"), text: Binding(get: { value.categoryLabel ?? "" }, set: { value.categoryLabel = $0 }))
+                        Button(sidText("Выбрать PDF или изображение", "Choose PDF or image")) { importer = true }
+                        Text(sidText("Не больше 10 МБ. Файл будет зашифрован внутри сейфа.", "Up to 10 MB. The file will be encrypted inside the vault."))
+                            .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                    }
+                }
+                Section(sidText("Заметка", "Note")) {
+                    TextEditor(text: $value.note).frame(minHeight: 120)
+                        .autocorrectionDisabled().accessibilityLabel(sidText("Текст заметки", "Note text"))
+                }
+                if value.kind == .documents {
+                    Section(sidText("Помощник", "Assistant")) {
+                        Button(sidText("Распознать текст на устройстве", "Recognize text on device")) {
+                            guard let data = value.fileData else { return }; processing = true
+                            Task { @MainActor in
+                                defer { processing = false }
+                                do {
+                                    let text = try await SIDAssistant.extract(data)
+                                    guard store.unlocked else { return }
+                                    if text.isEmpty { error = sidText("Текст не найден. Документ можно сохранить без распознавания.", "No text found. You can save the document without recognition.") }
+                                    else { value.note = String((value.note + "\n" + text).prefix(200000)) }
+                                } catch { self.error = error.localizedDescription }
+                            }
+                        }.disabled(processing || value.fileData == nil)
+                        TextField(sidText("Описание для Gemini, без личных данных", "Description for Gemini, no personal data"), text: $assistantDescription, axis: .vertical)
+                        Button(sidText("Предложить название через Gemini", "Suggest a title with Gemini")) { consent = true }
+                            .disabled(processing || assistantDescription.isEmpty)
+                        if processing { ProgressView() }
+                        if let title = proposedTitle, let category = proposedCategory {
+                            Text(title).font(.headline); Text(category)
+                            Button(sidText("Применить предложение", "Apply suggestion")) { value.title = title; value.categoryLabel = category; proposedTitle = nil; proposedCategory = nil }
+                        }
+                    }
+                }
+                if let error { Section { Text(error).foregroundStyle(.red) } }
+                Section {
+                    Button(sidText("Сохранить", "Save")) {
+                        do { try store.save(value); dismiss() } catch { self.error = error.localizedDescription }
+                    }.disabled(!store.unlocked)
+                }
             }
-            Spacer(minLength: 4)
-            Image(systemName: "chevron.right").font(.caption).accessibilityHidden(true)
-        }.padding(.vertical, 14).contentShape(Rectangle())
+            .navigationTitle(value.kind.title).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(sidText("Отмена", "Cancel")) { dismiss() } } }
+        }.tint(WalletTheme.ink).privacySensitive().modifier(SIDPrivacyShield())
+        .confirmationDialog(sidText("Отправить только введённое описание в Google Gemini?", "Send only the entered description to Google Gemini?"), isPresented: $consent, titleVisibility: .visible) {
+            Button(sidText("Отправить описание", "Send description")) {
+                processing = true; error = nil
+                Task { @MainActor in
+                    defer { processing = false }
+                    do {
+                        let suggestion = try await SIDAssistant.suggest(description: assistantDescription, model: model)
+                        guard store.unlocked else { return }
+                        proposedTitle = suggestion.title; proposedCategory = suggestion.category
+                    } catch { self.error = sidText("Gemini недоступен. Проверьте API-ключ, модель и сеть. Документ не изменён.", "Gemini is unavailable. Check the API key, model and network. Document was not changed.") }
+                }
+            }
+            Button(sidText("Отмена", "Cancel"), role: .cancel) {}
+        } message: { Text(assistantDescription) }
+        .fileImporter(isPresented: $importer, allowedContentTypes: [.pdf, .image]) { result in
+            guard store.unlocked else { return }
+            do {
+                let url = try result.get()
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                guard size <= 10 * 1024 * 1024 else { throw SpyderIDFailure.tooLarge }
+                let handle = try FileHandle(forReadingFrom: url)
+                defer { try? handle.close() }
+                let data = try handle.read(upToCount: 10 * 1024 * 1024 + 1) ?? Data()
+                guard data.count <= 10 * 1024 * 1024 else { throw SpyderIDFailure.tooLarge }
+                guard PDFDocument(data: data) != nil || UIImage(data: data) != nil else { throw SpyderIDFailure.invalidRecord }
+                value.fileData = data; value.fileName = url.lastPathComponent
+                if value.title.isEmpty { value.title = url.deletingPathExtension().lastPathComponent }
+                error = nil
+            } catch { self.error = error.localizedDescription }
+        }
+        .onChange(of: store.unlocked) { _, unlocked in if !unlocked { value = SpyderIDRecord(kind: value.kind); assistantDescription = ""; proposedTitle = nil; proposedCategory = nil; dismiss() } }
     }
 }
 
-private struct SIDDetailPreview: View {
-    let item: SIDExample
+private struct SIDRecordView: View {
+    let id: UUID
+    @EnvironmentObject private var store: SpyderIDStore
+    @Environment(\.dismiss) private var dismiss
     @State private var reveal = false
+    @State private var editing: SpyderIDRecord?
+    @State private var deleting = false
+    @State private var message: String?
+    @State private var exportDocument: SIDTransferDocument?
+    @State private var exporting = false
+    private var record: SpyderIDRecord? { store.records.first { $0.id == id } }
     var body: some View {
         SIDPage {
-            SIDDemoNotice()
-            Label(item.title, systemImage: item.symbol).font(.title.weight(.semibold))
-            if item.category == .passwords {
-                WalletCard {
-                    VStack(alignment: .leading, spacing: 18) {
-                        field(sidText("Сайт", "Website"), item.id == 0 ? "resend.com" : "github.com")
-                        Divider()
-                        field(sidText("Логин", "Username"), item.subtitle)
-                        Divider()
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(sidText("Пароль", "Password")).font(.footnote).foregroundStyle(WalletTheme.secondary)
+            if let record {
+                Label(record.title, systemImage: record.kind.symbol).font(.title.weight(.semibold))
+                if record.kind == .passwords {
+                    WalletCard {
+                        VStack(alignment: .leading, spacing: 18) {
+                            detail(sidText("Сайт", "Website"), record.website)
+                            Divider()
+                            detail(sidText("Логин", "Username"), record.username)
+                            Divider()
                             HStack {
-                                Text(reveal ? "Demo-password-123" : "••••••••••••").font(.body.monospaced())
+                                detail(sidText("Пароль", "Password"), reveal ? record.password : "••••••••••••")
                                 Spacer()
                                 Button { reveal.toggle() } label: {
                                     Image(systemName: reveal ? "eye.slash" : "eye").frame(minWidth: 44, minHeight: 44)
-                                }.accessibilityLabel(sidText("Показать или скрыть пример пароля", "Show or hide the sample password"))
+                                }.accessibilityLabel(sidText("Показать или скрыть пароль", "Show or hide password"))
                             }
                         }
                     }
+                    Button(sidText("Копировать пароль", "Copy password")) { copy(record.password) }
+                        .buttonStyle(SpyderActionButtonStyle())
+                    Button(sidText("Копировать логин", "Copy username")) { copy(record.username) }
+                        .buttonStyle(SpyderActionButtonStyle(.secondary))
                 }
-                SIDUnavailableAction(title: sidText("Копировать пароль", "Copy password"))
-                Text(sidText("Копирование и автозаполнение появятся на следующем этапе.", "Copying and AutoFill will be added in the next phase."))
-                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
-            } else if item.category == .documents {
-                WalletCard {
-                    VStack(alignment: .leading, spacing: 20) {
-                        Text(sidText("ОБРАЗЕЦ ДОКУМЕНТА", "SAMPLE DOCUMENT")).font(.caption.weight(.semibold))
-                        Image(systemName: "doc.richtext").font(.system(size: 48)).accessibilityHidden(true)
-                        Text(item.title).font(.title2.weight(.semibold))
-                        Text(sidText("Здесь будет предпросмотр вашего PDF или фотографии.", "Your PDF or photo preview will appear here."))
-                            .foregroundStyle(WalletTheme.secondary)
-                        Text("PDF · DEMO").font(.caption)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 20)
+                if record.isDraft == true {
+                    Text(sidText("Этот пароль создан в Safari. Убедитесь, что регистрация завершена, затем подтвердите сохранение.", "This password was created in Safari. Check that registration completed, then confirm saving."))
+                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                    Button(sidText("Подтвердить сохранение", "Confirm saving")) {
+                        var confirmed = record; confirmed.isDraft = false
+                        do { try store.save(confirmed) } catch { message = error.localizedDescription }
+                    }.buttonStyle(SpyderActionButtonStyle(.secondary))
                 }
-                SIDUnavailableAction(title: sidText("Поделиться документом", "Share document"))
-            } else {
-                WalletCard {
-                    VStack(alignment: .leading, spacing: 16) {
-                        field(sidText("Сеть", "Network"), "Home Network")
-                        field(sidText("Пароль · пример", "Password · sample"), "demo-wifi-123")
+                if let data = record.fileData {
+                    if PDFDocument(data: data) != nil {
+                        SIDPDFView(data: data).frame(height: 420).clipShape(RoundedRectangle(cornerRadius: 16))
+                    } else if let image = UIImage(data: data) {
+                        Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(record.title)
                     }
+                    Text(record.fileName ?? "").font(.footnote).foregroundStyle(WalletTheme.secondary)
+                    Button(sidText("Экспортировать документ", "Export document")) {
+                        exportDocument = SIDTransferDocument(data: data); exporting = true
+                    }.buttonStyle(SpyderActionButtonStyle(.secondary))
+                    Text(sidText("Экспортируемая копия не зашифрована сейфом. Вы сами выбираете место сохранения.", "The exported copy is not vault-encrypted. You choose its destination."))
+                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
                 }
+                if !record.note.isEmpty { WalletCard { Text(record.note).frame(maxWidth: .infinity, alignment: .leading) } }
+                if let message { Text(message).font(.footnote).foregroundStyle(WalletTheme.secondary).accessibilityAddTraits(.updatesFrequently) }
+                Button(sidText("Изменить", "Edit")) { editing = record }.buttonStyle(SpyderActionButtonStyle(.secondary))
+                Button(sidText("Удалить запись", "Delete item"), role: .destructive) { deleting = true }
+                    .frame(minHeight: 44)
             }
-        }.navigationTitle(item.category.title).navigationBarTitleDisplayMode(.inline)
+        }.navigationTitle(sidText("Запись", "Item")).navigationBarTitleDisplayMode(.inline)
+        .privacySensitive().modifier(SIDPrivacyShield())
+        .fileExporter(isPresented: $exporting, document: exportDocument, contentType: .data, defaultFilename: record?.fileName ?? "document") { result in
+            exportDocument = nil
+            if case .failure(let error) = result { message = error.localizedDescription }
+        }
+        .sheet(item: $editing) { SIDEditView(initial: $0).environmentObject(store) }
+        .confirmationDialog(sidText("Удалить без возможности восстановления?", "Delete permanently?"), isPresented: $deleting, titleVisibility: .visible) {
+            Button(sidText("Удалить", "Delete"), role: .destructive) {
+                do { try store.delete(id); dismiss() } catch { message = error.localizedDescription }
+            }
+            Button(sidText("Отмена", "Cancel"), role: .cancel) {}
+        }
+        .onChange(of: store.unlocked) { _, unlocked in if !unlocked { reveal = false; editing = nil; deleting = false; exportDocument = nil; exporting = false } }
     }
-    private func field(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.footnote).foregroundStyle(WalletTheme.secondary)
-            Text(value)
+    private func detail(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(.footnote).foregroundStyle(WalletTheme.secondary)
+            Text(value).fixedSize(horizontal: false, vertical: true)
         }
     }
+    private func copy(_ text: String) {
+        guard store.unlocked else { return }
+        UIPasteboard.general.setItems([[UIPasteboard.typeAutomatic: text]], options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(30)])
+        message = sidText("Скопировано на 30 секунд. Передача на другие устройства отключена.", "Copied for 30 seconds. Cross-device clipboard is disabled.")
+    }
 }
 
-private struct SIDUnavailableAction: View {
-    let title: String
-    var body: some View {
-        VStack(spacing: 8) {
-            Button(title) {}.buttonStyle(SpyderActionButtonStyle(.secondary)).disabled(true)
-            Text(sidText("Пока только дизайн", "Design preview only"))
-                .font(.caption).foregroundStyle(WalletTheme.secondary)
+private struct SIDPDFView: UIViewRepresentable {
+    let data: Data
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView(); view.autoScales = true; view.document = PDFDocument(data: data)
+        return view
+    }
+    final class Coordinator { var data: Data? }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        if context.coordinator.data != data {
+            context.coordinator.data = data
+            uiView.document = PDFDocument(data: data)
         }
     }
-}
-
-private struct SIDAddPreview: View {
-    var body: some View {
-        SIDPage {
-            Text(sidText("Что сохраним?", "What would you like to save?")).font(.largeTitle.weight(.semibold))
-            SIDDemoNotice()
-            ForEach(SIDCategory.allCases) { category in
-                NavigationLink { SIDEditorPreview(category: category) } label: {
-                    HStack(spacing: 16) {
-                        Image(systemName: category.symbol).frame(width: 32)
-                        Text(category.title).font(.headline)
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption)
-                    }.padding(.vertical, 20).contentShape(Rectangle())
-                }.buttonStyle(.plain)
-                Divider()
-            }
-        }.navigationTitle(sidText("Добавить", "Add"))
+    static func dismantleUIView(_ uiView: PDFView, coordinator: Coordinator) {
+        uiView.document = nil; coordinator.data = nil
     }
 }
 
-private struct SIDEditorPreview: View {
-    let category: SIDCategory
-    @State private var review = false
+private struct SIDSettingsView: View {
+    @EnvironmentObject private var store: SpyderIDStore
+    @Environment(\.dismiss) private var dismiss
     var body: some View {
-        SIDPage {
-            SIDDemoNotice()
-            Text(category == .documents ? sidText("Просто отправьте", "Just send it") : sidText("Новая запись", "New entry"))
-                .font(.largeTitle.weight(.semibold))
-            if category == .documents && !review {
+        NavigationStack {
+            SIDPage {
+                Text(sidText("Защита и доступ", "Protection and access")).font(.largeTitle.weight(.semibold))
                 WalletCard {
                     VStack(alignment: .leading, spacing: 16) {
-                        Label("insurance-demo.pdf", systemImage: "doc.text")
-                        Text(sidText("Это страховка моей машины", "This is my car insurance"))
+                        Label(sidText("Face ID / код-пароль устройства", "Face ID / device passcode"), systemImage: "faceid")
+                        Divider()
+                        Label(sidText("Блокировка при уходе в фон", "Lock when app enters background"), systemImage: "lock")
+                        Divider()
+                        Label(sidText("Зашифрованное хранение на устройстве", "Encrypted on-device storage"), systemImage: "iphone")
                     }
                 }
-                Text(sidText("Пример добавления через личный помощник. Файлы и AI пока не подключены.", "Preview of adding via your assistant. Files and AI are not connected yet."))
-                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                Button(sidText("Посмотреть карточку", "Preview the card")) { review = true }
+                NavigationLink(sidText("Резервная копия и восстановление", "Backup and restore")) { SIDBackupView().environmentObject(store) }
+                    .frame(minHeight: 44)
+                NavigationLink(sidText("Помощник для документов", "Document assistant")) { SIDAssistantSettings() }
+                    .frame(minHeight: 44)
+                WalletCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(sidText("Автозаполнение и Safari", "AutoFill and Safari")).font(.headline)
+                        Text(sidText("В настройках iPhone включите Spyder ID как источник автозаполнения. В Safari включите расширение Spyder ID и разрешите доступ к нужному сайту. Вызывайте его через меню расширений браузера.", "Enable Spyder ID as an AutoFill provider in iPhone Settings. Enable the Spyder ID Safari extension and allow it on the website. Open it from the browser extensions menu."))
+                            .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        Button(sidText("Обновить подсказки аккаунтов", "Refresh account suggestions")) { store.reload() }
+                    }
+                }
+                Button(sidText("Заблокировать сейф", "Lock vault")) { store.lock(); dismiss() }
                     .buttonStyle(SpyderActionButtonStyle())
-            } else {
-                WalletCard {
-                    VStack(alignment: .leading, spacing: 20) {
-                        mockField(sidText("Название", "Name"), category == .documents ? sidText("Страховка автомобиля", "Car insurance") : sidText("Личный", "Personal"))
-                        if category == .passwords {
-                            mockField(sidText("Сайт", "Website"), "example.com")
-                            mockField(sidText("Логин", "Username"), "alex@example.com")
-                            mockField(sidText("Пароль", "Password"), "••••••••••••")
-                        } else if category == .documents {
-                            mockField(sidText("Категория", "Category"), sidText("Автомобиль", "Car"))
-                            mockField(sidText("Файл", "File"), "insurance-demo.pdf")
-                        } else {
-                            mockField(sidText("Текст заметки", "Note text"), sidText("Важная информация…", "Important information…"))
-                        }
-                    }
-                }
-                Text(sidText("Поля показаны как образец. Ввод и хранение реальных данных пока недоступны.", "These are sample fields. Real input and storage are not available yet."))
-                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                SIDUnavailableAction(title: sidText("Сохранить", "Save"))
-            }
-        }.navigationTitle(category.title).navigationBarTitleDisplayMode(.inline)
-    }
-    private func mockField(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.footnote).foregroundStyle(WalletTheme.secondary)
-            Text(value).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .padding(.horizontal, 12)
-                .background(WalletTheme.canvas, in: RoundedRectangle(cornerRadius: 12))
-        }
-    }
-}
-
-private struct SIDSettingsPreview: View {
-    var body: some View {
-        SIDPage {
-            Text(sidText("Защита и доступ", "Protection and access")).font(.largeTitle.weight(.semibold))
-            SIDDemoNotice()
-            WalletCard {
-                VStack(spacing: 18) {
-                    setting("Face ID", sidText("Не подключено", "Not connected"))
-                    Divider()
-                    setting(sidText("Автоблокировка", "Auto-lock"), sidText("На следующем этапе", "Next phase"))
-                    Divider()
-                    setting(sidText("Резервная копия", "Backup"), sidText("Не настроена", "Not configured"))
-                }
-            }
-            NavigationLink { SIDConnectionPreview() } label: {
-                HStack {
-                    Text(sidText("Автозаполнение и Safari", "AutoFill and Safari"))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                }.frame(minHeight: 52).contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            Text(sidText("Демо не защищает и не сохраняет секреты. Настоящие пароли пока не добавляйте.", "This demo does not protect or save secrets. Do not add real passwords yet."))
-                .font(.footnote).foregroundStyle(WalletTheme.secondary)
-        }.navigationTitle(sidText("Настройки", "Settings"))
-    }
-    private func setting(_ name: String, _ status: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(name).font(.headline)
-            Text(status).font(.footnote).foregroundStyle(WalletTheme.secondary)
-        }.frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct SIDConnectionPreview: View {
-    var body: some View {
-        SIDPage {
-            SIDDemoNotice()
-            Text(sidText("Spyder на сайтах", "Spyder on websites")).font(.largeTitle.weight(.semibold))
-            WalletCard {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label(sidText("Вызвать Spyder в меню Safari", "Open Spyder from the Safari menu"), systemImage: "puzzlepiece.extension")
-                    Text(sidText("Создать пароль → заполнить поля → подтвердить сохранение.", "Create a password → fill the fields → confirm saving."))
-                    Divider()
-                    Text(sidText("При следующем входе: выбрать аккаунт → Face ID → поля заполнены.", "Next sign-in: select the account → Face ID → fields filled."))
-                }
-            }
-            Text(sidText("Это план подключения. Расширение Safari и системное автозаполнение ещё не установлены этой версией.", "This is the planned integration. This version does not install a Safari extension or system AutoFill."))
-                .font(.footnote).foregroundStyle(WalletTheme.secondary)
-        }.navigationTitle("Safari").navigationBarTitleDisplayMode(.inline)
+            }.navigationTitle(sidText("Настройки", "Settings"))
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button(sidText("Закрыть", "Close")) { dismiss() } } }
+        }.tint(WalletTheme.ink)
     }
 }

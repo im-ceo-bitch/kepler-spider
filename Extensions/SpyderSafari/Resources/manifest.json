@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "Spyder ID",
+  "version": "1.0.0",
+  "description": "Save and fill website passwords with your Spyder ID vault.",
+  "permissions": ["activeTab", "scripting", "nativeMessaging"],
+  "action": {"default_title": "Spyder ID", "default_popup": "popup.html"},
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'"}
+}
