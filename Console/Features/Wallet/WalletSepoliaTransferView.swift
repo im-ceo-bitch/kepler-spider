@@ -81,7 +81,7 @@ struct WalletSepoliaTransferView: View {
     @MainActor private func loadRows() async {
         guard authorized else { return }
         do { let journal = try WalletSepoliaJournal.shared.get(); let result = await journal.all(sender: address); if authorized { rows = result } }
-        catch { error = true }
+        catch { self.error = true }
     }
     @MainActor private func runQuote() {
         guard !busy, authorized else { return }
