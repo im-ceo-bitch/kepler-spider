@@ -141,7 +141,7 @@ jobs:
                 await new Promise(resolve => setTimeout(resolve, 1500 * (retry + 1)));
                 continue;
               }
-              throw new Error(`App Store Connect API returned HTTP ${resp.status}. Verify that the API key can read Apps and Builds.`);
+              throw new Error(`Apple API ${target.pathname} returned HTTP ${resp.status}. Check Team API key role, signing access and Apple account agreements.`);
             }
             throw new Error('Cannot retrieve App Store Connect builds');
           }
@@ -154,6 +154,18 @@ jobs:
           const matches = apps.filter(a => a.attributes?.bundleId === bundleID);
           if (matches.length !== 1) throw new Error(`Expected exactly one App Store Connect app for ${bundleID}; got ${matches.length}`);
           const appID = matches[0].id;
+          // Check provisioning API access before spending time compiling.
+          // Read-only checks cannot guarantee permission to cloud-sign.
+          const bundleURL = new URL('/v1/bundleIds', API);
+          bundleURL.searchParams.set('filter[identifier]', bundleID);
+          bundleURL.searchParams.set('limit', '50');
+          const registered = ((await getPage(bundleURL)).data || []).filter(b => b.attributes?.identifier === bundleID);
+          if (!registered.length) throw new Error(`Apple Developer App ID ${bundleID} is not accessible to this Team API key.`);
+          const profileURL = new URL('/v1/profiles', API);
+          profileURL.searchParams.set('limit', '1');
+          profileURL.searchParams.set('fields[profiles]', 'profileState');
+          await getPage(profileURL);
+          console.log('Apple provisioning API read access verified for host-only release.');
           
           const buildsURL = new URL(`/v1/apps/${encodeURIComponent(appID)}/builds`, API);
           buildsURL.searchParams.set('fields[builds]', 'version');
@@ -180,73 +192,6 @@ jobs:
           appendFileSync(envFile, `BUILD_NUMBER=${nextBuild}\n`);
           console.log(`App Store Connect highest build: ${maxExisting}; next build: ${nextBuild}`);
           JS
-
-      - name: Normalize Spyder ID extensions for Apple distribution
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import json, plistlib, re, subprocess, struct
-          root = Path.cwd()
-          base = 'com.spyder.wallet'
-          # Preserve the host application and shared Keychain/App Group IDs.
-          # Only the three extension IDs have an invalid extra dot.
-          ids = {'SpyderAutoFill': 'autofill', 'SpyderSafari': 'safari', 'SpyderShare': 'share'}
-          project = root / 'project.yml'
-          s = project.read_text()
-          for target, suffix in ids.items():
-              old, new = f'{base}.id.{suffix}', f'{base}.{suffix}'
-              pattern = rf'(?m)^(\s*PRODUCT_BUNDLE_IDENTIFIER:\s*){re.escape(old)}(?=\s*$)'
-              s, changed = re.subn(pattern, lambda m: m.group(1)+new, s)
-              if changed > 1 or not re.search(rf'(?m)^\s*PRODUCT_BUNDLE_IDENTIFIER:\s*{re.escape(new)}\s*$', s):
-                  raise SystemExit(f'Unexpected project identifier for {target}')
-              p = root / 'Config' / f'{target}-Info.plist'
-              pl = plistlib.loads(p.read_bytes())
-              if pl.get('CFBundleIdentifier') not in (old, new, '$(PRODUCT_BUNDLE_IDENTIFIER)'):
-                  raise SystemExit(f'Unexpected plist identifier for {target}')
-              if pl.get('CFBundleIdentifier') != new:
-                  pl['CFBundleIdentifier'] = new
-                  p.write_bytes(plistlib.dumps(pl, sort_keys=False))
-              # Update only exact expected extension ID strings in the existing verifier.
-              verifier = root / 'ci/verify_repo.py'
-              if verifier.exists():
-                  old_text = verifier.read_text()
-                  new_text = old_text.replace(old, new)
-                  if new_text != old_text:
-                      verifier.write_text(new_text)
-          project.write_text(s)
-          for target in ('Console', 'SpyderAutoFill'):
-              p = root / 'Config' / f'{target}.entitlements'
-              ent = plistlib.loads(p.read_bytes())
-              key = 'com.apple.developer.authentication-services.autofill-credential-provider'
-              if ent.get(key) is not True:
-                  ent[key] = True
-                  p.write_bytes(plistlib.dumps(ent, sort_keys=False))
-          for target in ('Console', *ids):
-              ent = plistlib.loads((root / 'Config' / f'{target}.entitlements').read_bytes())
-              if 'group.com.spyder.wallet.id' not in ent.get('com.apple.security.application-groups', []):
-                  raise SystemExit(f'Missing shared App Group in {target}; refusing to publish')
-              if '$(AppIdentifierPrefix)com.spyder.wallet.id' not in ent.get('keychain-access-groups', []):
-                  raise SystemExit(f'Missing shared Keychain group in {target}; refusing to publish')
-          resources = root / 'Extensions/SpyderSafari/Resources'
-          manifest_path = resources / 'manifest.json'
-          manifest = json.loads(manifest_path.read_text())
-          source = root / 'Console/Resources/Assets.xcassets/AppIcon.appiconset/Icon-1024.png'
-          if not source.is_file():
-              raise SystemExit('Existing Spyder app icon missing')
-          icons = {}
-          for size in (48, 96, 128):
-              name = f'spyder-extension-{size}.png'
-              path = resources / name
-              subprocess.run(['sips', '-s', 'format', 'png', '-z', str(size), str(size), str(source), '--out', str(path)], check=True)
-              header = path.read_bytes()[:24]
-              if header[:8] != b'\x89PNG\r\n\x1a\n' or struct.unpack('>II', header[16:24]) != (size,size):
-                  raise SystemExit(f'Invalid generated icon: {name}')
-              icons[str(size)] = name
-          manifest['icons'] = icons
-          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+'\n')
-          print('All extension identifiers, entitlements and Safari icons prepared.')
-          PY
 
       - name: Verify source and run unit tests
         run: |
@@ -328,50 +273,29 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import json, os, plistlib, struct, subprocess
+          import os, plistlib, subprocess
           app = Path(os.environ['RUNNER_TEMP'])/'SpyderWallet.xcarchive/Products/Applications/Console.app'
-          base = os.environ['BUNDLE_ID']
-          expected = {'Console': (app, base), 'SpyderAutoFill': (app/'PlugIns/SpyderAutoFill.appex', base+'.autofill'), 'SpyderSafari': (app/'PlugIns/SpyderSafari.appex', base+'.safari'), 'SpyderShare': (app/'PlugIns/SpyderShare.appex', base+'.share')}
-          key = 'com.apple.developer.authentication-services.autofill-credential-provider'
-          failures = []
-          for target, (bundle, bid) in expected.items():
-              try:
-                  pl = plistlib.loads((bundle/'Info.plist').read_bytes())
-                  if pl.get('CFBundleIdentifier') != bid:
-                      failures.append(f'{target}: bundle ID must be {bid}')
-                  if pl.get('CFBundleVersion') != os.environ['BUILD_NUMBER'] or pl.get('CFBundleShortVersionString') != os.environ['APP_VERSION']:
-                      failures.append(f'{target}: extension/app version mismatch')
-                  # Check the actual signature, not just checked-in entitlement files.
-                  signed = subprocess.run(['codesign','-d','--entitlements','-','--xml',str(bundle)],capture_output=True,check=True)
-                  ent = plistlib.loads(signed.stdout)
-                  if target in ('Console','SpyderAutoFill') and ent.get(key) is not True:
-                      failures.append(f'{target}: signed AutoFill entitlement missing')
-                  if 'group.com.spyder.wallet.id' not in ent.get('com.apple.security.application-groups', []):
-                      failures.append(f'{target}: signed shared App Group missing')
-                  if not any(isinstance(g,str) and g.endswith('.com.spyder.wallet.id') and not '$(' in g for g in ent.get('keychain-access-groups', [])):
-                      failures.append(f'{target}: signed shared Keychain group missing or unresolved')
-                  if target == 'Console' and ent.get('aps-environment') not in ('development', 'production'):
-                      failures.append('Console: signed APNs entitlement missing')
-              except Exception as exc:
-                  failures.append(f'{target}: invalid archive metadata/signature ({type(exc).__name__})')
-          try:
-              safari = expected['SpyderSafari'][0]
-              manifest = json.loads((safari/'manifest.json').read_text())
-              icons = manifest.get('icons')
-              if not isinstance(icons, dict) or not icons:
-                  raise ValueError('missing icons')
-              for size, name in icons.items():
-                  if not size.isdecimal() or not isinstance(name,str) or Path(name).name != name:
-                      raise ValueError('invalid icon mapping')
-                  h=(safari/name).read_bytes()[:24]
-                  if h[:8] != b'\x89PNG\r\n\x1a\n' or struct.unpack('>II',h[16:24]) != (int(size),int(size)):
-                      raise ValueError('invalid bundled PNG dimensions')
-          except Exception as exc:
-              failures.append(f'Safari archive manifest/icons invalid: {exc}')
-          if failures:
-              for failure in failures: print(f'::error::{failure}')
-              raise SystemExit('Release validation failed BEFORE upload. Check Apple App IDs / AutoFill / App Groups and archive signing.')
-          print('Archive preflight passed for host and all three extensions: IDs, versions, actual signed entitlements, and Safari icons.')
+          pl = plistlib.loads((app/'Info.plist').read_bytes())
+          if pl.get('CFBundleIdentifier') != os.environ['BUNDLE_ID']:
+              raise SystemExit('Unexpected host bundle ID')
+          if pl.get('CFBundleVersion') != os.environ['BUILD_NUMBER'] or pl.get('CFBundleShortVersionString') != os.environ['APP_VERSION']:
+              raise SystemExit('Unexpected host version')
+          if list(app.rglob('*.appex')):
+              raise SystemExit('Host-only release must not contain embedded app extensions')
+          if 'ASCredentialProviderExtensionCapabilities' in pl:
+              raise SystemExit('Unexpected host AutoFill capability')
+          signed = subprocess.run(['codesign','-d','--entitlements','-','--xml',str(app)],capture_output=True,check=True)
+          ent = plistlib.loads(signed.stdout)
+          if 'com.apple.developer.authentication-services.autofill-credential-provider' in ent:
+              raise SystemExit('Unexpected signed AutoFill entitlement')
+          if 'group.com.spyder.wallet.id' not in ent.get('com.apple.security.application-groups', []):
+              raise SystemExit('Missing Spyder ID App Group; refusing to risk stored data')
+          for suffix in ('.com.spyder.wallet', '.com.spyder.wallet.id'):
+              if not any(isinstance(g,str) and g.endswith(suffix) and '$(' not in g for g in ent.get('keychain-access-groups', [])):
+                  raise SystemExit('Missing or unresolved signed Keychain group: '+suffix)
+          if ent.get('aps-environment') not in ('development','production'):
+              raise SystemExit('Missing signed APNs entitlement')
+          print('Host-only archive validated: no app extensions, storage groups and APNs preserved.')
           PY
 
       - name: Prepare Apple cloud-signing export configuration
