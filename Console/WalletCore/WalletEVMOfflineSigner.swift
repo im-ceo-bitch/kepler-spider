@@ -22,9 +22,13 @@ enum WalletEVMOfflineSigner {
     static func sign(intent: WalletEVMUnsignedIntent, walletID: String, context: LAContext,
                      binding: WalletUSDTChatBinding? = nil) throws -> WalletEVMOfflineSignature {
         try intent.ensureFresh()
+        guard WalletAddressValidator.check(intent.sender, for: .ethereum) == .valid,
+              WalletAddressValidator.check(intent.recipient, for: .ethereum) == .valid else {
+            throw WalletEVMSigningError.invalidIntent
+        }
         try WalletEthereumSignature.ensureRuntimeValid()
         var words = try WalletVault.revealForSigning(id: walletID,
-            reason: "Перевести \(intent.amount) USDT · Ethereum. Получатель \(intent.recipient)", context: context)
+            reason: "Перевести \(intent.amount) \(intent.asset.rawValue) · Ethereum. Получатель \(intent.recipient)", context: context)
         defer { words.removeAll(keepingCapacity: false) }
         let phrase = words.joined(separator: " ")
         let publicAddresses = try SpyderAddressDeriver.addresses(phrase: phrase)

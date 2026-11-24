@@ -30,7 +30,7 @@ class EVMPreflightTests(unittest.TestCase):
             driver = ROOT / 'ci/tests/wallet_evm_rpc_driver.swift'
             subprocess.run([swift, str(SERVICE), str(driver), '-o', executable], check=True, timeout=90)
             result = subprocess.run([executable], check=True, capture_output=True, text=True, timeout=30)
-            self.assertIn('PASS WalletEVM RPC: 6 scenarios', result.stdout)
+            self.assertIn('PASS WalletEVM RPC: 8 scenarios', result.stdout)
 
     def test_quote_never_has_a_broadcast_path(self):
         service = SERVICE.read_text()

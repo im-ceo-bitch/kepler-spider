@@ -217,7 +217,7 @@ struct SpyderChatPaymentView: View {
     }
 
     @ViewBuilder private var historySection: some View {
-        let recent = transfers.records.filter { $0.ownerID == chat.activePersonaID && $0.peerID == contact.id }.suffix(5).reversed()
+        let recent = transfers.records.filter { $0.ownerID == chat.activePersonaID && $0.peerID == contact.id && $0.server == chat.serverAddress }.suffix(5).reversed()
         if !recent.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Последние переводы").font(.headline).accessibilityAddTraits(.isHeader)

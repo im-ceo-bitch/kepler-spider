@@ -24,7 +24,7 @@ class DepositVerifierGate(unittest.TestCase):
             self.assertEqual(compile.returncode, 0, compile.stderr)
             run = subprocess.run([str(output)], capture_output=True, text=True, timeout=30)
             self.assertEqual(run.returncode, 0, run.stderr)
-            self.assertIn('13 cases passed', run.stdout)
+            self.assertIn('17 cases passed', run.stdout)
 
     def test_no_confusion_between_indexer_and_rpc_evidence(self):
         verifier = (ROOT / 'Console/WalletCore/WalletEVMDepositVerifier.swift').read_text()

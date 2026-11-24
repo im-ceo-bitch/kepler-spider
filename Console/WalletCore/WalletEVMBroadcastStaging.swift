@@ -57,7 +57,8 @@ actor WalletEVMBroadcastStaging {
         do { chain = try await transport(endpoint, "eth_chainId", []) }
         catch { throw WalletEVMBroadcastError.wrongChain }
         guard let id = chain as? String, id == "0x1" else { throw WalletEVMBroadcastError.wrongChain }
-        attemptedHashes.insert(key)
+        // Actors can re-enter during the chainId await. Claim again before publication.
+        guard attemptedHashes.insert(key).inserted else { throw WalletEVMBroadcastError.alreadyAttempted }
         do {
             guard let reply = try await transport(endpoint, "eth_sendRawTransaction", [signedRawHex]) as? String,
                   reply.caseInsensitiveCompare(key) == .orderedSame else {

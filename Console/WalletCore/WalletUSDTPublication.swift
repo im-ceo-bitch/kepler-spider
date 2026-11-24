@@ -18,9 +18,18 @@ actor WalletUSDTPublication {
               payload.raw.first == 2, payload.raw.count <= 2048,
               WalletEVMKeccak256.hex(payload.raw) == record.txHash,
               WalletEthereumRPC.endpoints.contains(endpoint), await authorize() else { throw WalletUSDTTransferError.invalid }
-        try await journal.reserve(record)
-        guard await authorize() else {
+        try record.intent.ensureFresh()
+        try Task.checkCancellation()
+        try await journal.preparePublication(record)
+        guard await authorize(), !Task.isCancelled, (try? record.intent.ensureFresh()) != nil else {
             try await journal.cancelBeforePublication(record.id)
+            throw WalletUSDTTransferError.cancelled
+        }
+        // Persist ambiguity BEFORE the first network attempt. A crash after this transition
+        // must never release the nonce, even if no bytes ultimately reached the provider.
+        try await journal.update(record.id, stage: .resultUnknown)
+        guard await authorize(), !Task.isCancelled, (try? record.intent.ensureFresh()) != nil else {
+            // The durable state is now ambiguous. Retain it, fail closed and never auto-retry.
             throw WalletUSDTTransferError.cancelled
         }
         // One attempt after the explicit authorization boundary; no retry or provider failover.

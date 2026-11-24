@@ -537,10 +537,10 @@ struct WalletReceiveView: View {
                                     Label("Квитанция пока не найдена. Транзакция может ожидать включения в блок или отсутствовать.", systemImage: "clock")
                                         .foregroundStyle(.orange)
                                 case .observed(let result, let providers):
-                                    Label("Обнаружено: \(result.amountText) \(result.token.rawValue) · \(result.confirmations) подтверждений · \(providers) RPC. Независимое подтверждение пока не получено.", systemImage: "clock.badge.checkmark")
+                                    Label("Обнаружено: \(result.amountText) \(result.token.rawValue) · \(result.confirmations) подтверждений · \(providers) RPC. Финализация двумя RPC пока не подтверждена.", systemImage: "clock.badge.checkmark")
                                         .foregroundStyle(.orange)
                                 case .independentlyConfirmed(let result):
-                                    Label("Проверено двумя RPC: \(result.amountText) \(result.token.rawValue) · минимум \(result.confirmations) подтверждений.", systemImage: "checkmark.shield.fill")
+                                    Label("Финализация подтверждена двумя RPC: \(result.amountText) \(result.token.rawValue) · минимум \(result.confirmations) подтверждений.", systemImage: "checkmark.shield.fill")
                                         .foregroundStyle(.green)
                                 }
                             }
@@ -548,7 +548,7 @@ struct WalletReceiveView: View {
                                 Label(depositError, systemImage: "exclamationmark.triangle")
                                     .foregroundStyle(.orange)
                             }
-                            Text("Проверка RPC не гарантирует окончательность транзакции и не означает готовность кошелька к реальным переводам.")
+                            Text("Проверка сверяет финализированные блоки RPC; это не самостоятельная проверка консенсуса Ethereum.")
                                 .font(.footnote).foregroundStyle(WalletTheme.secondary)
                         }
                         .font(.footnote)

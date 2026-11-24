@@ -14,6 +14,7 @@ struct WalletEVMDepositEvidence: Equatable {
     let blockHash: String
     let confirmations: UInt64
     let amountBaseUnits: String
+    var finalized: Bool = false
     var amountText: String { WalletEVMDepositVerifier.formatTokenUnits(amountBaseUnits) }
 }
 
@@ -47,7 +48,12 @@ struct WalletEVMDepositVerifier {
 
     init(endpoints: [URL] = [URL(string: "https://ethereum-rpc.publicnode.com")!, URL(string: "https://cloudflare-eth.com")!],
          transport: @escaping Transport = WalletEVMDepositVerifier.fetchRPC) {
-        self.endpoints = Array(endpoints.filter { $0.scheme?.lowercased() == "https" }.prefix(3))
+        var hosts = Set<String>()
+        self.endpoints = Array(endpoints.filter {
+            guard $0.scheme?.lowercased() == "https", let host = $0.host?.lowercased(),
+                  $0.user == nil, $0.password == nil else { return false }
+            return hosts.insert(host).inserted
+        }.prefix(3))
         self.transport = transport
     }
 
@@ -84,9 +90,10 @@ struct WalletEVMDepositVerifier {
             let minConfirmations = evidence.map(\.confirmations).min() ?? 0
             let conservative = WalletEVMDepositEvidence(hash: first.hash, token: first.token,
                 recipient: first.recipient, blockNumber: first.blockNumber, blockHash: first.blockHash,
-                confirmations: minConfirmations, amountBaseUnits: first.amountBaseUnits)
-            // Requires two INDEPENDENT RPC answers and at least 12 blocks.
-            if evidence.count >= 2 && minConfirmations >= Self.requiredConfirmations {
+                confirmations: minConfirmations, amountBaseUnits: first.amountBaseUnits,
+                finalized: evidence.allSatisfy(\.finalized))
+            // Requires two matching RPC answers and finalized checkpoints.
+            if evidence.count >= 2 && minConfirmations >= Self.requiredConfirmations && conservative.finalized && notMined == 0 {
                 return .independentlyConfirmed(conservative)
             }
             return .observed(conservative, providers: evidence.count)
@@ -112,15 +119,17 @@ struct WalletEVMDepositVerifier {
         let canonicalValue = try await transport(url, "eth_getBlockByNumber", [blockHex, false])
         guard let canonical = canonicalValue as? [String: Any],
               let canonicalHash = canonical["hash"] as? String,
-              canonicalHash.caseInsensitiveCompare(blockHash) == .orderedSame else {
+              canonicalHash.caseInsensitiveCompare(blockHash) == .orderedSame,
+              let canonicalNumber = canonical["number"] as? String, Self.quantity(canonicalNumber) == minedAt else {
             throw WalletEVMDepositError.inconsistentProviders
         }
         guard let logs = receipt["logs"] as? [[String: Any]] else { throw WalletEVMDepositError.rpc }
         var total = "0"
         var matching = 0
+        var indexes = Set<UInt64>()
         for event in logs {
             guard (event["address"] as? String)?.caseInsensitiveCompare(contract) == .orderedSame,
-                  (event["removed"] as? Bool) != true,
+                  (event["removed"] as? Bool) == false,
                   let topics = event["topics"] as? [String], topics.count == 3,
                   topics[0].lowercased() == Self.transferTopic,
                   Self.indexedAddress(topics[1]) != nil,
@@ -128,17 +137,24 @@ struct WalletEVMDepositVerifier {
                   let hex = event["data"] as? String, hex.count == 66,
                   let units = Self.base10(hex) else { continue }
             // Receipts are scoped to a single transaction. Reject foreign log hashes.
-            if let logHash = event["transactionHash"] as? String,
-               logHash.caseInsensitiveCompare(txHash) != .orderedSame { continue }
+            guard let logHash = event["transactionHash"] as? String,
+                  logHash.caseInsensitiveCompare(txHash) == .orderedSame,
+                  let logBlock = event["blockHash"] as? String, logBlock.caseInsensitiveCompare(blockHash) == .orderedSame,
+                  let logNumber = event["blockNumber"] as? String, Self.quantity(logNumber) == minedAt,
+                  let logIndex = event["logIndex"] as? String, let index = Self.quantity(logIndex),
+                  indexes.insert(index).inserted else { throw WalletEVMDepositError.inconsistentProviders }
             total = Self.addDecimal(total, units)
             matching += 1
         }
         guard matching > 0, total != "0" else { throw WalletEVMDepositError.noMatchingTransfer }
         let head = Self.quantity(try await rpcString(url, "eth_blockNumber", []))
-        guard let head, head >= minedAt else { throw WalletEVMDepositError.rpc }
+        guard let head, minedAt > 0, head >= minedAt else { throw WalletEVMDepositError.rpc }
+        let finalized = try await WalletEVMFinality.check(mined: minedAt, head: head, blockHash: blockHash) { tag in
+            try await transport(url, "eth_getBlockByNumber", [tag, false])
+        }
         return WalletEVMDepositEvidence(hash: txHash.lowercased(), token: token, recipient: recipient,
             blockNumber: minedAt, blockHash: blockHash.lowercased(),
-            confirmations: head - minedAt + 1, amountBaseUnits: total)
+            confirmations: head - minedAt + 1, amountBaseUnits: total, finalized: finalized)
     }
 
     private func rpcString(_ url: URL, _ method: String, _ params: [Any]) async throws -> String {
@@ -153,8 +169,8 @@ struct WalletEVMDepositVerifier {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 49, "method": method, "params": params])
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), data.count < 65_536,
+        let (data, response) = try await URLSession.shared.data(for: request, delegate: WalletEVMNoRedirect())
+        guard let http = response as? HTTPURLResponse, WalletEVMNoRedirect.matches(http.url, url), (200...299).contains(http.statusCode), data.count < 65_536,
               let body = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               body["jsonrpc"] as? String == "2.0", body["id"] as? Int == 49,
               body["error"] == nil, let result = body["result"] else { throw WalletEVMDepositError.rpc }

@@ -10,24 +10,37 @@ enum WalletVault {
     private static let service = "com.spyder.wallet.spyder.wallet.v1"
     static let legacyID = "primary"
     private static let indexService = "com.spyder.wallet.account-index.v1"
+    // Serialize read/modify/write reservations within this process.
+    private static let mutationLock = NSLock()
     private static func accountName(_ id: String) -> String {
         id == legacyID ? "bip39-english-mnemonic" : "bip39-english-mnemonic." + id
     }
 
     enum VaultError: LocalizedError {
-        case devicePasscodeRequired, alreadyExists, invalidPhrase, notFound, failed(OSStatus)
+        case devicePasscodeRequired, alreadyExists, invalidPhrase, notFound, invalidAccountIndex, failed(OSStatus)
         var errorDescription: String? {
             switch self {
             case .devicePasscodeRequired: return "Установите код-пароль iPhone для защиты ключей."
             case .alreadyExists: return "Этот кошелёк уже сохранён."
             case .invalidPhrase: return "Неверная BIP-39 фраза. Проверьте 12/24 слова и их порядок."
             case .notFound: return "Защищённая копия кошелька не найдена. Используйте фразу восстановления."
+            case .invalidAccountIndex: return "Индекс кошельков повреждён. Создание новых кошельков остановлено до восстановления."
             case .failed(let status): return "Ошибка защищённого хранилища (\(status))."
             }
         }
     }
 
+    private static func validAccountID(_ id: String) -> Bool {
+        id == legacyID || UUID(uuidString: id) != nil
+    }
+
     static func accountIDs() -> [String] {
+        // Discovery may be incomplete while protected data is unavailable; mutation must not
+        // use this fallback and overwrite the durable index.
+        (try? readAccountIDs()) ?? (exists() ? [legacyID] : [])
+    }
+
+    private static func readAccountIDs() throws -> [String] {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: indexService,
@@ -37,16 +50,18 @@ enum WalletVault {
         ]
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecSuccess, let data = result as? Data,
-           let ids = try? JSONDecoder().decode([String].self, from: data) {
-            return ids.filter { $0 == legacyID || UUID(uuidString: $0) != nil }
+        if status == errSecItemNotFound { return exists() ? [legacyID] : [] }
+        guard status == errSecSuccess else { throw VaultError.failed(status) }
+        guard let data = result as? Data,
+              let ids = try? JSONDecoder().decode([String].self, from: data),
+              ids.allSatisfy(Self.validAccountID), Set(ids).count == ids.count else {
+            throw VaultError.invalidAccountIndex
         }
-        return exists() ? [legacyID] : []
+        return ids
     }
 
-    private static func registerAccount(_ id: String) throws {
-        let ids = Array(Set(accountIDs() + [id])).sorted()
-        let payload = try JSONEncoder().encode(ids)
+    private static func writeAccountIDs(_ ids: [String]) throws {
+        let payload = try JSONEncoder().encode(Array(Set(ids)).sorted())
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: indexService,
@@ -63,6 +78,16 @@ enum WalletVault {
         guard result == errSecSuccess else { throw VaultError.failed(result) }
     }
 
+    private static func registerAccount(_ id: String) throws {
+        try writeAccountIDs(try readAccountIDs() + [id])
+    }
+
+    /// Removes a reservation when the corresponding seed item could not be created.
+    /// A stale index entry is filtered by `exists(id:)`, but we still clean it up eagerly.
+    private static func unregisterAccount(_ id: String) throws {
+        try writeAccountIDs(try readAccountIDs().filter { $0 != id })
+    }
+
     static func makeNewPhrase() throws -> String { try BIP39.generate(strength: .bits128).phrase }
 
     static func canonicalPhrase(_ input: String) throws -> String {
@@ -74,6 +99,7 @@ enum WalletVault {
     }
 
     static func exists(id: String = legacyID) -> Bool {
+        guard validAccountID(id) else { return false }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -87,6 +113,8 @@ enum WalletVault {
     }
 
     static func save(_ rawPhrase: String, id: String = legacyID) throws {
+        mutationLock.lock(); defer { mutationLock.unlock() }
+        guard validAccountID(id) else { throw VaultError.invalidAccountIndex }
         guard !exists(id: id) else { throw VaultError.alreadyExists }
         let phrase = try canonicalPhrase(rawPhrase)
         let context = LAContext()
@@ -107,10 +135,18 @@ enum WalletVault {
             kSecValueData as String: Data(phrase.utf8),
             kSecAttrSynchronizable as String: false
         ]
-        let status = SecItemAdd(attributes as CFDictionary, nil)
-        guard status == errSecSuccess else { throw VaultError.failed(status) }
-        // Seed is already secure even if an index write fails; don't lose track of it.
+        // Reserve the public account identifier first. If the process is interrupted before
+        // the seed write, WalletAccess filters the stale index entry through exists(id:).
+        // This ordering prevents a successfully stored seed from becoming undiscoverable when
+        // the subsequent index write fails.
         try registerAccount(id)
+        let status = SecItemAdd(attributes as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            // The seed was not created. Roll back the reservation; a failed rollback is safe
+            // (the stale public ID is filtered) but must be surfaced for diagnostics.
+            if status != errSecDuplicateItem { try unregisterAccount(id) }
+            throw VaultError.failed(status)
+        }
     }
 
     static func revealForBackup(id: String = legacyID) throws -> [String] {
@@ -122,6 +158,7 @@ enum WalletVault {
     }
 
     private static func readWords(id: String, reason: String, context: LAContext) throws -> [String] {
+        guard validAccountID(id) else { throw VaultError.notFound }
         context.localizedReason = reason
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -219,6 +256,9 @@ final class WalletAccess: ObservableObject {
     @Published private(set) var activeWalletID = WalletVault.legacyID
     @Published var errorMessage: String?
 
+    private var unlockGate = WalletUnlockGate()
+    private var unlockContext: LAContext?
+
     private static let accountsKey = "spyder.wallet.accountMetadata.v2"
     private static let selectionKey = "spyder.wallet.selectedAccount.v2"
 
@@ -280,13 +320,23 @@ final class WalletAccess: ObservableObject {
     }
 
     func finishSetup() { finishingSetup = false }
-    func lock() { if hasWallet { unlocked = false } }
+    func lock() {
+        // A system-auth callback may arrive after the app has been backgrounded.
+        unlockGate.cancel()
+        unlockContext?.invalidate()
+        unlockContext = nil
+        if hasWallet { unlocked = false }
+    }
 
     func unlock() {
+        guard hasWallet, !unlocked, let attempt = unlockGate.begin() else { return }
         let context = LAContext()
+        unlockContext = context
         context.localizedReason = "Разблокировать Spyder Wallet"
         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Открыть Spyder Wallet") { success, error in
             Task { @MainActor in
+                guard self.unlockGate.finish(attempt) else { return }
+                self.unlockContext = nil
                 if success { self.unlocked = true }
                 else if let error, (error as NSError).code != LAError.userCancel.rawValue {
                     self.errorMessage = error.localizedDescription

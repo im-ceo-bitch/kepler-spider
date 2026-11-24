@@ -34,7 +34,7 @@ actor WalletEVMNonceJournal {
                     throw WalletEVMJournalError.invalidRecord
                 }
                 let unique = Set(decoded.map { "\($0.chainID):\($0.sender.lowercased()):\($0.nonce)" })
-                guard unique.count == decoded.count else { throw WalletEVMJournalError.invalidRecord }
+                guard unique.count == decoded.count, Set(decoded.map { $0.txHash.lowercased() }).count == decoded.count else { throw WalletEVMJournalError.invalidRecord }
                 loaded = decoded
             } catch { throw WalletEVMJournalError.invalidRecord }
         } else { loaded = [] }
@@ -66,7 +66,7 @@ actor WalletEVMNonceJournal {
 
     // Must commit before any network attempt. Do not remove entries automatically.
     func reserve(_ entry: WalletEVMJournalEntry) throws {
-        guard Self.valid(entry), entry.status == .reserved else { throw WalletEVMJournalError.invalidRecord }
+        guard Self.valid(entry), entry.status == .reserved, entries.count < 10_000 else { throw WalletEVMJournalError.invalidRecord }
         if entries.contains(where: { $0.txHash.caseInsensitiveCompare(entry.txHash) == .orderedSame }) {
             throw WalletEVMJournalError.duplicateTransaction
         }

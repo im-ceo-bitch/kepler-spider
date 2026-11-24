@@ -38,6 +38,32 @@ struct Validate {
                                    priorityFeePerGas: 1000000000, maxFeeETH: "0.0000504", provider: "rpc", checkedAt: Date())
         assert(quote.matches(sender: recipient, recipient: quote.recipient, amount: "1", asset: .eth))
         assert(!quote.matches(sender: recipient, recipient: quote.recipient, amount: "2", asset: .eth))
-        print("PASS WalletEVMPreflight: 21 scenarios")
+        rejected("signed RPC quantity") { _ = try WalletEVMUnits.integer("0x+1", upperBound: 100) }
+        rejected("noncanonical RPC quantity") { _ = try WalletEVMUnits.integer("0x01", upperBound: 100) }
+        rejected("malformed balance") { _ = try WalletEVMUnits.decimalFromHex("0x０") }
+        rejected("malformed decimal") { _ = try WalletEVMUnits.decimal("12garbage") }
+        rejected("zero recipient") { _ = try WalletEVMUnits.transferData(to: "0x" + String(repeating: "0", count: 40), baseUnits: "1") }
+        assert(!WalletEVMUnits.isAddress(recipient + "\n"))
+        let future = WalletEVMQuote(asset: .eth, sender: quote.sender, recipient: quote.recipient,
+            amount: quote.amount, nonce: quote.nonce, gasLimit: quote.gasLimit, maxFeePerGas: quote.maxFeePerGas,
+            priorityFeePerGas: quote.priorityFeePerGas, maxFeeETH: quote.maxFeeETH, provider: quote.provider,
+            checkedAt: Date().addingTimeInterval(60))
+        assert(!future.matches(sender: future.sender, recipient: future.recipient, amount: future.amount, asset: .eth))
+        eq(try WalletEVMUnits.hasBalance("0x" + String(repeating: "f", count: 64), required: "1", abiWord: true), true, "full uint256 balance")
+        eq(try WalletEVMUnits.hasBalance("0xff", required: "256", abiWord: false), false, "exact low balance")
+        eq(try WalletEVMUnits.hasBalance("0x100", required: "256", abiWord: false), true, "exact equality")
+        rejected("over uint256") { _ = try WalletEVMUnits.hexFromDecimal(String(repeating: "9", count: 78)) }
+        rejected("padded native quantity") { _ = try WalletEVMUnits.hasBalance("0x01", required: "1", abiWord: false) }
+        rejected("short token word") { _ = try WalletEVMUnits.hasBalance("0x1", required: "1", abiWord: true) }
+        try WalletEVMUnits.validateSimulation("0x", asset: .usdt)
+        rejected("empty USDC return") { try WalletEVMUnits.validateSimulation("0x", asset: .usdc) }
+        rejected("false USDT return") { try WalletEVMUnits.validateSimulation("0x" + String(repeating: "0", count: 64), asset: .usdt) }
+        let endpoint = URL(string: "https://rpc.example")!
+        assert(WalletEVMNoRedirect.matches(URL(string: "https://rpc.example/"), endpoint))
+        assert(!WalletEVMNoRedirect.matches(URL(string: "http://rpc.example/"), endpoint))
+        assert(!WalletEVMNoRedirect.matches(URL(string: "https://other.example/"), endpoint))
+        assert(!WalletEVMNoRedirect.matches(URL(string: "https://rpc.example:444/"), endpoint))
+        assert(!WalletEVMNoRedirect.matches(URL(string: "https://rpc.example/other"), endpoint))
+        print("PASS WalletEVMPreflight: extended scenarios")
     }
 }

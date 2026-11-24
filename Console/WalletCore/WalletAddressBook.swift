@@ -66,7 +66,7 @@ final class WalletAddressBookStore: ObservableObject {
             throw WalletAddressBookError.invalidAddress(reason)
         }
         guard entries.count < maxCount else { throw WalletAddressBookError.tooMany }
-        guard !entries.contains(where: { $0.chain == chain && $0.address.caseInsensitiveCompare(trimmedAddress) == .orderedSame }) else {
+        guard !entries.contains(where: { $0.chain == chain && WalletAddressValidator.sameAddress($0.address, trimmedAddress, for: chain) }) else {
             throw WalletAddressBookError.duplicate
         }
         var next = entries
@@ -99,7 +99,7 @@ final class WalletAddressBookStore: ObservableObject {
         guard status == errSecSuccess else { throw WalletAddressBookError.storage(status) }
         guard let data = found as? Data,
               let entries = try? JSONDecoder().decode([WalletAddressEntry].self, from: data),
-              entries.count <= 150, entries.allSatisfy({ if case .valid = WalletAddressValidator.check($0.address, for: $0.chain) { return true }; return false }) else {
+              entries.count <= 150, entries.allSatisfy({ if case .valid = WalletAddressValidator.check($0.address, for: $0.chain, legacyStorage: true) { return true }; return false }) else {
             throw WalletAddressBookError.failedToDecode
         }
         return entries

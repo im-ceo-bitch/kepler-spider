@@ -18,6 +18,7 @@ struct WalletEVMOutgoingEvidence: Equatable {
     let confirmations: UInt64
     let succeeded: Bool
     var blockTimestamp: UInt64? = nil
+    var finalized: Bool = false
 }
 
 enum WalletEVMOutgoingAssessment: Equatable {
@@ -54,7 +55,7 @@ struct WalletEVMOutgoingTracker {
         var seenHosts = Set<String>()
         var unique: [URL] = []
         for endpoint in endpoints {
-            guard endpoint.scheme?.lowercased() == "https", let host = endpoint.host?.lowercased(),
+            guard endpoint.scheme?.lowercased() == "https", let host = endpoint.host?.lowercased(), endpoint.user == nil, endpoint.password == nil,
                   seenHosts.insert(host).inserted else { continue }
             unique.append(endpoint)
             if unique.count == 3 { break }
@@ -99,9 +100,10 @@ struct WalletEVMOutgoingTracker {
             let evidence = WalletEVMOutgoingEvidence(txHash: first.txHash, sender: first.sender,
                 recipient: first.recipient, asset: first.asset, amountBaseUnits: first.amountBaseUnits,
                 nonce: first.nonce, blockNumber: first.blockNumber, blockHash: first.blockHash,
-                confirmations: lowest, succeeded: first.succeeded, blockTimestamp: first.blockTimestamp)
-            // Two consistent RPC answers and 12 confirmations are necessary for a final UI status.
-            if observations.count >= 2 && lowest >= Self.confirmationsRequired {
+                confirmations: lowest, succeeded: first.succeeded, blockTimestamp: first.blockTimestamp,
+                finalized: observations.allSatisfy(\.finalized))
+            // Require two consistent RPC observations, finalized checkpoints and no contradictory pending/unseen response.
+            if observations.count >= 2 && lowest >= Self.confirmationsRequired && evidence.finalized && pending == 0 && unseen == 0 {
                 return evidence.succeeded ? .confirmed(evidence) : .reverted(evidence)
             }
             return .observed(evidence, providers: observations.count)
@@ -149,7 +151,8 @@ struct WalletEVMOutgoingTracker {
         }
         guard let canonical = try await transport(endpoint, "eth_getBlockByNumber", [blockNumber, false]) as? [String: Any],
               let canonicalHash = canonical["hash"] as? String, Self.same(canonicalHash, blockHash),
-              let head = Self.quantity(try await string(endpoint, "eth_blockNumber", [])), head >= mined else {
+              let canonicalNumber = canonical["number"] as? String, Self.quantity(canonicalNumber) == mined,
+              let head = Self.quantity(try await string(endpoint, "eth_blockNumber", [])), mined > 0, head >= mined else {
             throw WalletEVMOutgoingError.inconsistentProviders
         }
         let blockTime = (canonical["timestamp"] as? String).flatMap(Self.quantity)
@@ -166,21 +169,27 @@ struct WalletEVMOutgoingTracker {
                   let expectedData = try? WalletEVMUnits.hexFromDecimal(intent.baseUnits),
                   logs.contains(where: { log in
                     guard let contract = log["address"] as? String, Self.same(contract, intent.transactionTarget),
-                          (log["removed"] as? Bool) != true,
+                          (log["removed"] as? Bool) == false,
+                          let logBlock = log["blockHash"] as? String, Self.same(logBlock, blockHash),
+                          let logNumber = log["blockNumber"] as? String, Self.quantity(logNumber) == mined,
                           let topics = log["topics"] as? [String], topics.count == 3,
                           Self.same(topics[0], Self.transferTopic),
                           Self.same(topics[1], Self.addressTopic(intent.sender)),
                           Self.same(topics[2], Self.addressTopic(intent.recipient)),
                           let logData = log["data"] as? String,
                           logData.count == 66, Self.quantityStringEquals(logData, expectedData) else { return false }
-                    if let logHash = log["transactionHash"] as? String { return Self.same(logHash, txHash) }
-                    return true
+                    guard let logHash = log["transactionHash"] as? String else { return false }
+                    return Self.same(logHash, txHash)
                   }) else { throw WalletEVMOutgoingError.mismatchedTransaction }
+        }
+        // Unsupported finalized tag or a lagging checkpoint is not terminal evidence.
+        let finalized = try await WalletEVMFinality.check(mined: mined, head: head, blockHash: blockHash) { tag in
+            try await transport(endpoint, "eth_getBlockByNumber", [tag, false])
         }
         return .observed(WalletEVMOutgoingEvidence(txHash: txHash.lowercased(), sender: intent.sender,
             recipient: intent.recipient, asset: intent.asset, amountBaseUnits: intent.baseUnits,
             nonce: intent.nonce, blockNumber: mined, blockHash: blockHash.lowercased(),
-            confirmations: head - mined + 1, succeeded: statusCode == 1, blockTimestamp: blockTime))
+            confirmations: head - mined + 1, succeeded: statusCode == 1, blockTimestamp: blockTime, finalized: finalized))
     }
 
     private static func isHash(_ value: String) -> Bool {
@@ -197,7 +206,7 @@ struct WalletEVMOutgoingTracker {
     private static func quantityStringEquals(_ a: String, _ b: String) -> Bool {
         // Quantity is at most UInt256: normalise arbitrary-sized hex without using Float/Decimal.
         func norm(_ v: String) -> String? {
-            guard v.hasPrefix("0x"), v.count <= 66,
+            guard v.hasPrefix("0x"), (3...66).contains(v.utf8.count),
                   v.dropFirst(2).utf8.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }) else { return nil }
             let digits = v.dropFirst(2).lowercased().drop(while: { $0 == "0" })
             return digits.isEmpty ? "0" : String(digits)
@@ -216,8 +225,8 @@ struct WalletEVMOutgoingTracker {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 57, "method": method, "params": params])
-        let (bytes, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), bytes.count <= 65_536,
+        let (bytes, response) = try await URLSession.shared.data(for: request, delegate: WalletEVMNoRedirect())
+        guard let http = response as? HTTPURLResponse, WalletEVMNoRedirect.matches(http.url, endpoint), (200...299).contains(http.statusCode), bytes.count <= 65_536,
               let body = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
               body["jsonrpc"] as? String == "2.0", body["id"] as? Int == 57,
               body["error"] == nil, let value = body["result"] else { throw WalletEVMOutgoingError.rpc }

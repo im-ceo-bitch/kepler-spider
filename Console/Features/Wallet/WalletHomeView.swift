@@ -31,6 +31,7 @@ struct WalletHomeView: View {
     @State private var expandedMarket: WalletMarketSelection?
     @State private var showDevnet = false
     @State private var showIDPreview = false
+    @State private var showNetworkPortfolio = false
     let onAction: (WalletModal) -> Void
     let onActivity: () -> Void
     let onAsset: (SpyderChain) -> Void
@@ -55,6 +56,7 @@ struct WalletHomeView: View {
                     } else {
                         portfolioCard
                         quickActions
+                        networkPortfolioEntry
                         SpyderIDPreviewEntry { showIDPreview = true }
                         assetsSection
                         recentSection
@@ -104,6 +106,13 @@ struct WalletHomeView: View {
                 .environmentObject(market)
                 .environmentObject(live)
         }
+        .sheet(isPresented: $showNetworkPortfolio) {
+            if let address = chains.address(for: .ethereum), chains.verifiedForReceiving,
+               chains.verifiedWalletID == access.activeWalletID {
+                WalletNetworkPortfolioView(address: address, privacyHidden: privacyHidden)
+                    .id(access.activeWalletID)
+            }
+        }
         .sheet(isPresented: $showIDPreview) {
             SpyderIDVisualPreview()
         }
@@ -133,6 +142,10 @@ struct WalletHomeView: View {
         .onChange(of: access.activeWalletID) { _, _ in
             history.clear()
             selectedToken = nil
+            showNetworkPortfolio = false
+        }
+        .onChange(of: chains.verifiedForReceiving) { _, verified in
+            if !verified { showNetworkPortfolio = false }
         }
         .task(id: chains.addresses) {
             if chains.addresses.isEmpty && !chains.isLoading {
@@ -247,6 +260,32 @@ struct WalletHomeView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var networkPortfolioEntry: some View {
+        Button {
+            if chains.verifiedForReceiving && chains.verifiedWalletID == access.activeWalletID {
+                showNetworkPortfolio = true
+            } else {
+                chains.activate()
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "network").font(.title3)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Networks & Routes").font(.subheadline.weight(.semibold))
+                    Text(LocalizedStringKey(chains.verifiedForReceiving ? "Network balances · Swap & Bridge preview" : "Verify wallet to view networks"))
+                        .font(.caption).foregroundStyle(WalletTheme.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(WalletTheme.ink)
+            .padding(16)
+            .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 22))
+        }
+        .buttonStyle(.plain)
+        .disabled(chains.isLoading)
     }
 
     private var marketEntry: some View {

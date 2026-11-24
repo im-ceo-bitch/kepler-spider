@@ -21,9 +21,9 @@ struct SpyderTransferStatusView: View {
 
     private var status: LocalizedStringKey {
         switch assessment {
-        case .confirmed: return outgoing ? "Перевод подтверждён в Ethereum" : "Получено в Ethereum"
+        case .confirmed: return outgoing ? "Перевод финализирован в Ethereum" : "Получено в Ethereum"
         case .reverted: return "Транзакция завершилась ошибкой"
-        case .observed(let proof, let providers): return "В блоке · \(String(proof.confirmations)) подтверждений · \(String(providers))/2 источников"
+        case .observed(let proof, let providers): return "В блоке · \(String(proof.confirmations)) подтверждений · \(String(providers)) RPC · ожидание финализации"
         case .pending: return "Ожидает включения в блок"
         case .notSeen: return "Результат отправки пока неизвестен"
         case nil: return error == nil ? "Проверяем транзакцию…" : "Проверка сети недоступна"
@@ -91,11 +91,12 @@ struct SpyderTransferStatusView: View {
             while !Task.isCancelled {
                 checking = true
                 do {
-                    let result = try await WalletEVMOutgoingTracker().reconcile(txHash: transfer.txHash, intent: transfer.intent, notBefore: transfer.binding?.addressIssuedAt)
+                    let result = try await WalletEVMOutgoingTracker().reconcile(txHash: transfer.txHash, intent: transfer.intent, notBefore: max(transfer.submittedAt, transfer.binding?.addressIssuedAt ?? 0))
                     guard !Task.isCancelled else { return }
                     assessment = result; error = nil; checkedAt = Date()
+                    if hasFinalResult { return }
                 } catch is CancellationError { return }
-                catch { self.error = error.localizedDescription }
+                catch { guard !Task.isCancelled else { return }; self.error = error.localizedDescription }
                 checking = false
                 do { try await Task.sleep(for: .seconds(12)) } catch { return }
             }

@@ -20,7 +20,7 @@ enum WalletEVMAsset: String, CaseIterable, Identifiable, Codable, Sendable {
 }
 
 enum WalletEVMPreflightError: LocalizedError {
-    case address, amount, rpc(String), wrongChain, insufficientETH, insufficientTokens, estimate, feeTooLarge
+    case address, amount, rpc(String), wrongChain, insufficientETH, insufficientTokens, estimate, feeTooLarge, simulationFailed
     var errorDescription: String? {
         switch self {
         case .address: "Проверьте Ethereum-адрес отправителя и получателя."
@@ -31,6 +31,7 @@ enum WalletEVMPreflightError: LocalizedError {
         case .insufficientTokens: "Недостаточно токенов на адресе."
         case .estimate: "Не удалось надёжно оценить gas для перевода."
         case .feeTooLarge: "Сетевая комиссия выходит за безопасные пределы расчёта."
+        case .simulationFailed: "Симуляция перевода не подтвердила выполнение. Отправка остановлена."
         }
     }
 }
@@ -77,20 +78,49 @@ enum WalletEVMUnits {
             reversed.append(hexAlphabet[carry])
             number = quotient.isEmpty ? "0" : quotient
         }
+        guard reversed.count <= 64 else { throw WalletEVMPreflightError.amount }
         return "0x" + String(reversed.reversed())
     }
 
     // Capped RPC quantities are used for nonce/gas/fee. Reject excessive or malformed data.
     static func integer(_ hex: String, upperBound: UInt64) throws -> UInt64 {
-        guard hex.hasPrefix("0x"), hex.count > 2, hex.count <= 18 else { throw WalletEVMPreflightError.estimate }
+        guard hex.hasPrefix("0x"), hex.count > 2, hex.count <= 18,
+              hex.dropFirst(2).utf8.allSatisfy(Self.isASCIIHex),
+              hex.count == 3 || hex.dropFirst(2).first != "0" else { throw WalletEVMPreflightError.estimate }
         guard let number = UInt64(hex.dropFirst(2), radix: 16), number <= upperBound else {
             throw WalletEVMPreflightError.estimate
         }
         return number
     }
 
+    /// Compare full uint256 values without Decimal rounding. RPC quantities and ABI words
+    /// have distinct encodings; enforce the correct encoding before comparison.
+    static func hasBalance(_ encoded: String, required: String, abiWord: Bool) throws -> Bool {
+        guard encoded.hasPrefix("0x"), (3...66).contains(encoded.utf8.count),
+              encoded.dropFirst(2).utf8.allSatisfy(Self.isASCIIHex),
+              abiWord ? encoded.utf8.count == 66 : (encoded.utf8.count == 3 || encoded.dropFirst(2).first != "0") else {
+            throw WalletEVMPreflightError.estimate
+        }
+        let balance = encoded.dropFirst(2).lowercased().drop(while: { $0 == "0" })
+        let minimum = try hexFromDecimal(required).dropFirst(2).drop(while: { $0 == "0" })
+        if balance.count != minimum.count { return balance.count > minimum.count }
+        return !balance.lexicographicallyPrecedes(minimum)
+    }
+
+    static func validateSimulation(_ result: String, asset: WalletEVMAsset) throws {
+        // USDT's legacy transfer returns no ABI boolean; USDC must return true.
+        // Native ETH can call a contract which may return arbitrary bytes.
+        if asset == .eth {
+            guard result.hasPrefix("0x"), result.utf8.count % 2 == 0,
+                  result.dropFirst(2).utf8.allSatisfy(Self.isASCIIHex) else { throw WalletEVMPreflightError.simulationFailed }
+        } else if !(asset == .usdt && result == "0x") && result != "0x" + String(repeating: "0", count: 63) + "1" {
+            throw WalletEVMPreflightError.simulationFailed
+        }
+    }
+
     static func decimalFromHex(_ hex: String) throws -> Decimal {
-        guard hex.hasPrefix("0x"), (3...66).contains(hex.count) else { throw WalletEVMPreflightError.estimate }
+        guard hex.hasPrefix("0x"), (3...66).contains(hex.count),
+              hex.dropFirst(2).utf8.allSatisfy(Self.isASCIIHex) else { throw WalletEVMPreflightError.estimate }
         let digits = hex.dropFirst(2).drop(while: { $0 == "0" })
         // A standard ERC-20 eth_call result is 32 bytes even when the value is tiny.
         // Reject huge, unsupported quantities rather than let Decimal silently round.
@@ -104,7 +134,7 @@ enum WalletEVMUnits {
     }
 
     static func decimal(_ digits: String) throws -> Decimal {
-        guard digits.count <= 30, let result = Decimal(string: digits, locale: Locale(identifier: "en_US_POSIX")) else {
+        guard !digits.isEmpty, digits.count <= 30, digits.utf8.allSatisfy({ (48...57).contains($0) }), let result = Decimal(string: digits, locale: Locale(identifier: "en_US_POSIX")) else {
             throw WalletEVMPreflightError.amount
         }
         return result
@@ -126,8 +156,14 @@ enum WalletEVMUnits {
             String(repeating: "0", count: 64 - encodedAmount.count) + encodedAmount
     }
 
+    private static func isASCIIHex(_ byte: UInt8) -> Bool {
+        (48...57).contains(byte) || (65...70).contains(byte) || (97...102).contains(byte)
+    }
+
     static func isAddress(_ value: String) -> Bool {
-        value.range(of: "^0x[0-9a-fA-F]{40}$", options: .regularExpression) != nil
+        value.utf8.count == 42 && value.hasPrefix("0x") &&
+        value.dropFirst(2).utf8.allSatisfy(Self.isASCIIHex) &&
+        value.dropFirst(2).contains(where: { $0 != "0" })
     }
 }
 
@@ -145,9 +181,10 @@ struct WalletEVMQuote: Equatable {
     let checkedAt: Date
 
     func matches(sender: String, recipient: String, amount: String, asset: WalletEVMAsset) -> Bool {
-        self.sender.caseInsensitiveCompare(sender) == .orderedSame &&
+        let age = Date().timeIntervalSince(checkedAt)
+        return self.sender.caseInsensitiveCompare(sender) == .orderedSame &&
         self.recipient.caseInsensitiveCompare(recipient) == .orderedSame &&
-        self.amount == amount && self.asset == asset && Date().timeIntervalSince(checkedAt) < 45
+        self.amount == amount && self.asset == asset && age >= 0 && age < 45
     }
 }
 
@@ -158,7 +195,7 @@ struct WalletEVMPreflightClient {
     private let session: URLSession
     init(endpoints: [URL] = [URL(string: "https://ethereum-rpc.publicnode.com")!, URL(string: "https://cloudflare-eth.com")!],
          session: URLSession = .shared) {
-        self.endpoints = endpoints.filter { $0.scheme == "https" }
+        self.endpoints = endpoints.filter { $0.scheme == "https" && $0.host != nil && $0.user == nil && $0.password == nil }
         self.session = session
     }
 
@@ -174,6 +211,7 @@ struct WalletEVMPreflightClient {
                 if case WalletEVMPreflightError.wrongChain = error { throw error }
                 if case WalletEVMPreflightError.insufficientETH = error { throw error }
                 if case WalletEVMPreflightError.insufficientTokens = error { throw error }
+                if case WalletEVMPreflightError.simulationFailed = error { throw error }
                 last = error
             }
         }
@@ -181,10 +219,11 @@ struct WalletEVMPreflightClient {
     }
 
     private func quote(url: URL, sender: String, recipient: String, amount: String, units: String, asset: WalletEVMAsset) async throws -> WalletEVMQuote {
+        let startedAt = Date()
         let chain = try await quantity(url, "eth_chainId", [], max: 1_000_000_000)
         guard chain == 1 else { throw WalletEVMPreflightError.wrongChain }
         let nonce = try await quantity(url, "eth_getTransactionCount", [sender, "pending"], max: 10_000_000_000)
-        let balance = try WalletEVMUnits.decimalFromHex(try await rpc(url, "eth_getBalance", [sender, "pending"]))
+        let balance = try await rpc(url, "eth_getBalance", [sender, "pending"])
         let block = try await rpcObject(url, "eth_getBlockByNumber", ["latest", false])
         guard let baseFeeHex = block["baseFeePerGas"] as? String else { throw WalletEVMPreflightError.estimate }
         let baseFee = try WalletEVMUnits.integer(baseFeeHex, upperBound: 1_000_000_000_000)
@@ -192,7 +231,7 @@ struct WalletEVMPreflightClient {
         guard baseFee <= 1_000_000_000_000, priority <= 1_000_000_000_000,
               baseFee <= (UInt64.max - priority) / 2 else { throw WalletEVMPreflightError.feeTooLarge }
         let maxFeePerGas = baseFee * 2 + priority
-        guard maxFeePerGas > 0 else { throw WalletEVMPreflightError.estimate }
+        guard maxFeePerGas > 0, priority > 0 else { throw WalletEVMPreflightError.estimate }
 
         var call: [String: Any] = ["from": sender]
         if let contract = asset.contract {
@@ -200,8 +239,8 @@ struct WalletEVMPreflightClient {
             call["value"] = "0x0"
             call["data"] = try WalletEVMUnits.transferData(to: recipient, baseUnits: units)
             let balanceData = "0x70a08231" + String(repeating: "0", count: 24) + String(sender.dropFirst(2)).lowercased()
-            let tokenWei = try WalletEVMUnits.decimalFromHex(try await rpc(url, "eth_call", [["to": contract, "data": balanceData], "pending"]))
-            guard tokenWei >= (try WalletEVMUnits.decimal(units)) else { throw WalletEVMPreflightError.insufficientTokens }
+            let tokenWei = try await rpc(url, "eth_call", [["to": contract, "data": balanceData], "pending"])
+            guard try WalletEVMUnits.hasBalance(tokenWei, required: units, abiWord: true) else { throw WalletEVMPreflightError.insufficientTokens }
         } else {
             call["to"] = recipient
             call["value"] = try WalletEVMUnits.hexFromDecimal(units)
@@ -210,14 +249,24 @@ struct WalletEVMPreflightClient {
         guard estimate >= 21_000, estimate <= 10_000_000 else { throw WalletEVMPreflightError.estimate }
         // 20% gas headroom; cap to protect against unexpectedly large estimates.
         let gasLimit = estimate + (estimate / 5)
+        guard gasLimit <= 10_000_000 else { throw WalletEVMPreflightError.estimate }
         let maxFeeWei = Decimal(Int(gasLimit)) * Decimal(Int(maxFeePerGas))
         guard maxFeeWei > 0 else { throw WalletEVMPreflightError.feeTooLarge }
         let ethAmount = asset == .eth ? try WalletEVMUnits.decimal(units) : Decimal.zero
-        guard balance >= ethAmount + maxFeeWei else { throw WalletEVMPreflightError.insufficientETH }
+        let requiredWei = NSDecimalNumber(decimal: ethAmount + maxFeeWei).stringValue
+        guard try WalletEVMUnits.hasBalance(balance, required: requiredWei, abiWord: false) else { throw WalletEVMPreflightError.insufficientETH }
+        // Read-only simulation with the same sender, value, calldata and approved fee ceiling.
+        call["gas"] = "0x" + String(gasLimit, radix: 16)
+        call["maxFeePerGas"] = "0x" + String(maxFeePerGas, radix: 16)
+        call["maxPriorityFeePerGas"] = "0x" + String(priority, radix: 16)
+        try WalletEVMUnits.validateSimulation(try await rpc(url, "eth_call", [call, "pending"]), asset: asset)
+        // A slow series of requests must not create a newly fresh nonce/fee quote.
+        let elapsed = Date().timeIntervalSince(startedAt)
+        guard elapsed >= 0, elapsed < 45 else { throw WalletEVMPreflightError.estimate }
         return WalletEVMQuote(asset: asset, sender: sender, recipient: recipient, amount: amount,
                               nonce: nonce, gasLimit: gasLimit, maxFeePerGas: maxFeePerGas,
                               priorityFeePerGas: priority, maxFeeETH: WalletEVMUnits.ethString(maxFeeWei),
-                              provider: url.host ?? "RPC", checkedAt: Date())
+                              provider: url.host ?? "RPC", checkedAt: startedAt)
     }
 
     private func quantity(_ url: URL, _ method: String, _ params: [Any], max: UInt64) async throws -> UInt64 {
@@ -243,13 +292,59 @@ struct WalletEVMPreflightClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.httpBody = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 7, "method": method, "params": params])
-        let (bytes, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), bytes.count <= 65_536,
+        let (bytes, response) = try await session.data(for: request, delegate: WalletEVMNoRedirect())
+        guard let http = response as? HTTPURLResponse, WalletEVMNoRedirect.matches(http.url, url), (200...299).contains(http.statusCode), bytes.count <= 65_536,
               let json = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
               json["jsonrpc"] as? String == "2.0", (json["id"] as? Int) == 7,
               json["error"] == nil, let result = json["result"], !(result is NSNull) else {
             throw WalletEVMPreflightError.rpc("Неверный ответ \(method)")
         }
         return result
+    }
+}
+
+/// Never forward financial RPC bodies to a redirected host (including HTTP 307/308).
+final class WalletEVMNoRedirect: NSObject, URLSessionTaskDelegate, Sendable {
+    static func matches(_ actual: URL?, _ expected: URL) -> Bool {
+        guard let actual, actual.scheme?.lowercased() == "https", expected.scheme?.lowercased() == "https",
+              actual.host?.lowercased() == expected.host?.lowercased(),
+              actual.user == nil, actual.password == nil, expected.user == nil, expected.password == nil,
+              (actual.port ?? 443) == (expected.port ?? 443), actual.query == expected.query,
+              actual.fragment == nil, expected.fragment == nil else { return false }
+        return (actual.path.isEmpty ? "/" : actual.path) == (expected.path.isEmpty ? "/" : expected.path)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}
+
+
+/// Conservative RPC finality check, not a light-client consensus proof.
+/// Read the canonical block again after the finalized checkpoint to avoid a stale pre-finality observation.
+enum WalletEVMFinality {
+    static func check(mined: UInt64, head: UInt64, blockHash: String,
+                      block: (String) async throws -> Any?) async throws -> Bool {
+        guard mined > 0, head >= mined else { return false }
+        do {
+            try Task.checkCancellation()
+            guard let checkpoint = try await block("finalized") as? [String: Any],
+                  let hex = checkpoint["number"] as? String,
+                  let height = try? WalletEVMUnits.integer(hex, upperBound: head), height >= mined,
+                  let hash = checkpoint["hash"] as? String,
+                  hash.range(of: "^0x[0-9a-fA-F]{64}$", options: .regularExpression) != nil,
+                  height != mined || hash.caseInsensitiveCompare(blockHash) == .orderedSame else { return false }
+            guard let canonical = try await block("0x" + String(mined, radix: 16)) as? [String: Any],
+                  let number = canonical["number"] as? String,
+                  (try? WalletEVMUnits.integer(number, upperBound: head)) == mined,
+                  let canonicalHash = canonical["hash"] as? String,
+                  canonicalHash.caseInsensitiveCompare(blockHash) == .orderedSame else { return false }
+            try Task.checkCancellation()
+            return true
+        } catch is CancellationError { throw CancellationError() }
+        catch { try Task.checkCancellation(); return false }
     }
 }

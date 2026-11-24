@@ -35,22 +35,24 @@ struct CheckOutgoing {
         let tokenData = "0x" + String(repeating: "0", count: 58) + "16e360"
         let logs: [[String: Any]] = intent.asset == .eth ? [] : [
             ["address": logContract ?? intent.transactionTarget, "topics": [topic, fromTopic, toTopic],
-             "data": tokenData, "transactionHash": hash, "removed": false]
+             "data": tokenData, "transactionHash": hash, "removed": false, "blockHash": blockHash, "blockNumber": "0x64"]
         ]
         return ["transactionHash": hash, "from": sender, "to": intent.transactionTarget,
                 "status": status, "blockNumber": "0x64", "blockHash": blockHash, "logs": logs]
     }
     static func mock(_ intent: WalletEVMUnsignedIntent, txData: [String: Any]? = nil,
                      receiptData: [String: Any]? = nil, chain: String = "0x1", head: String = "0x70",
-                     block: String = blockHash, noTx: Bool = false,
+                     block: String = blockHash, noTx: Bool = false, finalized: String? = "0x64",
                      mutator: ((URL, String, Any?) -> Any?)? = nil) -> WalletEVMOutgoingTracker.Transport {
-        { url, method, _ in
+        { url, method, params in
             let result: Any?
             switch method {
             case "eth_chainId": result = chain
             case "eth_getTransactionByHash": result = noTx ? nil : (txData ?? tx(intent))
             case "eth_getTransactionReceipt": result = receiptData ?? receipt(intent)
-            case "eth_getBlockByNumber": result = ["hash": block, "timestamp": "0x6553f100"]
+            case "eth_getBlockByNumber":
+                if params.first as? String == "finalized" { result = finalized.map { ["hash": block, "number": $0] } }
+                else { result = ["hash": block, "number": "0x64", "timestamp": "0x6553f100"] }
             case "eth_blockNumber": result = head
             default: result = nil
             }
@@ -98,6 +100,15 @@ struct CheckOutgoing {
         await expect(.inconsistentProviders) { try await tracker(mock(usdt, receiptData: receipt(usdt, logRecipient: sender))).reconcile(txHash: hash, intent: usdt) }
         await expect(.inconsistentProviders) { try await tracker(mock(usdt, receiptData: receipt(usdt, logContract: WalletEVMAsset.usdc.contract!))).reconcile(txHash: hash, intent: usdt) }
         await expect(.inconsistentProviders) { try await tracker(mock(usdt, block: "0x" + String(repeating: "f", count: 64))).reconcile(txHash: hash, intent: usdt) }
+        await expect(.inconsistentProviders) {
+            var invalid = tx(usdt); invalid["value"] = "0x"
+            return try await tracker(mock(usdt, txData: invalid)).reconcile(txHash: hash, intent: usdt)
+        }
+        await expect(.inconsistentProviders) {
+            var invalid = tx(usdt); invalid["blockNumber"] = "0x0"
+            var invalidReceipt = receipt(usdt); invalidReceipt["blockNumber"] = "0x0"
+            return try await tracker(mock(usdt, txData: invalid, receiptData: invalidReceipt, head: "0xffffffffffffffff")).reconcile(txHash: hash, intent: usdt)
+        }
         let revert = try await tracker(mock(usdt, receiptData: receipt(usdt, status: "0x0"))).reconcile(txHash: hash, intent: usdt)
         if case .reverted(let e) = revert { assert(!e.succeeded, "revert") }
         else { fatalError("revert must not appear as success") }
@@ -116,7 +127,7 @@ struct CheckOutgoing {
             try await tracker(mock(usdt)).reconcile(txHash: hash, intent: usdt, notBefore: 1700001000)
         }
         let missingTimestamp = mock(usdt, mutator: { _, method, result in
-            method == "eth_getBlockByNumber" ? ["hash": blockHash] : result
+            method == "eth_getBlockByNumber" ? ["hash": blockHash, "number": "0x64"] : result
         })
         await expect(.inconsistentProviders) {
             try await tracker(missingTimestamp).reconcile(txHash: hash, intent: usdt, notBefore: 1700000000)
@@ -124,6 +135,22 @@ struct CheckOutgoing {
         await expect(.invalidIntent) {
             try await tracker(mock(usdt)).reconcile(txHash: hash, intent: usdt, notBefore: Int.max)
         }
-        print("WalletEVMOutgoingTracker: 21 core scenarios passed")
+        for checkpoint in [nil, "0x63", "0x71", "0x064"] as [String?] {
+            let result = try await tracker(mock(usdt, finalized: checkpoint)).reconcile(txHash: hash, intent: usdt)
+            if case .observed(let e, providers: 2) = result { assert(!e.finalized, "unfinalized checkpoint") }
+            else { fatalError("invalid checkpoint accepted") }
+        }
+        var foreign = receipt(usdt)
+        var logs = foreign["logs"] as! [[String: Any]]
+        logs[0].removeValue(forKey: "transactionHash"); foreign["logs"] = logs
+        await expect(.inconsistentProviders) { try await tracker(mock(usdt, receiptData: foreign)).reconcile(txHash: hash, intent: usdt) }
+        logs[0]["transactionHash"] = hash; logs[0]["blockHash"] = "0x" + String(repeating: "d", count: 64)
+        foreign["logs"] = logs
+        await expect(.inconsistentProviders) { try await tracker(mock(usdt, receiptData: foreign)).reconcile(txHash: hash, intent: usdt) }
+        let lagging = try await tracker(mock(usdt, mutator: { url, method, result in
+            url == urls[1] && method == "eth_getTransactionReceipt" ? NSNull() : result
+        }), urls: urls + [URL(string: "https://rpc-c.example")!]).reconcile(txHash: hash, intent: usdt)
+        if case .observed(_, providers: 2) = lagging {} else { fatalError("contradictory receipt accepted") }
+        print("WalletEVMOutgoingTracker: 28 core scenarios passed")
     }
 }

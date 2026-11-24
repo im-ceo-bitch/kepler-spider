@@ -1,6 +1,6 @@
 import Foundation
 
-/// Conservative address *syntax* validation for currently supported receiving networks.
+/// Conservative address syntax and checksum validation for currently supported receiving networks.
 /// A syntactically valid address NEVER establishes recipient identity or ownership.
 /// No external network or secret material is used in this code.
 enum WalletRecipientValidation: Equatable {
@@ -9,15 +9,23 @@ enum WalletRecipientValidation: Equatable {
 }
 
 enum WalletAddressValidator {
-    static func check(_ raw: String, for chain: SpyderChain) -> WalletRecipientValidation {
+    static func check(_ raw: String, for chain: SpyderChain, legacyStorage: Bool = false) -> WalletRecipientValidation {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         switch chain {
         case .ethereum:
             guard value.range(of: "^0x[0-9a-fA-F]{40}$", options: .regularExpression) != nil else {
                 return .invalid("Адрес Ethereum должен содержать 0x и ровно 40 шестнадцатеричных символов.")
             }
-            // EIP-55 checksums require Keccak-256. This syntax check is deliberately
-            // not represented as a cryptographic checksum verification.
+            // EIP-55 checksums require Keccak-256, not SHA3-256.
+            // Existing saved records remain readable; every new use is checked normally.
+            if !legacyStorage {
+                guard value != "0x" + String(repeating: "0", count: 40) else {
+                    return .invalid("Нулевой Ethereum-адрес недопустим для перевода.")
+                }
+                guard validEthereumChecksum(value) else {
+                    return .invalid("Контрольная сумма Ethereum (EIP-55) не совпадает. Скопируйте адрес заново.")
+                }
+            }
             return .valid
         case .solana:
             guard let decoded = decodeBase58(value), decoded.count == 32 else {
@@ -29,6 +37,30 @@ enum WalletAddressValidator {
                 return .invalid("Bitcoin mainnet: требуется корректный bc1 адрес с Bech32/Bech32m контрольной суммой.")
             }
             return .valid
+        }
+    }
+
+    // Lowercase/uppercase-only hex addresses remain compatible with EIP-55 conventions.
+    // Mixed-case addresses must match the exact checksum; never repair them silently.
+    private static func validEthereumChecksum(_ value: String) -> Bool {
+        let body = String(value.dropFirst(2))
+        let lower = body.lowercased()
+        if body == lower || body == body.uppercased() { return true }
+        let hash = Array(WalletEVMKeccak256.hash(Data(lower.utf8)))
+        let original = Array(body.utf8)
+        for (i, char) in lower.utf8.enumerated() where (97...102).contains(char) {
+            let nibble = i.isMultiple(of: 2) ? hash[i / 2] >> 4 : hash[i / 2] & 15
+            let expected = nibble >= 8 ? char - 32 : char
+            guard original[i] == expected else { return false }
+        }
+        return true
+    }
+
+    /// Solana Base58 is case-sensitive; hex and valid SegWit strings are not.
+    static func sameAddress(_ lhs: String, _ rhs: String, for chain: SpyderChain) -> Bool {
+        switch chain {
+        case .solana: return lhs == rhs
+        case .ethereum, .bitcoin: return lhs.caseInsensitiveCompare(rhs) == .orderedSame
         }
     }
 

@@ -67,6 +67,7 @@ struct ConsoleApp: App {
                 guard scenePhase == .active, walletAccess.unlocked else { return }
                 while !Task.isCancelled {
                     await transfers.refresh(walletID: walletAccess.activeWalletID)
+                    guard !Task.isCancelled, scenePhase == .active, walletAccess.unlocked else { return }
                     await transfers.announce(chat: spyderChat)
                     do { try await Task.sleep(for: .seconds(15)) } catch { return }
                 }
@@ -97,6 +98,7 @@ struct ConsoleApp: App {
                 }
             }
             .onChange(of: walletAccess.activeWalletID) { _, id in
+                transfers.cancelAuthorization()
                 addressBook.selectWallet(id)
             }
             .onChange(of: scenePhase) { _, phase in

@@ -11,7 +11,8 @@ final class WalletUSDTTransferStore: ObservableObject {
     private var context: LAContext?
     private var generation = UUID()
     private var refreshing = false
-    private var publication: WalletUSDTPublication { WalletUSDTPublication(journal: journal) }
+    private var refreshCursor: [String: Int] = [:]
+    private lazy var publication = WalletUSDTPublication(journal: journal)
     private var announcing = false
 
     init() {
@@ -27,7 +28,7 @@ final class WalletUSDTTransferStore: ObservableObject {
 
     func send(intent: WalletEVMUnsignedIntent, quote: WalletEVMQuote, walletID: String,
               recipient: SpyderChatRecipient, server: String, authorize: @escaping () -> Bool) async -> WalletUSDTTransferRecord? {
-        guard !busy else { return nil }
+        guard !busy, !refreshing else { return nil }
         busy = true; error = nil
         let action = UUID(); generation = action
         defer { busy = false; context = nil }
@@ -40,9 +41,15 @@ final class WalletUSDTTransferStore: ObservableObject {
                 throw WalletUSDTTransferError.unprovenAddress
             }
             try intent.ensureFresh()
+            try await journal.reopenAfterUnlock()
+            try await journal.recoverInterruptedPreparation()
             let existing = try await journal.all()
             guard !existing.contains(where: { !$0.final && $0.intent.sender.caseInsensitiveCompare(intent.sender) == .orderedSame }) else {
                 throw WalletUSDTTransferError.duplicate
+            }
+            guard !existing.contains(where: { $0.ownerID == recipient.ownerID && $0.peerID == recipient.peerID &&
+                $0.server == server && $0.requestID == recipient.payment.requestID && !$0.permitsRetry }) else {
+                throw WalletUSDTTransferError.requestAlreadyPaid
             }
             // Revalidate balances and the nonce immediately before requesting user presence.
             let latest = try await WalletEVMPreflightClient(endpoints: [endpoint]).quote(sender: intent.sender,
@@ -93,26 +100,39 @@ final class WalletUSDTTransferStore: ObservableObject {
     func refresh(walletID: String) async {
         guard !refreshing, !busy else { return }
         refreshing = true; defer { refreshing = false }
-        do { try await journal.reopenAfterUnlock() }
+        do { try await journal.reopenAfterUnlock(); try await journal.recoverInterruptedPreparation() }
         catch { self.error = error.localizedDescription; return }
         await reload()
-        for record in records.filter({ $0.walletID == walletID && !$0.final }).suffix(20) {
+        let pending = records.filter { $0.walletID == walletID && !$0.final && $0.stage != .prepared }
+            .sorted { ($0.submittedAt, $0.id.uuidString) < ($1.submittedAt, $1.id.uuidString) }
+        guard !pending.isEmpty else { refreshCursor.removeValue(forKey: walletID); return }
+        let start = (refreshCursor[walletID] ?? 0) % pending.count
+        // Rotate even when old attempts remain unknown; a permanently missing tx must not starve others.
+        let batch = min(5, pending.count)
+        for offset in 0..<batch {
+            guard !Task.isCancelled else { break }
+            let record = pending[(start + offset) % pending.count]
+            refreshCursor[walletID] = (start + offset + 1) % pending.count
             do {
-                let result = try await WalletEVMOutgoingTracker().reconcile(txHash: record.txHash, intent: record.intent, notBefore: record.binding?.addressIssuedAt)
+                let result = try await WalletEVMOutgoingTracker().reconcile(txHash: record.txHash, intent: record.intent, notBefore: max(record.submittedAt, record.binding?.addressIssuedAt ?? 0))
                 switch result {
-                case .confirmed: try await journal.update(record.id, stage: .confirmed)
-                case .reverted: try await journal.update(record.id, stage: .reverted)
-                default: break // notSeen/timeout is never permission to repeat a financial transfer.
+                case .confirmed: try await journal.update(record.id, stage: .confirmed, finalized: true)
+                case .reverted: try await journal.update(record.id, stage: .reverted, finalized: true)
+                case .pending, .observed:
+                    if record.stage != .acknowledged && record.stage != .reverted { try await journal.update(record.id, stage: .acknowledged) }
+                case .notSeen: break // Never permission to repeat a financial transfer.
                 }
-            } catch { /* Preserve the uncertain attempt, including when a provider is unavailable. */ }
+            } catch is CancellationError { break }
+            catch { /* Preserve the uncertain attempt, including when a provider is unavailable. */ }
         }
         await reload()
     }
     func announce(chat: SpyderChatStore) async {
-        guard !announcing else { return }
+        guard !announcing, !Task.isCancelled else { return }
         announcing = true; defer { announcing = false }
         await reload()
-        for record in records where record.stage != .reserved && !record.announced && record.ownerID == chat.activePersonaID && record.server == chat.serverAddress {
+        for record in records where record.canAnnounce && !record.announced && record.ownerID == chat.activePersonaID && record.server == chat.serverAddress {
+            guard !Task.isCancelled, record.ownerID == chat.activePersonaID, record.server == chat.serverAddress else { break }
             guard let payload = SpyderTransferEnvelope(requestID: record.requestID, txHash: record.txHash,
                 intent: record.intent, submittedAt: record.submittedAt, binding: record.binding, authorizationSignature: record.authorizationSignature).payload else { continue }
             // Stable persisted client ID prevents a duplicate chat card after timeout/restart.

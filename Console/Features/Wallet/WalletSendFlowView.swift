@@ -19,6 +19,7 @@ struct WalletSendFlowView: View {
     @State private var quoteLoading = false
     @State private var quoteError: String?
     @State private var quoteGeneration = UUID()
+    @State private var quoteTask: Task<Void, Never>?
     @State private var recipient = ""
     @State private var amount = ""
     @State private var reviewing = false
@@ -77,16 +78,20 @@ struct WalletSendFlowView: View {
     }
     private var recipientValid: Bool { WalletAddressValidator.check(normalizedRecipient, for: selected) == .valid }
     private var validToReview: Bool {
-        guard recipientContextValid, recipientValid, normalizedRecipient.caseInsensitiveCompare(chains.address(for: selected) ?? "") != .orderedSame,
+        guard access.unlocked, recipientContextValid, recipientValid,
+              let sender = chains.address(for: selected),
+              WalletAddressValidator.check(sender, for: selected) == .valid,
+              !WalletAddressValidator.sameAddress(normalizedRecipient, sender, for: selected),
               let entered = parsedAmount else { return false }
-        if selected == .ethereum, evmAsset != .eth {
-            return assets.stablecoins[evmAsset.rawValue].map { entered <= $0 } ?? false
-        }
+        // Ethereum preflight uses fresh, exact RPC balances. Cached display balances are not authority.
+        if selected == .ethereum { return (try? WalletEVMUnits.baseUnits(amount, decimals: evmAsset.decimals)) != nil }
         return assets.balances[selected].map { entered <= $0 } ?? false
     }
 
     private func clearQuote() {
         if transfers.busy { transfers.cancelAuthorization() }
+        confirmUSDT = false
+        quoteTask?.cancel(); quoteTask = nil
         quoteGeneration = UUID()
         evmQuote = nil
         quoteLoading = false
@@ -96,7 +101,7 @@ struct WalletSendFlowView: View {
     }
 
     private func prepareReview() {
-        guard validToReview, !sendAttempted else { return }
+        guard pageVisible, validToReview, !sendAttempted, !quoteLoading else { return }
         guard selected == .ethereum else {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { reviewing = true }
             return
@@ -113,19 +118,19 @@ struct WalletSendFlowView: View {
         let entered = amount.replacingOccurrences(of: ",", with: ".")
         let asset = evmAsset
         let walletID = access.activeWalletID
-        Task {
-            defer { if quoteGeneration == currentGeneration { quoteLoading = false } }
+        quoteTask = Task {
+            defer { if quoteGeneration == currentGeneration { quoteLoading = false; quoteTask = nil } }
             do {
                 let prepared = try await WalletEVMPreflightClient().quote(
                     sender: sender, recipient: to, amount: entered, asset: asset)
-                guard quoteGeneration == currentGeneration, recipientContextValid, access.activeWalletID == walletID,
+                guard !Task.isCancelled, pageVisible, access.unlocked, quoteGeneration == currentGeneration, recipientContextValid, access.activeWalletID == walletID,
                       chains.address(for: .ethereum)?.caseInsensitiveCompare(sender) == .orderedSame else { return }
                 evmQuote = prepared
                 approvedWalletID = walletID
                 reviewing = true
                 UISelectionFeedbackGenerator().selectionChanged()
             } catch {
-                guard quoteGeneration == currentGeneration else { return }
+                guard !Task.isCancelled, quoteGeneration == currentGeneration else { return }
                 quoteError = error.localizedDescription
                 evmQuote = nil
                 reviewing = false
@@ -287,7 +292,7 @@ struct WalletSendFlowView: View {
                                     .font(.footnote)
                                     .foregroundStyle(canSendUSDT ? Color.orange : WalletTheme.secondary)
                                 if selected == .ethereum {
-                                    Text("Адрес проверен по формату, но EIP-55 checksum пока не проверяется. Перед отправкой сверяйте его с получателем.")
+                                    Text("Адрес проверен по формату и EIP-55 для смешанного регистра. Перед отправкой всё равно сверяйте его с получателем.")
                                         .font(.caption).foregroundStyle(.orange)
                                 }
                             }
@@ -359,7 +364,7 @@ struct WalletSendFlowView: View {
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Закрыть") { dismiss() }.disabled(transfers.busy || submissionPending) } }
         }
         .interactiveDismissDisabled(transfers.busy || submissionPending)
-        .onDisappear { pageVisible = false; transfers.cancelAuthorization() }
+        .onDisappear { pageVisible = false; quoteTask?.cancel(); transfers.cancelAuthorization() }
         .onAppear {
             pageVisible = true
             if let preselected { selected = preselected }
@@ -369,11 +374,21 @@ struct WalletSendFlowView: View {
             }
         }
         .task {
-            guard chatRecipient != nil else { return }
             while !Task.isCancelled {
-                if !recipientContextValid && (reviewing || quoteLoading) { clearQuote() }
+                if !sendAttempted {
+                    if !recipientContextValid && (reviewing || quoteLoading) { clearQuote() }
+                    if let quote = evmQuote, !quote.matches(sender: chains.address(for: .ethereum) ?? "",
+                        recipient: normalizedRecipient, amount: amount.replacingOccurrences(of: ",", with: "."), asset: evmAsset) {
+                        clearQuote()
+                        quoteError = String(localized: "Расчёт комиссии устарел. Проверьте реквизиты заново.")
+                        confirmUSDT = false
+                    }
+                }
                 do { try await Task.sleep(for: .seconds(1)) } catch { break }
             }
+        }
+        .onChange(of: access.unlocked) { _, unlocked in
+            if !unlocked && !sendAttempted { clearQuote() }
         }
         .onChange(of: access.activeWalletID) { _, _ in clearQuote() }
         .onChange(of: chat.activePersonaID) { _, _ in if chatRecipient != nil { clearQuote() } }

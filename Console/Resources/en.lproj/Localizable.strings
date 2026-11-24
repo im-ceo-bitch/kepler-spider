@@ -571,3 +571,39 @@
 "Сначала создай личность и подключись к серверу Spyder." = "Create an identity and connect to the Spyder server first.";
 "Личность или настройки приглашения изменились. Повтори поиск." = "Your identity or invitation settings changed. Search again.";
 "Не удалось создать чат. Проверь интернет и повтори подключение." = "Couldn’t create a chat. Check your internet connection and try again.";
+
+/* Production transaction lifecycle */
+"Адрес проверен по формату и EIP-55 для смешанного регистра. Перед отправкой всё равно сверяйте его с получателем." = "Address format and mixed-case EIP-55 checksum checked. Always verify the address with the recipient before sending.";
+"Расчёт комиссии устарел. Проверьте реквизиты заново." = "The fee quote has expired. Review the transfer details again.";
+"Перевод финализирован в Ethereum" = "Transfer finalized on Ethereum";
+"В блоке · %@ подтверждений · %@ RPC · ожидание финализации" = "In block · %@ confirmations · %@ RPCs · awaiting finality";
+"Обнаружено: %@ %@ · %lld подтверждений · %lld RPC. Финализация двумя RPC пока не подтверждена." = "Detected: %@ %@ · %lld confirmations · %lld RPCs. Two RPCs have not yet confirmed finality.";
+"Финализация подтверждена двумя RPC: %@ %@ · минимум %lld подтверждений." = "Finality confirmed by two RPCs: %@ %@ · at least %lld confirmations.";
+"Проверка сверяет финализированные блоки RPC; это не самостоятельная проверка консенсуса Ethereum." = "This check compares finalized RPC blocks; it is not independent verification of Ethereum consensus.";
+
+// Network portfolio and route preview
+"Networks & Routes" = "Networks & Routes";
+"Network balances · Swap & Bridge preview" = "Network balances · Swap & Bridge preview";
+"Verify wallet to view networks" = "Verify wallet to view networks";
+"EVM network balances are independent. Ethereum is already included in your main portfolio." = "EVM network balances are independent. Ethereum is already included in your main portfolio.";
+"EVM native assets · USD estimate" = "EVM native assets · USD estimate";
+"Partial or stale valuation" = "Partial or stale valuation";
+"All six native balances valued" = "All six native balances valued";
+"Chain ID" = "Chain ID";
+"Unavailable" = "Unavailable";
+"Refresh balances" = "Refresh balances";
+"Network balances" = "Network balances";
+"Preview only. LI.FI receives your public address and requested amount. No transaction is signed or sent." = "Preview only. LI.FI receives your public address and requested amount. No transaction is signed or sent.";
+"From" = "From";
+"To" = "To";
+"Amount (decimal point)" = "Amount (decimal point)";
+"Get swap quote" = "Get swap quote";
+"Get bridge quote" = "Get bridge quote";
+"Quote unavailable or invalid. Check the amount and try again." = "Quote unavailable or invalid. Check the amount and try again.";
+"Estimated output" = "Estimated output";
+"Minimum" = "Minimum";
+"Route" = "Route";
+"Slippage tolerance: 0.5% · Fees not independently verified" = "Slippage tolerance: 0.5% · Fees not independently verified";
+"Quote expired. Request a new quote." = "Quote expired. Request a new quote.";
+"Swap & Bridge · Preview" = "Swap & Bridge · Preview";
+"Done" = "Done";

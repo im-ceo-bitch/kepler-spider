@@ -9,7 +9,8 @@ struct WalletEthereumRPC: Sendable {
     let transport: Transport
     init(transport: @escaping Transport = WalletEthereumRPC.fetch) { self.transport = transport }
     func chainAndNonce(endpoint: URL, sender: String) async throws -> UInt64 {
-        guard let chain = try await transport(endpoint, "eth_chainId", []),
+        guard Self.endpoints.contains(endpoint), WalletEVMUnits.isAddress(sender), !Task.isCancelled,
+              let chain = try await transport(endpoint, "eth_chainId", []),
               try WalletEVMUnits.integer(chain, upperBound: 1) == 1,
               let nonce = try await transport(endpoint, "eth_getTransactionCount", [sender, "pending"]) else {
             throw WalletUSDTTransferError.invalid
@@ -18,6 +19,8 @@ struct WalletEthereumRPC: Sendable {
     }
     /// Exactly one publication attempt. Call only after durable reservation.
     func publish(raw: Data, hash: String, endpoint: URL) async -> Bool {
+        guard Self.endpoints.contains(endpoint), !Task.isCancelled, raw.first == 2, raw.count <= 2048,
+              WalletEVMKeccak256.hex(raw) == hash else { return false }
         do {
             let reply = try await transport(endpoint, "eth_sendRawTransaction", ["0x" + raw.map { String(format: "%02x", $0) }.joined()])
             return reply?.caseInsensitiveCompare(hash) == .orderedSame
@@ -30,8 +33,8 @@ struct WalletEthereumRPC: Sendable {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["jsonrpc":"2.0", "id":83, "method":method, "params":params])
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), data.count <= 131072,
+        let (data, response) = try await URLSession.shared.data(for: request, delegate: WalletEVMNoRedirect())
+        guard let http = response as? HTTPURLResponse, WalletEVMNoRedirect.matches(http.url, endpoint), (200...299).contains(http.statusCode), data.count <= 131072,
               let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               result["jsonrpc"] as? String == "2.0", result["id"] as? Int == 83, result["error"] == nil,
               let value = result["result"] else { throw WalletUSDTTransferError.unavailable }

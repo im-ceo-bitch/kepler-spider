@@ -8,6 +8,8 @@ final class RPCMock: URLProtocol {
     static var lowETH = false
     static var lowToken = false
     static var badRPCID = false
+    static var badSimulation = false
+    static var malformedBalance = false
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -33,8 +35,18 @@ final class RPCMock: URLProtocol {
         case "eth_getBalance": result = Self.lowETH ? "0x1000" : "0x3635c9adc5dea00000"
         case "eth_getBlockByNumber": result = ["baseFeePerGas": "0x3b9aca00"]
         case "eth_maxPriorityFeePerGas": result = "0x3b9aca00"
-        case "eth_call": result = Self.lowToken ? "0x" + String(repeating: "0", count: 64) :
-            "0x" + String(repeating: "0", count: 58) + "f42400"
+        case "eth_call":
+            let call = (payload["params"] as? [Any])?.first as? [String: Any]
+            if (call?["data"] as? String)?.hasPrefix("0x70a08231") == true {
+                result = Self.malformedBalance ? "0x1" : (Self.lowToken ? "0x" + String(repeating: "0", count: 64) :
+                    "0x" + String(repeating: "0", count: 58) + "f42400")
+            } else {
+                guard call?["from"] != nil, call?["gas"] != nil, call?["maxFeePerGas"] != nil else {
+                    client?.urlProtocol(self, didFailWithError: WalletEVMPreflightError.rpc("missing simulation fields")); return
+                }
+                result = Self.badSimulation ? "0x" + String(repeating: "0", count: 64) :
+                    (call?["data"] == nil ? "0x" : "0x" + String(repeating: "0", count: 63) + "1")
+            }
         case "eth_estimateGas": result = "0x5208"
         default: client?.urlProtocol(self, didFailWithError: WalletEVMPreflightError.rpc("unknown method")); return
         }
@@ -74,9 +86,17 @@ struct VerifyRPC {
         do { _ = try await rpc.quote(sender: sender, recipient: recipient, amount: "1", asset: .usdc); fatalError("insufficient tokens accepted") }
         catch WalletEVMPreflightError.insufficientTokens { }
         RPCMock.lowToken = false
+        RPCMock.badSimulation = true
+        do { _ = try await rpc.quote(sender: sender, recipient: recipient, amount: "1", asset: .usdt); fatalError("false simulation accepted") }
+        catch WalletEVMPreflightError.simulationFailed { }
+        RPCMock.badSimulation = false
+        RPCMock.malformedBalance = true
+        do { _ = try await rpc.quote(sender: sender, recipient: recipient, amount: "1", asset: .usdt); fatalError("short ABI accepted") }
+        catch WalletEVMPreflightError.estimate { }
+        RPCMock.malformedBalance = false
         RPCMock.badRPCID = true
         do { _ = try await rpc.quote(sender: sender, recipient: recipient, amount: "1", asset: .eth); fatalError("bad RPC id accepted") }
         catch WalletEVMPreflightError.rpc { }
-        print("PASS WalletEVM RPC: 6 scenarios")
+        print("PASS WalletEVM RPC: 8 scenarios")
     }
 }

@@ -11,6 +11,24 @@ struct CheckBroadcastStaging {
     static func check(_ condition: @autoclosure () -> Bool, _ reason: String) {
         guard condition() else { fatalError(reason) }
     }
+    actor Barrier {
+        private var waiter: CheckedContinuation<Void, Never>?
+        private var arrived = 0
+        private var sends = 0
+        func chain() async -> String {
+            arrived += 1
+            if arrived == 1 { await withCheckedContinuation { waiter = $0 } }
+            else { waiter?.resume(); waiter = nil }
+            return "0x1"
+        }
+        func send() -> String { sends += 1; return CheckBroadcastStaging.hash }
+        func count() -> Int { sends }
+    }
+    static func attempt(_ relay: WalletEVMBroadcastStaging) async -> Bool {
+        do { _ = try await relay.sendOnce(signedRawHex: raw, expectedLocalHash: hash); return true }
+        catch WalletEVMBroadcastError.alreadyAttempted { return false }
+        catch { fatalError("unexpected failure: \(error)") }
+    }
     static func main() async throws {
         var transmissions = 0
         let good = try WalletEVMBroadcastStaging(endpoint: url) { _, method, _ in
@@ -46,6 +64,16 @@ struct CheckBroadcastStaging {
         if case .unknownResult = mismatchResult {} else { fatalError("mismatched RPC hash must not acknowledge") }
         do { _ = try await mismatch.sendOnce(signedRawHex: "0x03", expectedLocalHash: hash); fatalError("invalid data") }
         catch WalletEVMBroadcastError.invalidPayload {}
-        print("WalletEVMBroadcastStaging: 6 scenarios passed")
+        let barrier = Barrier()
+        let racing = try WalletEVMBroadcastStaging(endpoint: url) { _, method, _ in
+            if method == "eth_chainId" { return await barrier.chain() }
+            return await barrier.send()
+        }
+        async let one = attempt(racing)
+        async let two = attempt(racing)
+        let results = await [one, two]
+        let sends = await barrier.count()
+        check(results.filter { $0 }.count == 1 && sends == 1, "actor reentrancy must not publish twice")
+        print("WalletEVMBroadcastStaging: 7 scenarios passed")
     }
 }
