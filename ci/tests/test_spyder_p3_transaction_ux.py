@@ -4,6 +4,7 @@ Structural checks, not a replacement for Xcode builds or device-based UX review.
 """
 from pathlib import Path
 import unittest
+import re
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -17,7 +18,14 @@ class P3TransactionUXChecks(unittest.TestCase):
         self.assertIn('guard canSendUSDT, !transfers.busy, !sendAttempted', flow)
         self.assertIn('sendAttempted = true\n            submissionPending = true\n            Task {', flow)
         self.assertIn('submissionPending = false', flow)
-        self.assertIn('recipientContextValid, submitted == nil, !sendAttempted', flow)
+        # Guard order is not a security property. Match each required predicate
+        # in the actual fail-closed canSendUSDT guard, not anywhere in the view.
+        guard = re.search(r"private var canSendUSDT: Bool\s*\{\s*guard\s+(.*?)\s+else\s*\{\s*return false\s*\}", flow, re.S)
+        self.assertIsNotNone(guard, "canSendUSDT must fail closed")
+        for predicate in ("recipientContextValid", "!suspiciousRecipient", "submitted == nil", "!sendAttempted"):
+            pattern = re.escape(predicate).replace(r"\ ", r"\s*")
+            self.assertRegex(guard.group(1), r"(?:^|,)\s*" + pattern + r"\s*(?=,|$)",
+                             f"Missing mandatory canSendUSDT guard: {predicate}")
         self.assertIn('else if canSendUSDT { confirmUSDT = true }', flow)
         self.assertIn('Button("Подтвердить через Face ID / код") { sendUSDT() }', flow)
 
