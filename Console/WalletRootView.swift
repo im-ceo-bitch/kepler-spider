@@ -11,7 +11,12 @@ private enum SpyderNetworkPage: Hashable {
     case identity, chat(WalletContact), contact(WalletContact)
 }
 
+@MainActor
 struct WalletRootView: View {
+    private enum MoneyMode: String { case fiat, crypto }
+    @State private var moneyMode: MoneyMode = .crypto
+    @StateObject private var fiat = SpyderPayModel()
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var chat: SpyderChatStore
     @State private var showingLinkInvite = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -90,21 +95,40 @@ struct WalletRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .spyderChatOpenRequested)) { _ in
             openChatAfterNotificationIfNeeded()
         }
+        .onChange(of: moneyMode) { _, mode in if mode == .crypto { fiat.lock() } }
+        .onChange(of: selectedTab) { _, tab in if tab != .wallet { fiat.lock() } }
+        .onChange(of: scenePhase) { _, phase in if phase == .background { fiat.lock() } }
+        .onDisappear { fiat.lock() }
         .background(WalletTheme.canvas.ignoresSafeArea())
     }
 
     private var walletNavigation: some View {
         NavigationStack(path: $walletPath) {
-            WalletHomeView(onAction: { action in
-                sendChain = nil
-                presented = action
-            }, onActivity: {
-                walletPath.append(.activity)
-            }, onAsset: { chain in
-                walletPath.append(.asset(chain))
-            }, onControlCenter: {
-                walletPath.append(.center)
-            })
+            VStack(spacing: 0) {
+                Picker("Финансовый режим", selection: $moneyMode) {
+                    Text("Фиат · UZS").tag(MoneyMode.fiat)
+                    Text("Криптовалюта").tag(MoneyMode.crypto)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, WalletTheme.pageInset)
+                .padding(.vertical, 8)
+                .background(WalletTheme.canvas)
+                .disabled(fiat.busy)
+                if moneyMode == .fiat {
+                    SpyderPayHomeView(model: fiat)
+                } else {
+                    WalletHomeView(onAction: { action in
+                        sendChain = nil
+                        presented = action
+                    }, onActivity: {
+                        walletPath.append(.activity)
+                    }, onAsset: { chain in
+                        walletPath.append(.asset(chain))
+                    }, onControlCenter: {
+                        walletPath.append(.center)
+                    })
+                }
+            }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: SpyderWalletPage.self) { destination in
                 walletDestination(destination)
@@ -183,6 +207,7 @@ struct WalletRootView: View {
             }, onOpenActivity: {
                 // Explicitly switch to the financial history when requested by Terminal.
                 selectedTab = .wallet
+                moneyMode = .crypto
                 walletPath.append(.activity)
             })
         case .contact(let contact):

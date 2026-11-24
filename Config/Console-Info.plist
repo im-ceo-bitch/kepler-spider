@@ -32,6 +32,11 @@
 				<string>spyder</string>
 			</array>
 		</dict>
+        <dict>
+            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>CFBundleURLName</key><string>com.spyder.wallet.pay.oauth</string>
+            <key>CFBundleURLSchemes</key><array><string>com.spyder.wallet.pay</string></array>
+        </dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
@@ -43,6 +48,17 @@
 	<array>
 		<string>_spyder-touch2._tcp</string>
 	</array>
+    <key>NSCameraUsageDescription</key>
+    <string>Камера используется только для считывания QR-счёта SpyderPay по вашему запросу.</string>
+    <key>SpyderPayAPIOrigin</key><string>$(SPYDERPAY_API_ORIGIN)</string>
+    <key>SpyderPayIssuer</key><string>$(SPYDERPAY_OIDC_ISSUER)</string>
+    <key>SpyderPayAuthorizationEndpoint</key><string>$(SPYDERPAY_OIDC_AUTHORIZATION_ENDPOINT)</string>
+    <key>SpyderPayTokenEndpoint</key><string>$(SPYDERPAY_OIDC_TOKEN_ENDPOINT)</string>
+    <key>SpyderPayClientID</key><string>$(SPYDERPAY_OIDC_CLIENT_ID)</string>
+    <key>SpyderPayMFAACR</key><string>$(SPYDERPAY_OIDC_MFA_ACR)</string>
+    <key>SpyderPayScope</key><string>$(SPYDERPAY_OIDC_SCOPE)</string>
+    <key>SpyderPayAudience</key><string>$(SPYDERPAY_OIDC_AUDIENCE)</string>
+    <key>SpyderPayCardAID</key><string>$(SPYDERPAY_CARD_AID)</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Face ID защищает доступ к Spyder Wallet и секретной фразе восстановления.</string>
 	<key>NSLocalNetworkUsageDescription</key>
