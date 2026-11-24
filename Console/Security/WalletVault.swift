@@ -160,6 +160,7 @@ enum WalletVault {
     private static func readWords(id: String, reason: String, context: LAContext) throws -> [String] {
         guard validAccountID(id) else { throw VaultError.notFound }
         context.localizedReason = reason
+        defer { context.invalidate() }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -173,7 +174,7 @@ enum WalletVault {
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess, let data = result as? Data,
               let phrase = String(data: data, encoding: .utf8) else { throw VaultError.failed(status) }
-        return phrase.split(separator: " ").map(String.init)
+        return try canonicalPhrase(phrase).split(separator: " ").map(String.init)
     }
 }
 
@@ -266,7 +267,8 @@ final class WalletAccess: ObservableObject {
         let saved = (UserDefaults.standard.data(forKey: Self.accountsKey)).flatMap {
             try? JSONDecoder().decode([SpyderWalletAccount].self, from: $0)
         } ?? []
-        var resolved = saved.filter { WalletVault.exists(id: $0.id) }
+        var seen = Set<String>()
+        var resolved = saved.filter { WalletVault.exists(id: $0.id) && seen.insert($0.id).inserted }
         for id in WalletVault.accountIDs() where WalletVault.exists(id: id) {
             if !resolved.contains(where: { $0.id == id }) {
                 resolved.append(.init(id: id, name: id == WalletVault.legacyID ? "Основной кошелёк" : "Восстановленный аккаунт"))
@@ -336,6 +338,7 @@ final class WalletAccess: ObservableObject {
         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Открыть Spyder Wallet") { success, error in
             Task { @MainActor in
                 guard self.unlockGate.finish(attempt) else { return }
+                self.unlockContext?.invalidate()
                 self.unlockContext = nil
                 if success { self.unlocked = true }
                 else if let error, (error as NSError).code != LAError.userCancel.rawValue {

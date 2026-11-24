@@ -52,7 +52,7 @@ struct WalletSendFlowView: View {
               selected == .ethereum, evmAsset == .usdt, approvedWalletID == access.activeWalletID,
               let quote = evmQuote, quote.matches(sender: chains.address(for: .ethereum) ?? "",
                 recipient: normalizedRecipient, amount: amount.replacingOccurrences(of: ",", with: "."), asset: .usdt),
-              recipientContextValid, submitted == nil, !sendAttempted else { return false }
+              recipientContextValid, !suspiciousRecipient, submitted == nil, !sendAttempted else { return false }
         return WalletEthereumSignature.verifyOwnership(context.payment, requester: context.ownerID,
             receiver: context.peerID, server: chat.serverAddress)
     }
@@ -76,9 +76,12 @@ struct WalletSendFlowView: View {
         let allowed = selected == .ethereum ? evmAsset.decimals : selected == .solana ? 9 : 8
         return decimals <= allowed ? value : nil
     }
+    private var suspiciousRecipient: Bool {
+        addressBook.walletID == access.activeWalletID && WalletAddressValidator.resemblesSavedAddress(normalizedRecipient, saved: addressBook.entries.filter { $0.chain == selected }.map(\.address), chain: selected)
+    }
     private var recipientValid: Bool { WalletAddressValidator.check(normalizedRecipient, for: selected) == .valid }
     private var validToReview: Bool {
-        guard access.unlocked, recipientContextValid, recipientValid,
+        guard access.unlocked, recipientContextValid, recipientValid, !suspiciousRecipient,
               let sender = chains.address(for: selected),
               WalletAddressValidator.check(sender, for: selected) == .valid,
               !WalletAddressValidator.sameAddress(normalizedRecipient, sender, for: selected),
@@ -224,6 +227,9 @@ struct WalletSendFlowView: View {
                             }
                             .font(.footnote)
                             .buttonStyle(.plain)
+                            if suspiciousRecipient {
+                                Text("Recipient resembles a saved address but is not identical. Recheck the complete address.").font(.footnote).foregroundStyle(.red)
+                            }
                             if !recipient.isEmpty && !recipientValid {
                                 if case .invalid(let detail) = WalletAddressValidator.check(recipient, for: selected) {
                                     Label(detail, systemImage: "exclamationmark.triangle")
@@ -422,7 +428,7 @@ struct WalletSendFlowView: View {
                 let result = await transfers.send(intent: intent, quote: quote, walletID: walletID,
                     recipient: recipient, server: server, authorize: {
                         pageVisible && scenePhase == .active && access.unlocked &&
-                        access.activeWalletID == walletID && chat.serverAddress == server && recipientContextValid &&
+                        access.activeWalletID == walletID && chat.serverAddress == server && recipientContextValid && !suspiciousRecipient &&
                         reviewing && evmQuote == quote && approvedWalletID == walletID
                     })
                 submitted = result ?? transfers.records.first(where: { $0.walletID == walletID && $0.intent == intent })

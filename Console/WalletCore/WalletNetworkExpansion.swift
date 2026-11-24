@@ -44,6 +44,35 @@ enum WalletExactAmount {
         !s.isEmpty && s.count <= 78 && s.utf8.allSatisfy { (48...57).contains($0) } && (s == "0" || s.first != "0") && (s.count < max.count || (s.count == max.count && s <= max))
     }
     static func compare(_ a: String, _ b: String) -> Int { a.count == b.count ? (a == b ? 0 : (a < b ? -1 : 1)) : (a.count < b.count ? -1 : 1) }
+    static func add(_ a: String, _ b: String) throws -> String {
+        guard valid(a), valid(b) else { throw WalletExpansionError.invalid }
+        let x = Array(a.utf8.reversed()), y = Array(b.utf8.reversed())
+        var result = [UInt8](), carry = 0
+        for i in 0..<Swift.max(x.count, y.count) {
+            let n = (i < x.count ? Int(x[i]-48) : 0) + (i < y.count ? Int(y[i]-48) : 0) + carry
+            result.append(UInt8(n % 10 + 48)); carry = n / 10
+        }
+        if carry > 0 { result.append(UInt8(carry+48)) }
+        let raw = String(decoding: result.reversed(), as: UTF8.self)
+        guard valid(raw) else { throw WalletExpansionError.invalid }; return raw
+    }
+    static func multiply(_ a: String, by b: UInt64) throws -> String {
+        guard valid(a), b <= 10_000_000 else { throw WalletExpansionError.invalid }
+        var result = [UInt8](), carry: UInt64 = 0
+        for digit in a.utf8.reversed() {
+            let n = UInt64(digit-48) * b + carry
+            result.append(UInt8(n % 10 + 48)); carry = n / 10
+        }
+        while carry > 0 { result.append(UInt8(carry % 10 + 48)); carry /= 10 }
+        let stripped = String(decoding: result.reversed(), as: UTF8.self).drop(while: { $0 == "0" })
+        let raw = stripped.isEmpty ? "0" : String(stripped)
+        guard valid(raw) else { throw WalletExpansionError.invalid }; return raw
+    }
+    static func abiWord(_ s: String) throws -> String {
+        guard s.utf8.count == 66, s.hasPrefix("0x"), s.dropFirst(2).utf8.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }) else { throw WalletExpansionError.invalid }
+        let digits = s.dropFirst(2).drop(while: { $0 == "0" })
+        return try fromHex("0x" + (digits.isEmpty ? "0" : String(digits)))
+    }
     static func fromHex(_ s: String) throws -> String {
         guard s.hasPrefix("0x"), (3...66).contains(s.count), s == "0x0" || s.dropFirst(2).first != "0" else { throw WalletExpansionError.invalid }
         var digits = [0]
@@ -85,7 +114,17 @@ struct WalletNetworkAsset: Hashable, Identifiable, Sendable {
     var id: String { "eip155:\(network.rawValue)/\(contract.lowercased())" }
     static func native(_ network: WalletEVMNetwork) -> Self { .init(network: network, contract: nativeContract, ticker: network.ticker, decimals: 18) }
     static let ethereumUSDC = Self(network: .ethereum, contract: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", ticker: "USDC", decimals: 6)
-    static var quoteAssets: [Self] { WalletEVMNetwork.allCases.map(native) + [ethereumUSDC] }
+    static let ethereumUSDT = Self(network: .ethereum, contract: "0xdac17f958d2ee523a2206206994597c13d831ec7", ticker: "USDT", decimals: 6)
+    // Circle-issued native USDC, not bridged USDC.e. Source: developers.circle.com/stablecoins/usdc-contract-addresses
+    static let usdcTokens: [Self] = [ethereumUSDC,
+        .init(network: .arbitrum, contract: "0xaf88d065e77c8cc2239327c5edb3a432268e5831", ticker: "USDC", decimals: 6),
+        .init(network: .base, contract: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", ticker: "USDC", decimals: 6),
+        .init(network: .optimism, contract: "0x0b2c639c533813f4aa9d7837caf62653d097ff85", ticker: "USDC", decimals: 6),
+        .init(network: .polygon, contract: "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359", ticker: "USDC", decimals: 6)]
+    static var tokens: [Self] { usdcTokens + [ethereumUSDT] }
+    static var quoteAssets: [Self] { WalletEVMNetwork.allCases.map(native) + tokens }
+    var isNative: Bool { contract == Self.nativeContract }
+    var marketID: String { isNative ? network.marketID : (ticker == "USDC" ? "usd-coin" : "tether") }
 }
 
 struct WalletNetworkBalance: Identifiable, Sendable {
@@ -101,7 +140,7 @@ struct WalletNetworkReader {
     typealias RPC = @Sendable (String, String, [String]) async throws -> String
     let rpc: RPC
     init(rpc: @escaping RPC = { endpoint, method, params in try await WalletNetworkReader.liveRPC(endpoint: endpoint, method: method, params: params) }) { self.rpc = rpc }
-    static func validAddress(_ s: String) -> Bool { s.range(of: "^0x[0-9a-fA-F]{40}$", options: .regularExpression) != nil && s.lowercased() != WalletNetworkAsset.nativeContract }
+    static func validAddress(_ s: String) -> Bool { WalletEVMUnits.isAddress(s) }
     func balance(network: WalletEVMNetwork, address: String) async throws -> WalletNetworkBalance {
         guard Self.validAddress(address) else { throw WalletExpansionError.invalid }
         var last: Error = WalletExpansionError.unavailable
@@ -178,7 +217,7 @@ enum WalletNetworkMarket {
     private struct Row: Decodable { let usd: Decimal; let last_updated_at: Int64 }
     static func decode(_ data: Data, now: Date = Date()) throws -> [String: WalletNetworkPrice] {
         let rows = try JSONDecoder().decode([String: Row].self, from: data)
-        let ids = Set(WalletEVMNetwork.allCases.map(\.marketID))
+        let ids = Set(WalletNetworkAsset.quoteAssets.map(\.marketID))
         var result: [String: WalletNetworkPrice] = [:]
         for (id, row) in rows where ids.contains(id) && row.usd > 0 && row.usd <= 1_000_000_000 && !row.usd.isNaN {
             let price = WalletNetworkPrice(usd: row.usd, updatedAt: Date(timeIntervalSince1970: TimeInterval(row.last_updated_at)))
@@ -188,7 +227,7 @@ enum WalletNetworkMarket {
     }
     static func fetch() async throws -> [String: WalletNetworkPrice] {
         var parts = URLComponents(string: "https://api.coingecko.com/api/v3/simple/price")!
-        parts.queryItems = [.init(name: "ids", value: Set(WalletEVMNetwork.allCases.map(\.marketID)).sorted().joined(separator: ",")), .init(name: "vs_currencies", value: "usd"), .init(name: "include_last_updated_at", value: "true")]
+        parts.queryItems = [.init(name: "ids", value: Set(WalletNetworkAsset.quoteAssets.map(\.marketID)).sorted().joined(separator: ",")), .init(name: "vs_currencies", value: "usd"), .init(name: "include_last_updated_at", value: "true")]
         guard let url = parts.url else { throw WalletExpansionError.invalid }
         return try decode(await WalletExpansionHTTP.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 12)))
     }

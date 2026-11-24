@@ -144,6 +144,30 @@ enum WalletEVMSignedEnvelopeGuard {
 
     // Pure RLP inspection without a signature validity claim.
     static func validate(raw: Data, intent: WalletEVMUnsignedIntent) throws {
+        _ = try validatedFields(raw: raw, chainID: 1, expectedNonce: intent.nonce,
+            expectedPriority: intent.priorityFeePerGas, expectedMaximum: intent.maxFeePerGas,
+            expectedGas: intent.gasLimit, expectedDestination: WalletEVMSigningBytes.hex(intent.transactionTarget),
+            expectedAmount: intent.asset == .eth ? WalletEVMSigningBytes.decimal(intent.baseUnits) : Data(),
+            expectedCall: intent.asset == .eth ? Data() : WalletEVMSigningBytes.hex(intent.tokenCallData ?? "", maxBytes: 128))
+    }
+
+    /// Independently inspect the signed testnet envelope and reconstruct its signing digest.
+    /// This method does not assert signer identity; the iOS caller must recover and compare it.
+    static func sepoliaProof(raw: Data, nonce: UInt64, priority: UInt64, maximum: UInt64,
+                             gas: UInt64, recipient: String, amount: String) throws -> (WalletEVMFingerprints, Data) {
+        let fields = try validatedFields(raw: raw, chainID: 11155111, expectedNonce: nonce,
+            expectedPriority: priority, expectedMaximum: maximum, expectedGas: gas,
+            expectedDestination: WalletEVMSigningBytes.hex(recipient), expectedAmount: WalletEVMSigningBytes.decimal(amount), expectedCall: Data())
+        let unsigned = Data([0x02]) + serialize(.list(Array(fields.prefix(9))))
+        guard let parity = try number(scalar(fields[9])) else { throw WalletEVMEnvelopeError.invalidSignature }
+        let r = try scalar(fields[10]), s = try scalar(fields[11])
+        let signature = Data(repeating: 0, count: 32-r.count) + r + Data(repeating: 0, count: 32-s.count) + s + Data([UInt8(parity)])
+        return (.init(transactionHash: WalletEVMKeccak256.hex(raw), signingDigest: WalletEVMKeccak256.hex(unsigned)), signature)
+    }
+
+    private static func validatedFields(raw: Data, chainID: UInt64, expectedNonce: UInt64,
+        expectedPriority: UInt64, expectedMaximum: UInt64, expectedGas: UInt64,
+        expectedDestination: Data, expectedAmount: Data, expectedCall: Data) throws -> [Node] {
         guard raw.count >= 70 && raw.count <= 2_048 && raw.first == 2 else {
             throw WalletEVMEnvelopeError.invalidEncoding
         }
@@ -153,7 +177,7 @@ enum WalletEVMSignedEnvelopeGuard {
         guard index == body.count, case .list(let fields) = tree, fields.count == 12 else {
             throw WalletEVMEnvelopeError.invalidEncoding
         }
-        guard try number(scalar(fields[0])) == 1 else { throw WalletEVMEnvelopeError.wrongNetwork }
+        guard try number(scalar(fields[0])) == chainID else { throw WalletEVMEnvelopeError.wrongNetwork }
         let nonce = try number(scalar(fields[1]))
         let priority = try number(scalar(fields[2]))
         let maximum = try number(scalar(fields[3]))
@@ -161,11 +185,8 @@ enum WalletEVMSignedEnvelopeGuard {
         let destination = try scalar(fields[5])
         let ethValue = try scalar(fields[6])
         let call = try scalar(fields[7])
-        let expectedDestination = try WalletEVMSigningBytes.hex(intent.transactionTarget)
-        let expectedAmount = intent.asset == .eth ? try WalletEVMSigningBytes.decimal(intent.baseUnits) : Data()
-        let expectedCall = intent.asset == .eth ? Data() : try WalletEVMSigningBytes.hex(intent.tokenCallData ?? "", maxBytes: 128)
-        guard nonce == intent.nonce, priority == intent.priorityFeePerGas,
-              maximum == intent.maxFeePerGas, gas == intent.gasLimit,
+        guard nonce == expectedNonce, priority == expectedPriority,
+              maximum == expectedMaximum, gas == expectedGas,
               same(destination, expectedDestination), same(ethValue, expectedAmount),
               same(call, expectedCall) else { throw WalletEVMEnvelopeError.mismatchedIntent }
         guard case .list(let access) = fields[8], access.isEmpty,
@@ -182,5 +203,7 @@ enum WalletEVMSignedEnvelopeGuard {
         guard positive(r), positive(s), paddedS.lexicographicallyPrecedes(halfOrder) || paddedS == halfOrder else {
             throw WalletEVMEnvelopeError.invalidSignature
         }
+        guard Data([0x02]) + serialize(tree) == raw else { throw WalletEVMEnvelopeError.invalidEncoding }
+        return fields
     }
 }

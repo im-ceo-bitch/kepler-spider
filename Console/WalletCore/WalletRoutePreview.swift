@@ -17,6 +17,11 @@ struct WalletRouteRequest: Equatable, Sendable {
         guard raw != "0" else { throw WalletExpansionError.invalid }
         self.source = source; self.destination = destination; self.owner = owner; self.rawAmount = raw; self.slippageBPS = slippageBPS
     }
+    /// Fresh account-bound source funding. This does not establish sufficient gas or route execution safety.
+    func checkFunding(_ snapshot: WalletTokenSnapshot, now: Date = Date()) throws {
+        guard snapshot.matches(asset: source, owner: owner, now: now, maxAge: 45) else { throw WalletExpansionError.stale }
+        guard WalletExactAmount.compare(snapshot.raw, rawAmount) >= 0 else { throw WalletEVMPreflightError.insufficientTokens }
+    }
     func url() throws -> URL {
         var parts = URLComponents(string: "https://li.quest/v1/quote")!
         let slip = "0." + String(repeating: "0", count: 4 - String(slippageBPS).count) + String(slippageBPS)
@@ -51,6 +56,9 @@ struct WalletRoutePreview: Sendable {
               a.slippage.isFinite, abs(a.slippage - Double(request.slippageBPS)/10_000) < 0.000000001,
               WalletExactAmount.valid(e.toAmount), WalletExactAmount.valid(e.toAmountMin), e.toAmountMin != "0",
               WalletExactAmount.compare(e.toAmountMin, e.toAmount) <= 0,
+              // The provider cannot advertise a minimum below the selected slippage, apart from one-unit rounding.
+              let scaled = try? WalletExactAmount.multiply(e.toAmount, by: UInt64(10_000 - request.slippageBPS)),
+              WalletExactAmount.compare(e.toAmountMin, scaled.count > 4 ? String(scaled.dropLast(4)) : "0") >= 0,
               (0...604800).contains(e.executionDuration), reply.tool.range(of: "^[A-Za-z0-9_-]{1,64}$", options: .regularExpression) != nil else { throw WalletExpansionError.mismatch }
         return .init(request: request, expected: e.toAmount, minimum: e.toAmountMin, tool: reply.tool, duration: e.executionDuration, receivedAt: now)
     }

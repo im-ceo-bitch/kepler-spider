@@ -107,9 +107,9 @@ struct WalletHomeView: View {
                 .environmentObject(live)
         }
         .sheet(isPresented: $showNetworkPortfolio) {
-            if let address = chains.address(for: .ethereum), chains.verifiedForReceiving,
+            if access.unlocked, let address = chains.address(for: .ethereum), chains.verifiedForReceiving,
                chains.verifiedWalletID == access.activeWalletID {
-                WalletNetworkPortfolioView(address: address, privacyHidden: privacyHidden)
+                WalletNetworkPortfolioView(address: address, privacyHidden: privacyHidden, walletID: access.activeWalletID, solanaAddress: chains.address(for: .solana), bitcoinAddress: chains.address(for: .bitcoin))
                     .id(access.activeWalletID)
             }
         }
@@ -143,6 +143,9 @@ struct WalletHomeView: View {
             history.clear()
             selectedToken = nil
             showNetworkPortfolio = false
+        }
+        .onChange(of: access.unlocked) { _, unlocked in
+            if !unlocked { showNetworkPortfolio = false }
         }
         .onChange(of: chains.verifiedForReceiving) { _, verified in
             if !verified { showNetworkPortfolio = false }
@@ -264,7 +267,7 @@ struct WalletHomeView: View {
 
     private var networkPortfolioEntry: some View {
         Button {
-            if chains.verifiedForReceiving && chains.verifiedWalletID == access.activeWalletID {
+            if access.unlocked && chains.verifiedForReceiving && chains.verifiedWalletID == access.activeWalletID {
                 showNetworkPortfolio = true
             } else {
                 chains.activate()

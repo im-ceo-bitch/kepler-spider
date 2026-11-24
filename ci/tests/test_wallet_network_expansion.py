@@ -14,7 +14,7 @@ class NetworkExpansionTests(unittest.TestCase):
             self.skipTest('Swift compiler unavailable')
         with tempfile.TemporaryDirectory() as work:
             binary = Path(work) / 'driver'
-            subprocess.run([compiler, *(str(CORE / name) for name in ['WalletEVMPreflight.swift','WalletNetworkExpansion.swift','WalletRoutePreview.swift']), str(ROOT / 'ci/tests/wallet_network_expansion_driver.swift'), '-o', str(binary)], check=True, timeout=90)
+            subprocess.run([compiler, *(str(CORE / name) for name in ['WalletEVMPreflight.swift','WalletNetworkExpansion.swift','WalletNetworkTokenEngine.swift','WalletRoutePreview.swift']), str(ROOT / 'ci/tests/wallet_network_expansion_driver.swift'), '-o', str(binary)], check=True, timeout=90)
             result = subprocess.run([str(binary)], check=True, capture_output=True, text=True, timeout=30)
             self.assertIn('PASS network expansion', result.stdout)
 
@@ -28,4 +28,4 @@ class NetworkExpansionTests(unittest.TestCase):
         text = (ROOT / 'Console/Features/Wallet/WalletHomeView.swift').read_text()
         self.assertIn('chains.verifiedWalletID == access.activeWalletID', text)
         self.assertIn('if !verified { showNetworkPortfolio = false }', text)
-        self.assertIn('WalletNetworkPortfolioView(address: address, privacyHidden: privacyHidden)', text)
+        self.assertIn('WalletNetworkPortfolioView(address: address, privacyHidden: privacyHidden, walletID: access.activeWalletID,', text)

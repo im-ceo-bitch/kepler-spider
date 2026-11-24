@@ -8,7 +8,7 @@ import Foundation
         func token(_ a: WalletNetworkAsset) -> [String: Any] { ["address": a.contract, "chainId": a.network.id, "decimals": a.decimals] }
         var action: [String: Any] = ["fromChainId": r.source.network.id, "toChainId": r.destination.network.id, "fromToken": token(r.source), "toToken": token(r.destination), "fromAddress": r.owner, "toAddress": r.owner, "fromAmount": r.rawAmount, "slippage": 0.005]
         action.merge(changes) { _, new in new }
-        var e: [String: Any] = ["fromAmount": r.rawAmount, "toAmount": "1000", "toAmountMin": "990", "executionDuration": 120]
+        var e: [String: Any] = ["fromAmount": r.rawAmount, "toAmount": "1000", "toAmountMin": "995", "executionDuration": 120]
         e.merge(estimate) { _, new in new }
         return try JSONSerialization.data(withJSONObject: ["tool": "test_route", "action": action, "estimate": e, "transactionRequest": ["data": "untrusted"]])
     }
@@ -30,7 +30,7 @@ import Foundation
         do { _ = try await WalletNetworkReader { _, method, _ in precondition(method == "eth_chainId"); return "0x1" }.balance(network: .base, address: owner); fatalError("wrong chain accepted") } catch {}
         let r = try WalletRouteRequest(source: .native(.ethereum), destination: .ethereumUSDC, owner: owner, amount: "0.01")
         let q = try WalletRoutePreview.decode(json(r), request: r)
-        check(q.expected == "1000" && q.minimum == "990" && q.isFresh())
+        check(q.expected == "1000" && q.minimum == "995" && q.isFresh())
         check(!q.isFresh(now: q.receivedAt.addingTimeInterval(45)))
         check(!q.isFresh(now: q.receivedAt.addingTimeInterval(-1)))
         let params = URLComponents(url: try r.url(), resolvingAgainstBaseURL: false)!.queryItems!
@@ -38,7 +38,7 @@ import Foundation
         for mutation: [String: Any] in [["fromChainId": 8453], ["toChainId": 56], ["toAddress": "0x2222222222222222222222222222222222222222"], ["fromAmount": "1"], ["slippage": 0.1], ["toToken": ["address": r.destination.contract, "chainId": 1, "decimals": 18]]] {
             expectFailure { _ = try WalletRoutePreview.decode(json(r, changes: mutation), request: r) }
         }
-        for mutation: [String: Any] in [["toAmountMin": "1001"], ["toAmountMin": "0"], ["toAmount": "1e9"], ["fromAmount": "0"], ["executionDuration": -1]] {
+        for mutation: [String: Any] in [["toAmountMin": "990"], ["toAmountMin": "1001"], ["toAmountMin": "0"], ["toAmount": "1e9"], ["fromAmount": "0"], ["executionDuration": -1]] {
             expectFailure { _ = try WalletRoutePreview.decode(json(r, estimate: mutation), request: r) }
         }
         let bridge = try WalletRouteRequest(source: .native(.ethereum), destination: .native(.base), owner: owner, amount: "0.1")

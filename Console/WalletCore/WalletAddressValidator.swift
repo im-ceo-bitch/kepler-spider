@@ -64,6 +64,24 @@ enum WalletAddressValidator {
         }
     }
 
+    /// Detect the common address-poisoning pattern: same visible prefix/suffix, different interior.
+    /// A negative result does not establish trust; compare the complete destination independently.
+    static func resemblesSavedAddress(_ candidate: String, saved: [String], chain: SpyderChain) -> Bool {
+        guard check(candidate, for: chain) == .valid else { return false }
+        let valid = saved.prefix(150).filter { check($0, for: chain) == .valid }
+        if valid.contains(where: { sameAddress(candidate, $0, for: chain) }) { return false }
+        func normalized(_ value: String) -> String {
+            switch chain { case .ethereum: return String(value.dropFirst(2)).lowercased()
+            case .bitcoin: return String(value.lowercased().dropFirst(4))
+            case .solana: return value }
+        }
+        let target = normalized(candidate)
+        return valid.contains { item in
+            let original = normalized(item)
+            return target.count >= 12 && original.count >= 12 && target.prefix(4) == original.prefix(4) && target.suffix(4) == original.suffix(4)
+        }
+    }
+
     private static func decodeBase58(_ value: String) -> [UInt8]? {
         let alphabet = Array("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
         guard !value.isEmpty && value.count <= 60 else { return nil }
