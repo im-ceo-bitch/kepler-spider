@@ -26,7 +26,7 @@ final class SpyderIDStore: ObservableObject {
             try SpyderIDRepository.initialize(context: auth, key: secret)
             let decoded = try SpyderIDRepository.load(key: secret)
             key = secret; records = decoded; unlocked = true
-            SpyderIDRepository.index(decoded)
+
         } catch {
             guard token == generation else { return }
             self.error = (error as? SpyderIDFailure)?.localizedDescription ?? sidText("Не удалось открыть сейф. Данные не изменены.", "Could not open vault. Data was not changed.")
@@ -38,7 +38,7 @@ final class SpyderIDStore: ObservableObject {
     }
     func reload() {
         guard let key, unlocked else { return }
-        do { records = try SpyderIDRepository.load(key: key); SpyderIDRepository.index(records) }
+        do { records = try SpyderIDRepository.load(key: key) }
         catch { self.error = error.localizedDescription }
     }
     func save(_ value: SpyderIDRecord) throws {
@@ -58,7 +58,7 @@ final class SpyderIDStore: ObservableObject {
                 current.append(value)
             }
         }
-        SpyderIDRepository.index(records)
+
     }
     func delete(_ id: UUID) throws {
         guard let key, unlocked else { throw SpyderIDFailure.locked }
@@ -67,7 +67,7 @@ final class SpyderIDStore: ObservableObject {
             if let item = current.first(where: { $0.id == id }), item.modified != expected { throw SpyderIDFailure.conflict }
             current.removeAll { $0.id == id }
         }
-        SpyderIDRepository.index(records)
+
     }
     func backup() throws -> (data: Data, recovery: String, passkeyIDs: [UUID]) {
         guard let key, unlocked else { throw SpyderIDFailure.locked }
@@ -109,7 +109,7 @@ final class SpyderIDStore: ObservableObject {
                 current.append(item)
             }
         }
-        SpyderIDRepository.index(records)
+
         return imported.count
     }
 }

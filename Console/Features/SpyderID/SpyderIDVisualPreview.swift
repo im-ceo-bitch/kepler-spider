@@ -422,11 +422,9 @@ private struct SIDSettingsView: View {
                     .frame(minHeight: 44)
                 WalletCard {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(sidText("Автозаполнение и Safari", "AutoFill and Safari")).font(.headline)
-                        Text(sidText("В настройках iPhone включите Spyder ID как источник автозаполнения. В Safari включите расширение Spyder ID и разрешите доступ к нужному сайту. Вызывайте его через меню расширений браузера.", "Enable Spyder ID as an AutoFill provider in iPhone Settings. Enable the Spyder ID Safari extension and allow it on the website. Open it from the browser extensions menu."))
+                        Text(sidText("Расширения iOS", "iOS extensions")).font(.headline)
+                        Text(sidText("Автозаполнение, Safari и системное меню «Поделиться» временно недоступны в этой версии. Сохранённые данные остаются в сейфе Spyder ID.", "AutoFill, Safari and the system Share extension are temporarily unavailable in this version. Saved data remains in the Spyder ID vault."))
                             .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                        Text(sidText("Для создания passkey откройте настройки безопасности аккаунта на сайте, нажмите «Создать ключ входа» и выберите Spyder ID в системном окне iOS.", "To create a passkey, open the website account security settings, choose Create passkey, then select Spyder ID in the iOS system sheet.")).font(.footnote).foregroundStyle(WalletTheme.secondary)
-                        Button(sidText("Обновить подсказки аккаунтов", "Refresh account suggestions")) { store.reload() }
                     }
                 }
                 Button(sidText("Заблокировать сейф", "Lock vault")) { store.lock(); dismiss() }

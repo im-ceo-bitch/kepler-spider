@@ -11,14 +11,13 @@ RES = ROOT / 'Extensions/SpyderSafari/Resources'
 
 
 class SafariPNGResourcesTests(unittest.TestCase):
-    def test_safari_target_preserves_standard_png(self):
+    def test_safari_target_is_not_in_host_only_release(self):
         spec = (ROOT / 'project.yml').read_text()
-        target = re.search(r'^  SpyderSafari:\n(.*?)(?=^  \w+:\s*$|\Z)', spec, re.M | re.S)
-        self.assertIsNotNone(target)
-        text = target.group(1)
-        self.assertRegex(text, r'(?m)^\s+COMPRESS_PNG_FILES: NO\s*$')
-        self.assertRegex(text, r'(?m)^\s+STRIP_PNG_TEXT: NO\s*$')
-        self.assertRegex(text, r'(?m)^\s+- path: Extensions/SpyderSafari/Resources\n\s+type: group\n\s+buildPhase: resources$')
+        for name in ('SpyderSafari', 'SpyderAutoFill', 'SpyderShare'):
+            self.assertNotRegex(spec, rf'(?m)^  {name}:\s*$')
+            self.assertNotRegex(spec, rf'(?m)^\s*- target: {name}\s*$')
+        self.assertNotIn('type: app-extension', spec)
+        self.assertIn('path: Shared/SpyderID', spec)
 
     def test_manifest_icons_match_archive_preflight(self):
         manifest = json.loads((RES / 'manifest.json').read_text())
