@@ -81,4 +81,17 @@ final class SpiderDevnetIntegrationTests: XCTestCase {
             expectedChainID: "spider-devnet-1", expectedGenesisHash: "not-a-genesis-hash",
             devnetBearerToken: token))
     }
+    func testConnectionValidationNeverNeedsARealSecretOrHost() throws {
+        let genesis = String(repeating: "b", count: 64)
+        let token = String(repeating: "a", count: 64)
+        let config = try SpiderDevnetStore.validate("https://wallet.example.org", genesis: genesis, token: token)
+        XCTAssertEqual(config.origin, "https://wallet.example.org")
+        XCTAssertEqual(config.genesisHash, genesis)
+        for origin in ["http://wallet.example.org", "https://localhost", "https://wallet.example.org/admin", "https://wallet.example.org?token=test"] {
+            XCTAssertThrowsError(try SpiderDevnetStore.validate(origin, genesis: genesis, token: token))
+        }
+        XCTAssertThrowsError(try SpiderDevnetStore.validate("https://wallet.example.org", genesis: "bad", token: token))
+        XCTAssertThrowsError(try SpiderDevnetStore.validate("https://wallet.example.org", genesis: genesis, token: "bad"))
+    }
+
 }

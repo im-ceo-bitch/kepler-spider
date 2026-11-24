@@ -64,12 +64,13 @@ actor SpiderWalletDevnetBridge {
         guard SpiderDevnetSigner.isValidAddress(recipient), recipient != sender else {
             throw SpiderWalletBridgeError.invalidRecipient
         }
-        let status = try await client.status()  // Pins network & genesis.
+        var status = try await client.status()  // Pins network & genesis.
         guard !status.real_spd, !status.real_usdt,
               status.chain_id == SpiderDevnetSigner.chainID else {
             throw SpiderWalletBridgeError.incompatibleIdentity
         }
         let account = try await client.account(sender)
+        if account.height > status.height { status = try await client.status() }
         guard account.height <= status.height && account.chain_id == status.chain_id,
               account.address == sender else { throw SpiderWalletBridgeError.staleCertifiedState }
         let (fee, feeOverflow) = SpiderDevnetSigner.baseGas.multipliedReportingOverflow(by: SpiderDevnetSigner.defaultGasPrice)

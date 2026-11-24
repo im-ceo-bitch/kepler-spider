@@ -36,13 +36,15 @@ class WalletPortfolioUIRegressions(unittest.TestCase):
         self.assertIn('WalletReceiveView(preselected: sendChain ?? .ethereum)', ROOT_VIEW)
         self.assertIn('@State private var selected: WalletReceiveAsset', RECEIVE)
         self.assertIn('WalletReceiveAsset.preselected(chainID:', RECEIVE)
-        self.assertIn('ForEach(WalletReceiveAsset.supportedMainnet)', RECEIVE)
-        self.assertIn('DisclosureGroup("Тестовая сеть Spider Chain")', RECEIVE)
+        self.assertIn('ForEach(WalletReceiveAsset.supportedMainnet + [.spdDevnet])', RECEIVE)
+        self.assertIn('selected == .spdDevnet && !spider.hasConfiguration', RECEIVE)
 
-    def test_devnet_only_shown_when_configured_and_portfolio_selected(self):
-        self.assertIn('@State private var showDevnet = false', HOME)
-        self.assertRegex(HOME, r'if\s+selectedSection\s*==\s*WalletHomeSection\.assets\.rawValue\s*&&\s*spider\.hasConfiguration\s*\{\s*DisclosureGroup\(isExpanded:\s*\$showDevnet\)')
-        self.assertIn('spiderSection', HOME)
+    def test_devnet_visible_before_configuration_and_explicitly_test_only(self):
+        self.assertRegex(HOME, r'portfolioCard\s+quickActions\s+spdAssetEntry')
+        self.assertIn('Button("Подключить SPD")', HOME)
+        self.assertIn('SPD · тестовая сеть', HOME)
+        self.assertIn('spider.hasConfiguration ? .details : .settings', HOME)
+        self.assertIn('WalletReceiveView(spd: true)', HOME)
 
 
 if __name__ == '__main__':

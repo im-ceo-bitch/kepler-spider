@@ -29,7 +29,12 @@ struct WalletHomeView: View {
     @State private var selectedSection = WalletHomeSection.assets.rawValue
     @State private var selectedToken: WalletVerifiedToken?
     @State private var expandedMarket: WalletMarketSelection?
-    @State private var showDevnet = false
+    @State private var spdSheet: SPDWalletSheet?
+    @State private var chooseSendAsset = false
+    private enum SPDWalletSheet: String, Identifiable {
+        case settings, details, receive, send
+        var id: String { rawValue }
+    }
     @State private var showIDPreview = false
     @State private var showNetworkPortfolio = false
     let onAction: (WalletModal) -> Void
@@ -56,32 +61,14 @@ struct WalletHomeView: View {
                     } else {
                         portfolioCard
                         quickActions
+                        spdAssetEntry
                         networkPortfolioEntry
                         SpyderIDPreviewEntry { showIDPreview = true }
                         assetsSection
                         recentSection
                         marketEntry
                     }
-                    if selectedSection == WalletHomeSection.assets.rawValue && spider.hasConfiguration {
-                        DisclosureGroup(isExpanded: $showDevnet) {
-                            spiderSection
-                                .padding(.top, 16)
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "network")
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Spider Chain")
-                                        .font(.system(size: 15, weight: .semibold))
-                                    Text("Тестовая сеть · SPD")
-                                        .font(.footnote)
-                                        .foregroundStyle(WalletTheme.secondary)
-                                }
-                            }
-                            .foregroundStyle(WalletTheme.ink)
-                        }
-                        .padding(17)
-                        .background(WalletTheme.surface, in: RoundedRectangle(cornerRadius: 22))
-                    }
+
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 5)
@@ -105,6 +92,19 @@ struct WalletHomeView: View {
             WalletLiveStageView(ticker: selection.ticker)
                 .environmentObject(market)
                 .environmentObject(live)
+        }
+        .confirmationDialog("Выбрать актив для перевода", isPresented: $chooseSendAsset, titleVisibility: .visible) {
+            Button("SPD · тестовая сеть") { spdSheet = spider.hasConfiguration ? .send : .settings }
+            Button("Другие активы · проверка реквизитов") { onAction(.send) }
+            Button("Отмена", role: .cancel) {}
+        }
+        .sheet(item: $spdSheet) { route in
+            switch route {
+            case .settings: SpiderDevnetSettingsView()
+            case .details: spdDetails
+            case .receive: WalletReceiveView(spd: true)
+            case .send: WalletTransferView(isRequest: false, contact: WalletContact(id: "", name: "", handle: "", letter: "", preview: "", time: ""))
+            }
         }
         .sheet(isPresented: $showNetworkPortfolio) {
             if access.unlocked, let address = chains.address(for: .ethereum), chains.verifiedForReceiving,
@@ -141,11 +141,12 @@ struct WalletHomeView: View {
         }
         .onChange(of: access.activeWalletID) { _, _ in
             history.clear()
+            spdSheet = nil
             selectedToken = nil
             showNetworkPortfolio = false
         }
         .onChange(of: access.unlocked) { _, unlocked in
-            if !unlocked { showNetworkPortfolio = false }
+            if !unlocked { showNetworkPortfolio = false; spdSheet = nil }
         }
         .onChange(of: chains.verifiedForReceiving) { _, verified in
             if !verified { showNetworkPortfolio = false }
@@ -166,6 +167,7 @@ struct WalletHomeView: View {
     }
 
     private func refreshWallet() async {
+        if spider.address != nil && spider.hasConfiguration { await spider.refresh() }
         guard !chains.addresses.isEmpty else { return }
         async let balances: Void = publicAssets.refresh(addresses: chains.addresses)
         async let activity: Void = history.refresh(addresses: chains.addresses)
@@ -393,7 +395,7 @@ struct WalletHomeView: View {
             ? AnyLayout(VStackLayout(spacing: 8))
             : AnyLayout(HStackLayout(spacing: 10))
         return layout {
-            actionButton("Подготовить перевод", symbol: "arrow.up.right", primary: true) { onAction(.send) }
+            actionButton("Отправить", symbol: "arrow.up.right", primary: true) { chooseSendAsset = true }
             actionButton("Получить", symbol: "arrow.down.left", primary: false) { onAction(.receive) }
         }
     }
@@ -606,99 +608,128 @@ struct WalletHomeView: View {
         }
     }
 
-    private var spiderSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Spider Chain")
-                    .font(.system(size: 23, weight: .bold)).foregroundStyle(WalletTheme.ink)
-                Spacer()
-                Text("TEST DEVNET").font(.footnote.weight(.semibold))
-                    .foregroundStyle(WalletTheme.secondary)
-            }
-            WalletCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 11) {
-                        Image(systemName: "network")
-                            .font(.system(size: 23))
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("SPD · SpiderBFT")
-                                .font(.system(size: 16, weight: .semibold))
-                            Text(spider.connected ? "Сертифицированная сеть · блок \(spider.certifiedHeight ?? 0)" :
-                                 (spider.hasConfiguration ? "Нет подтверждённого соединения" : "HTTPS-шлюз не настроен"))
-                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+    private var spdAssetEntry: some View {
+        WalletCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Button { spdSheet = spider.hasConfiguration ? .details : .settings } label: {
+                    HStack(spacing: 12) {
+                        Image("SpyderLaunchLogo").resizable().scaledToFit().padding(9)
+                            .frame(width: 47, height: 47).background(WalletTheme.canvas, in: Circle())
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Spyder Network").font(.headline)
+                            Text("SPD · тестовая сеть").font(.footnote).foregroundStyle(WalletTheme.secondary)
                         }
-                        Spacer(minLength: 4)
-                        Circle().fill(spider.connected ? Color.green : WalletTheme.secondary)
-                            .frame(width: 8, height: 8)
+                        Spacer(minLength: 6)
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text(privacyHidden ? "••••" : (spider.connected ? spider.balanceText + " SPD" : "— SPD"))
+                                .font(.headline.monospacedDigit())
+                            Text(spider.connected ? "Подключено" : (spider.hasConfiguration ? "Не проверено" : "Не настроено"))
+                                .font(.caption).foregroundStyle(spider.connected ? Color.green : WalletTheme.secondary)
+                        }
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(WalletTheme.secondary)
+                    }.frame(minHeight: 48).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                if !spider.hasConfiguration {
+                    Button("Подключить SPD") { spdSheet = .settings }
+                        .buttonStyle(SpyderActionButtonStyle(.primary))
+                } else if spider.address == nil {
+                    Button { spider.selectAccount(access.activeWalletID); spider.deriveAddress() } label: {
+                        HStack {
+                            if spider.busy { ProgressView().tint(WalletTheme.contrast) }
+                            Text(spider.busy ? "Открываем адрес…" : "Открыть SPD")
+                        }
+                    }.buttonStyle(SpyderActionButtonStyle(.primary)).disabled(spider.busy)
+                } else {
+                    let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+                    layout {
+                        Button { spdSheet = .send } label: { Label("Отправить", systemImage: "arrow.up.right") }
+                            .buttonStyle(SpyderActionButtonStyle(.secondary))
+                        Button { spdSheet = .receive } label: { Label("Получить", systemImage: "arrow.down.left") }
+                            .buttonStyle(SpyderActionButtonStyle(.secondary))
                     }
-                    if let address = spider.address {
-                        Text(address)
-                            .font(.system(.footnote, design: .monospaced))
-                            .textSelection(.enabled)
-                            .privacySensitive()
-                        HStack(spacing: 14) {
-                            Button {
-                                UIPasteboard.general.string = address
-                                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                            } label: { Label("Копировать", systemImage: "doc.on.doc") }
-                            if spider.hasConfiguration {
-                                Button {
-                                    Task { await spider.refresh() }
-                                } label: {
-                                    Label(spider.refreshing ? "Проверяем…" : "Обновить", systemImage: "arrow.clockwise")
-                                }.disabled(spider.refreshing)
-                            }
-                        }
-                        .font(.footnote.weight(.medium))
-                        if spider.connected {
-                            Text(privacyHidden ? "Баланс: •••• SPD" : "Баланс: \(spider.balanceText) тестовых SPD")
-                                .font(.system(size: 18, weight: .semibold, design: .rounded))
-                                .monospacedDigit()
-                        }
-                        if let pending = spider.pendingForAddress {
-                            Divider()
-                            Label(pending.queued ? "Ожидает финализации SpiderBFT" : "Отправка не подтверждена — проверить статус",
-                                  systemImage: "clock.arrow.circlepath")
-                                .font(.footnote.weight(.semibold))
-                            Text(privacyHidden ? "Tx \(pending.id.prefix(14))… · •••• SPD" : "Tx \(pending.id.prefix(14))… · \(SpiderDevnetStore.displayAmount(pending.amountAtomic)) SPD")
-                                .font(.system(.footnote, design: .monospaced))
-                                .textSelection(.enabled)
-                            if pending.signed != nil {
-                                Button {
-                                    Task {
-                                        do { try await spider.retryPending() }
-                                        catch { spider.error = error.localizedDescription }
-                                    }
-                                } label: {
-                                    Label("Повторить доставку той же транзакции", systemImage: "arrow.clockwise.circle")
-                                        .font(.footnote.weight(.medium))
-                                }
-                                .disabled(spider.sending || spider.refreshing || !spider.connected)
-                            }
-                            Text("Повтор использует прежнюю подпись и ID, не создаёт новый nonce. До финализации перевод не считается завершённым.")
-                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                        }
-                        if let confirmed = spider.latestConfirmed {
-                            Label("Подтверждено в блоке \(confirmed.height)", systemImage: "checkmark.seal")
-                                .font(.footnote.weight(.medium))
-                        }
-                    } else {
-                        Button { spider.deriveAddress() } label: {
-                            Label(spider.busy ? "Проверяем Face ID…" : "Открыть SPD-адрес",
-                                  systemImage: "key.horizontal")
-                                .font(.system(size: 14, weight: .semibold))
-                        }.disabled(spider.busy)
-                    }
-                    Text("Только тестовые SPD. Никаких настоящих токенов или USDT. Статус 202 — очередь, не успешный перевод.")
-                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .foregroundStyle(WalletTheme.ink)
-            }
+                if spider.hasConfiguration {
+                    Button { spdSheet = .settings } label: {
+                        Label("Настройки сети", systemImage: "gearshape").font(.subheadline)
+                            .frame(minHeight: 44)
+                    }.buttonStyle(.plain)
+                }
+                if spider.pendingForAddress != nil {
+                    Label("Есть перевод в ожидании", systemImage: "clock").font(.footnote)
+                }
+                if let error = spider.error {
+                    Text(error).font(.footnote).foregroundStyle(WalletTheme.secondary)
+                }
+            }.foregroundStyle(WalletTheme.ink)
         }
-        .alert("Spider Chain", isPresented: Binding(get: { spider.error != nil }, set: { if !$0 { spider.error = nil } })) {
-            Button("Понятно", role: .cancel) { spider.error = nil }
-        } message: { Text(spider.error ?? "") }
+    }
+
+    private var spdDetails: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Тестовый баланс").font(.subheadline).foregroundStyle(WalletTheme.secondary)
+                        Text(privacyHidden ? "•••• SPD" : (spider.connected ? spider.balanceText + " SPD" : "— SPD"))
+                            .font(.largeTitle.bold()).monospacedDigit().privacySensitive()
+                        Label(spider.connected ? "Блок \(spider.certifiedHeight ?? 0) · подтверждено шлюзом" : "Нет свежего подтверждения", systemImage: spider.connected ? "checkmark.seal" : "wifi.exclamationmark")
+                            .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        if let date = spider.refreshedAt { Text("Обновлено: \(date.formatted(date: .omitted, time: .standard))").font(.caption).foregroundStyle(WalletTheme.secondary) }
+                        if let address = spider.address {
+                            Text(address).font(.footnote.monospaced()).textSelection(.enabled).privacySensitive()
+                        }
+                    }
+                    Button {
+                        if spider.address == nil { spider.selectAccount(access.activeWalletID); spider.deriveAddress() }
+                        else { Task { await spider.refresh() } }
+                    } label: {
+                        HStack {
+                            if spider.refreshing || spider.busy { ProgressView() }
+                            Text(spider.address == nil ? "Открыть адрес" : "Обновить баланс")
+                        }
+                    }.buttonStyle(SpyderActionButtonStyle(.secondary)).disabled(spider.refreshing || spider.busy)
+                    if let pending = spider.pendingForAddress {
+                        WalletCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label(pending.queued ? "Ожидает финализации" : "Статус отправки неизвестен", systemImage: "clock").font(.headline)
+                                Text(privacyHidden ? "•••• SPD" : SpiderDevnetStore.displayAmount(pending.amountAtomic) + " SPD")
+                                Text(pending.id).font(.caption.monospaced()).textSelection(.enabled)
+                                if pending.signed != nil {
+                                    Button("Повторить доставку той же транзакции") {
+                                        Task { do { try await spider.retryPending() } catch { spider.error = error.localizedDescription } }
+                                    }.buttonStyle(SpyderActionButtonStyle(.secondary)).disabled(spider.sending || spider.refreshing || !spider.connected)
+                                }
+                                Text("Не создавай новый перевод, пока этот не разрешён.").font(.footnote).foregroundStyle(WalletTheme.secondary)
+                            }
+                        }
+                    } else if spider.latestExpired != nil {
+                        Label("Срок перевода истёк. Транзакция не подтверждена.", systemImage: "clock.badge.exclamationmark").foregroundStyle(WalletTheme.secondary)
+                    } else if let confirmed = spider.latestConfirmed {
+                        Label("Перевод подтверждён в блоке \(confirmed.height)", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
+                    }
+                    if let error = spider.error { Text(error).font(.footnote).foregroundStyle(.red) }
+                    Text("Операции").font(.title2.bold())
+                    if !spider.connected { Text("История может быть устаревшей.").font(.footnote).foregroundStyle(WalletTheme.secondary) }
+                    if spider.activities.isEmpty { Text(spider.connected ? "Подтверждённых переводов пока нет" : "Подключи сеть и обнови данные").foregroundStyle(WalletTheme.secondary) }
+                    ForEach(spider.activities) { entry in
+                        let outgoing = entry.transaction.payload.sender == spider.address
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Label(outgoing ? "Отправлено" : "Получено", systemImage: outgoing ? "arrow.up.right" : "arrow.down.left")
+                                Spacer()
+                                Text(privacyHidden ? "••••" : SpiderDevnetStore.displayAmount(entry.transaction.payload.amount) + " SPD").monospacedDigit()
+                            }.font(.subheadline.weight(.semibold))
+                            Text("Блок \(entry.height) · \(entry.id)").font(.caption.monospaced()).foregroundStyle(WalletTheme.secondary).textSelection(.enabled)
+                            Divider()
+                        }
+                    }
+                    Text("Изменить сеть: Профиль → Настройки кошелька → Spyder Network · SPD. Тестовые SPD не имеют денежной стоимости.").font(.footnote).foregroundStyle(WalletTheme.secondary)
+                }.padding(WalletTheme.pageInset).foregroundStyle(WalletTheme.ink)
+            }.background(WalletTheme.canvas)
+                .navigationTitle("SPD · Devnet").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { spdSheet = nil } } }
+        }
     }
 
 }
@@ -736,6 +767,7 @@ struct WalletActivityView: View {
                 HStack {
                     Picker("Сеть", selection: $chainFilter) {
                         Text("Все сети").tag("all")
+                        Text("SPD · Devnet").tag("spd")
                         ForEach(SpyderChain.allCases) { chain in
                             Text(chain.name).tag(chain.rawValue)
                         }
@@ -793,13 +825,23 @@ struct WalletActivityView: View {
                         }
                     }
                 }
-                if chainFilter == "all" {
+                if chainFilter == "all" || chainFilter == "spd" {
                     Text("Spider Chain · Devnet").font(.headline)
                     WalletCard {
-                        if spider.activities.isEmpty { Text("Тестовые подтверждённые операции отсутствуют.") }
-                        ForEach(spider.activities) { entry in
-                            Text("SPD · Блок \(entry.height) · \(entry.id.prefix(14))…")
-                                .font(.caption.monospaced())
+                        VStack(alignment: .leading, spacing: 10) {
+                            if !spider.connected { Text("Нет свежего подтверждения SPD").font(.footnote).foregroundStyle(WalletTheme.secondary) }
+                            if statusFilter == "all" || statusFilter == WalletChainActivity.State.pending.rawValue, let pending = spider.pendingForAddress {
+                                Label("В ожидании · " + (privacyHidden ? "••••" : SpiderDevnetStore.displayAmount(pending.amountAtomic) + " SPD"), systemImage: "clock")
+                            }
+                            if statusFilter == "all" || statusFilter == WalletChainActivity.State.confirmed.rawValue {
+                                if spider.activities.isEmpty { Text("Нет загруженных подтверждённых операций SPD.").font(.footnote) }
+                                ForEach(spider.activities) { entry in
+                                    let outgoing = entry.transaction.payload.sender == spider.address
+                                    Label((outgoing ? "Отправлено · " : "Получено · ") + (privacyHidden ? "••••" : SpiderDevnetStore.displayAmount(entry.transaction.payload.amount) + " SPD"), systemImage: outgoing ? "arrow.up.right" : "arrow.down.left")
+                                        .font(.subheadline)
+                                    Text("Блок \(entry.height) · \(entry.id.prefix(14))…").font(.caption.monospaced())
+                                }
+                            }
                         }
                     }
                 }
@@ -818,7 +860,7 @@ struct WalletActivityView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    Task { await history.refresh(addresses: chains.addresses) }
+                    Task { await history.refresh(addresses: chains.addresses); await spider.refresh() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }

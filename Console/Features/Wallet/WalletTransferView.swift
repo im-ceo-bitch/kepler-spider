@@ -5,6 +5,7 @@ struct WalletTransferView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var spider: SpiderDevnetStore
+    @EnvironmentObject private var spdAccess: WalletAccess
     let isRequest: Bool
     let contact: WalletContact
     @State private var amount = ""
@@ -26,8 +27,15 @@ struct WalletTransferView: View {
         recipient.trimmingCharacters(in: .whitespacesAndNewlines) != spider.address
     }
     private var canContinue: Bool {
-        amountIsValid && (isRequest || (validDestination && spider.connected &&
-            spider.address != nil && spider.pendingForAddress == nil && !spider.sending))
+        guard amountIsValid else { return false }
+        if isRequest { return true }
+        guard let units = try? SpiderProtocolV1.amountUnits(amount),
+              let balance = spider.balanceAtomic else { return false }
+        let fee = SpiderDevnetSigner.baseGas * SpiderDevnetSigner.defaultGasPrice
+        let (total, overflow) = units.addingReportingOverflow(fee)
+        return !overflow && total <= balance && validDestination && spider.connected &&
+            spider.address != nil && spider.walletID == spdAccess.activeWalletID && spdAccess.unlocked &&
+            spider.pending == nil && !spider.sending && !spider.configuring
     }
 
     var body: some View {
@@ -87,16 +95,27 @@ struct WalletTransferView: View {
                             }
                         }
                     }
-                    if !isRequest, spider.address == nil {
-                        Button { spider.deriveAddress() } label: {
+                    if !isRequest, spider.hasConfiguration, spider.address == nil {
+                        Button { spider.selectAccount(spdAccess.activeWalletID); spider.deriveAddress() } label: {
                             Label("Открыть SPD-адрес через Face ID", systemImage: "faceid")
                                 .font(.system(size: 14, weight: .medium))
                         }.disabled(spider.busy)
+                    }
+                    if !isRequest, !spider.hasConfiguration {
+                        Label("Настрой SPD на главной странице кошелька.", systemImage: "network")
+                            .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                    }
+                    if !isRequest, spider.pending != nil, spider.pendingForAddress == nil {
+                        Label("Есть незавершённый перевод другого аккаунта. Открой исходный кошелёк и проверь его.", systemImage: "clock")
+                            .font(.footnote).foregroundStyle(WalletTheme.secondary)
                     }
                     if !isRequest, spider.hasConfiguration, !spider.connected, spider.address != nil {
                         Button { Task { await spider.refresh() } } label: {
                             Label("Проверить соединение", systemImage: "arrow.clockwise")
                         }.disabled(spider.refreshing)
+                    }
+                    if !isRequest, let error = spider.error {
+                        Text(error).font(.footnote).foregroundStyle(WalletTheme.secondary)
                     }
                     if isReview {
                         WalletCard {
@@ -109,7 +128,7 @@ struct WalletTransferView: View {
                                     Text(recipient)
                                         .font(.system(.footnote, design: .monospaced))
                                         .textSelection(.enabled)
-                                    Text("Комиссия зависит от параметров тестовой сети. Отправка подписывается на устройстве после Face ID.")
+                                    Text("Комиссия: \(SpiderDevnetStore.displayAmount(SpiderDevnetSigner.baseGas * SpiderDevnetSigner.defaultGasPrice)) SPD. Подпись выполняется на устройстве после системной авторизации.")
                                         .font(.footnote).foregroundStyle(WalletTheme.secondary)
                                 } else {
                                     Text("Это только демонстрация. Сетевой запрос не создаётся.")
@@ -153,6 +172,12 @@ struct WalletTransferView: View {
                             }
                         }
                     }
+                    if didSubmit, spider.pendingForAddress != nil {
+                        Label("Перевод ожидает финализации сети", systemImage: "clock").font(.subheadline)
+                    }
+                    if didSubmit, spider.latestExpired != nil {
+                        Label("Срок перевода истёк. Транзакция не подтверждена.", systemImage: "clock.badge.exclamationmark").font(.subheadline)
+                    }
                     if didSubmit, spider.pendingForAddress == nil, spider.latestConfirmed != nil {
                         Label("Тестовая транзакция финализирована", systemImage: "checkmark.seal.fill")
                             .font(.system(size: 15, weight: .semibold))
@@ -192,6 +217,8 @@ struct WalletTransferView: View {
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
         .interactiveDismissDisabled(isSubmitting || spider.sending)
+        .onChange(of: spdAccess.activeWalletID) { _, _ in isReview = false; dismiss() }
+        .onChange(of: spdAccess.unlocked) { _, unlocked in if !unlocked { isReview = false; dismiss() } }
     }
 }
 
@@ -206,6 +233,7 @@ struct WalletReceiveView: View {
     @EnvironmentObject private var history: WalletActivityStore
     @EnvironmentObject private var access: WalletAccess
     @AppStorage("spyder.wallet.privacyHidden") private var privacyHidden = false
+    @State private var showSPDSettings = false
     @State private var selected: WalletReceiveAsset
     @State private var acknowledged = false
     @State private var copied = false
@@ -246,8 +274,8 @@ struct WalletReceiveView: View {
         if depositGeneration == generation { depositChecking = false }
     }
 
-    init(preselected: SpyderChain? = .ethereum, tokenTicker: String? = nil) {
-        _selected = State(initialValue: WalletReceiveAsset.preselected(chainID: preselected?.rawValue ?? "ethereum", token: tokenTicker))
+    init(preselected: SpyderChain? = .ethereum, tokenTicker: String? = nil, spd: Bool = false) {
+        _selected = State(initialValue: spd ? .spdDevnet : WalletReceiveAsset.preselected(chainID: preselected?.rawValue ?? "ethereum", token: tokenTicker))
     }
 
     private var chain: SpyderChain? {
@@ -260,7 +288,7 @@ struct WalletReceiveView: View {
     }
 
     private var verifiedAddress: String? {
-        if selected == .spdDevnet { return spider.address }
+        if selected == .spdDevnet { return spider.walletID == access.activeWalletID && access.unlocked && spider.hasConfiguration ? spider.address : nil }
         guard chains.verifiedForReceiving, chains.verifiedWalletID == access.activeWalletID, let chain,
               let publicAddress = chains.address(for: chain),
               WalletAddressValidator.check(publicAddress, for: chain) == .valid else { return nil }
@@ -303,7 +331,7 @@ struct WalletReceiveView: View {
                     .font(.footnote).foregroundStyle(WalletTheme.secondary)
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 9) {
-                    ForEach(WalletReceiveAsset.supportedMainnet) { item in
+                    ForEach(WalletReceiveAsset.supportedMainnet + [.spdDevnet]) { item in
                         Button {
                             selected = item
                             acknowledged = false
@@ -422,6 +450,10 @@ struct WalletReceiveView: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
+                        } else if selected == .spdDevnet && !spider.hasConfiguration {
+                            Text("Сначала подключи тестовую сеть Spyder Network.").font(.subheadline)
+                            Button("Подключить SPD") { showSPDSettings = true }
+                                .buttonStyle(SpyderActionButtonStyle(.primary))
                         } else {
                             Image(systemName: "lock.shield")
                                 .font(.system(size: 35))
@@ -430,7 +462,7 @@ struct WalletReceiveView: View {
                                 .font(.footnote)
                                 .multilineTextAlignment(.center)
                             Button {
-                                if selected == .spdDevnet { spider.deriveAddress() }
+                                if selected == .spdDevnet { spider.selectAccount(access.activeWalletID); spider.deriveAddress() }
                                 else { chains.activate() }
                             } label: {
                                 HStack(spacing: 9) {
@@ -561,15 +593,7 @@ struct WalletReceiveView: View {
                 }
                 Text("Проверка адреса не равна аудиту кошелька. Перед значительным переводом выполните минимальный тест, дождитесь подтверждений и проверьте доступность восстановления и отправки средств.")
                     .font(.footnote).foregroundStyle(WalletTheme.secondary)
-                DisclosureGroup("Тестовая сеть Spider Chain") {
-                    Button {
-                        selected = .spdDevnet
-                        acknowledged = false
-                        copied = false
-                    } label: { Label("SPD · Devnet (не реальные средства)", systemImage: "network") }
-                }
-                .font(.footnote)
-                .foregroundStyle(WalletTheme.secondary)
+
             }
             .foregroundStyle(WalletTheme.ink)
             .padding(20)
@@ -578,6 +602,7 @@ struct WalletReceiveView: View {
             .padding(.bottom, 30)
         }
         .background(WalletTheme.canvas.ignoresSafeArea())
+        .sheet(isPresented: $showSPDSettings) { SpiderDevnetSettingsView() }
         .onChange(of: verifiedAddress) { previous, current in
             guard previous != current else { return }
             acknowledged = false

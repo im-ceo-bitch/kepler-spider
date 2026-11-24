@@ -72,6 +72,14 @@ struct ConsoleApp: App {
                     do { try await Task.sleep(for: .seconds(15)) } catch { return }
                 }
             }
+            .task(id: "spd-\(scenePhase == .active)-\(walletAccess.unlocked)-\(walletAccess.activeWalletID)") {
+                spiderDevnet.selectAccount(walletAccess.activeWalletID)
+                guard scenePhase == .active, walletAccess.unlocked else { return }
+                while !Task.isCancelled {
+                    if spiderDevnet.address != nil, spiderDevnet.hasConfiguration { await spiderDevnet.refresh() }
+                    do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                }
+            }
             .onReceive(marketData.$quotes) { quotes in
                 publicAssets.applyMarketQuotes(quotes)
             }
@@ -99,7 +107,11 @@ struct ConsoleApp: App {
             }
             .onChange(of: walletAccess.activeWalletID) { _, id in
                 transfers.cancelAuthorization()
+                spiderDevnet.selectAccount(id)
                 addressBook.selectWallet(id)
+            }
+            .onChange(of: walletAccess.unlocked) { _, unlocked in
+                if !unlocked { spiderDevnet.clear() }
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {

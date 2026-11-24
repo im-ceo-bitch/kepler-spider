@@ -20,7 +20,7 @@ checks = {
     "primary touch height >= 52 pt": "kind == .tertiary ? 44 : 52" in ui,
     "legacy button uses capsule": ".background(WalletTheme.accent, in: Capsule())" in ui,
     "market and wallet choice copy": 'Text("Рынок криптовалют")' in home and 'Label("Вернуться в кошелёк"' in home,
-    "no generic send promise on wallet home": 'actionButton("Подготовить перевод"' in home,
+    "mainnet preview separated from SPD sends": 'Другие активы · проверка реквизитов' in home and 'SPD · тестовая сеть' in home,
     "receive uses explicit acknowledgment": 'Label("Показать адрес и QR"' in receive and 'Toggle("Я проверил сеть' not in receive,
     "receiving asset choice marked selected": ".accessibilityAddTraits(selected == item ? .isSelected : [])" in receive,
     "unsupported send returns to edit (stage 3)": ('"Вернуться к реквизитам"' in send or '"Изменить реквизиты"' in send) and 'showUnavailable' not in send,

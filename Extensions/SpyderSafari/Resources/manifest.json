@@ -3,7 +3,21 @@
   "name": "Spyder ID",
   "version": "1.0.0",
   "description": "Save and fill website passwords with your Spyder ID vault.",
-  "permissions": ["activeTab", "scripting", "nativeMessaging"],
-  "action": {"default_title": "Spyder ID", "default_popup": "popup.html"},
-  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'"}
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "nativeMessaging"
+  ],
+  "action": {
+    "default_title": "Spyder ID",
+    "default_popup": "popup.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'"
+  },
+  "icons": {
+    "48": "spyder-extension-48.png",
+    "96": "spyder-extension-96.png",
+    "128": "spyder-extension-128.png"
+  }
 }

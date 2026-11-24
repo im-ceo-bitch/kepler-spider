@@ -7,98 +7,101 @@ struct SpiderDevnetSettingsView: View {
     @State private var genesis = ""
     @State private var token = ""
     @State private var settingsError: String?
-    @State private var didSave = false
+    @State private var verified = false
+
+    private var ready: Bool {
+        !gateway.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        genesis.trimmingCharacters(in: .whitespacesAndNewlines).count == 64 &&
+        (token.trimmingCharacters(in: .whitespacesAndNewlines).count == 64 ||
+         (token.isEmpty && gateway == spider.configuration?.origin && genesis == spider.configuration?.genesisHash)) &&
+        spider.pending == nil && !spider.configuring && !spider.sending
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Spider Chain")
-                                .font(.system(size: 28, weight: .bold))
-                            Text("Настройки исследовательской Devnet")
-                                .font(.system(size: 13))
-                                .foregroundStyle(WalletTheme.secondary)
-                        }
-                        Spacer()
-                        SpyderNavigationButton(symbol: "xmark", label: "Закрыть") { dismiss() }
-                    }
+                VStack(alignment: .leading, spacing: 20) {
+                    Label("Spyder Network", systemImage: "network")
+                        .font(.largeTitle.bold())
+                    Text("Подключи свой Wallet к сети, запущенной в Spyder Root на Mac. Настройка сохраняется на этом устройстве.")
+                        .font(.subheadline).foregroundStyle(WalletTheme.secondary)
                     WalletCard {
-                        VStack(alignment: .leading, spacing: 13) {
-                            Label("Подключение только по HTTPS", systemImage: "lock.shield")
-                                .font(.system(size: 15, weight: .semibold))
-                            Text("HTTPS-адрес gateway")
-                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                            TextField("https://devnet.example.com", text: $gateway)
-                                .textInputAutocapitalization(.never)
-                                .keyboardType(.URL)
-                                .autocorrectionDisabled()
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("1. Адрес сети", systemImage: "link").font(.headline)
+                            Text("HTTPS-адрес Wallet Gateway, направленный на порт 29080 Mac. Не адрес сервера Root (29100).")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                            TextField("https://wallet.example.com", text: $gateway)
+                                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .textContentType(.URL)
+                                .padding(12).background(WalletTheme.canvas, in: RoundedRectangle(cornerRadius: 12))
                             Divider()
-                            Text("Genesis hash · 64 hex символа")
-                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                            TextField("Хеш из валидатора", text: $genesis)
-                                .font(.system(size: 12, design: .monospaced))
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                            Divider()
-                            Text("DEVNET bearer token · 64 hex символа")
-                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
-                            SecureField(spider.hasConfiguration ? "Оставить пустым, чтобы не менять" : "Секретный токен", text: $token)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                            Text("Токен хранится в Keychain только на этом устройстве; он не включается в резервную копию фразы.")
-                                .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                            Label("2. Данные из Root", systemImage: "lock.shield").font(.headline)
+                            Text("Root → Подключение → Показать настройки доступа Devnet")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                            Text("Genesis hash").font(.subheadline.weight(.medium))
+                            TextField("64 символа", text: $genesis)
+                                .font(.footnote.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .padding(12).background(WalletTheme.canvas, in: RoundedRectangle(cornerRadius: 12))
+                            Text("Токен доступа").font(.subheadline.weight(.medium))
+                            SecureField(spider.hasConfiguration ? "Новый токен (если меняется)" : "64 символа", text: $token)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
+                                .padding(12).background(WalletTheme.canvas, in: RoundedRectangle(cornerRadius: 12))
+                            Text("Токен хранится в Keychain. Сид-фраза здесь не нужна.")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
                         }
+                        .disabled(spider.configuring || verified)
                     }
-                    Button {
-                        do {
-                            try spider.configure(origin: gateway, genesis: genesis, token: token)
-                            token = ""
-                            didSave = true
-                            if spider.address != nil { Task { await spider.refresh() } }
-                        } catch { settingsError = error.localizedDescription }
-                    } label: {
-                        Text("Сохранить подключение").spyderPrimaryButton()
-                    }.buttonStyle(.plain)
-                    if didSave {
-                        Label("Конфигурация сохранена. Проверка сети будет выполнена по запросу.", systemImage: "checkmark.shield")
-                            .font(.system(size: 13)).foregroundStyle(WalletTheme.ink)
-                    }
-                    if spider.address != nil {
-                        Button {
-                            Task { await spider.refresh() }
-                        } label: {
-                            Label(spider.refreshing ? "Проверяем сеть…" : "Проверить сеть и баланс", systemImage: "arrow.clockwise")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .disabled(spider.refreshing || !spider.hasConfiguration)
-                        if spider.connected {
-                            Text("Подключено · сертифицированный блок \(spider.certifiedHeight ?? 0) · \(spider.balanceText) тестовых SPD")
-                                .font(.system(size: 13))
-                        }
+                    if let settingsError {
+                        Label(settingsError, systemImage: "exclamationmark.circle")
+                            .font(.subheadline).foregroundStyle(.red)
+                        Text("Предыдущее подключение не изменено при ошибке проверки сети.")
+                            .font(.footnote).foregroundStyle(WalletTheme.secondary)
                     }
                     if spider.pending != nil {
-                        Label("Есть неподтверждённая отправка. Сменить сеть до подтверждения нельзя.", systemImage: "exclamationmark.triangle")
-                            .font(.system(size: 13)).foregroundStyle(WalletTheme.secondary)
+                        Label("Сначала проверь незавершённый перевод SPD. Смена сети заблокирована.", systemImage: "clock")
+                            .font(.subheadline)
                     }
-                    Text("Обязательны: запущенные валидаторы SpiderBFT, доступный через TLS шлюз, совпадающий genesis и тестовое пополнение адреса. Приложение никогда не подключается к незащищённому HTTP и не принимает ответ очереди за подтверждение перевода.")
-                        .font(.system(size: 12)).foregroundStyle(WalletTheme.secondary)
+                    if verified {
+                        Label("Сеть проверена и сохранена", systemImage: "checkmark.seal.fill")
+                            .foregroundStyle(.green).font(.headline)
+                        Text("Вернись в кошелёк и открой адрес SPD, чтобы увидеть баланс.")
+                            .font(.subheadline).foregroundStyle(WalletTheme.secondary)
+                        Button("Готово") { dismiss() }.buttonStyle(SpyderActionButtonStyle(.primary))
+                    } else {
+                        Button {
+                            settingsError = nil
+                            Task {
+                                do {
+                                    try await spider.configure(origin: gateway, genesis: genesis, token: token)
+                                    token = ""
+                                    verified = true
+                                    if spider.address != nil { await spider.refresh() }
+                                } catch { settingsError = error.localizedDescription }
+                            }
+                        } label: {
+                            HStack {
+                                if spider.configuring { ProgressView().tint(WalletTheme.contrast) }
+                                Text(spider.configuring ? "Проверяем сеть…" : "Проверить и подключить")
+                            }
+                        }
+                        .buttonStyle(SpyderActionButtonStyle(.primary)).disabled(!ready)
+                        if !ready && !spider.configuring && spider.pending == nil {
+                            Text("Заполни HTTPS-адрес, Genesis hash и токен из Root.")
+                                .font(.footnote).foregroundStyle(WalletTheme.secondary)
+                        }
+                    }
+                    Label("Тестовые SPD · без рыночной стоимости", systemImage: "testtube.2")
+                        .font(.footnote).foregroundStyle(WalletTheme.secondary)
                 }
                 .foregroundStyle(WalletTheme.ink)
-                .padding(20)
+                .padding(WalletTheme.pageInset).frame(maxWidth: 600).frame(maxWidth: .infinity)
             }
             .background(WalletTheme.canvas.ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("Подключение SPD").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Закрыть") { dismiss() }.disabled(spider.configuring) } }
         }
-        .onAppear {
-            gateway = spider.configuration?.origin ?? ""
-            genesis = spider.configuration?.genesisHash ?? ""
-        }
-        .alert("Ошибка настройки Devnet", isPresented: Binding(
-            get: { settingsError != nil }, set: { if !$0 { settingsError = nil } }
-        )) {
-            Button("Понятно", role: .cancel) { settingsError = nil }
-        } message: { Text(settingsError ?? "") }
+        .interactiveDismissDisabled(spider.configuring)
+        .onAppear { gateway = spider.configuration?.origin ?? ""; genesis = spider.configuration?.genesisHash ?? "" }
+        .onDisappear { token = "" }
     }
 }

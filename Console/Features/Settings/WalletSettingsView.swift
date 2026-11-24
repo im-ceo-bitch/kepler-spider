@@ -9,7 +9,6 @@ struct WalletSettingsView: View {
     @State private var backupCloudBusy = false
     @State private var confirmingCloudBackup = false
     @State private var showDevnetSettings = false
-    @State private var showDeveloperOptions = false
     @State private var vaultError: String?
     @EnvironmentObject private var access: WalletAccess
 
@@ -72,18 +71,13 @@ struct WalletSettingsView: View {
             }
 
             Section {
-                DisclosureGroup(isExpanded: $showDeveloperOptions) {
-                    Button { showDevnetSettings = true } label: {
-                        Label("Spider Chain · Test Devnet", systemImage: "network")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                    }
-                    Text("Для тестирования собственной инфраструктуры. Не требуется для обычного использования кошелька.")
-                        .font(.footnote)
-                        .foregroundStyle(WalletTheme.secondary)
-                } label: {
-                    Label("Для разработчиков", systemImage: "wrench.and.screwdriver")
+                Button { showDevnetSettings = true } label: {
+                    Label("Spyder Network · SPD", systemImage: "network")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
+                Text("Подключение к частной тестовой сети. SPD не имеет денежной стоимости.")
+                    .font(.footnote).foregroundStyle(WalletTheme.secondary)
             } footer: {
                 Text("Ethereum · Solana · Bitcoin: адреса в разделе Wallet")
             }

@@ -140,6 +140,10 @@ targets:
         INFOPLIST_FILE: Config/SpyderSafari-Info.plist
         CODE_SIGN_ENTITLEMENTS: Config/SpyderSafari.entitlements
         CODE_SIGN_STYLE: Automatic
+        # WebExtension PNG files must remain standard PNGs (IHDR first).
+        # Xcode CopyPNG optimization can produce Apple-specific CgBI PNGs.
+        COMPRESS_PNG_FILES: NO
+        STRIP_PNG_TEXT: NO
         SKIP_INSTALL: YES
 
   SpyderShare:

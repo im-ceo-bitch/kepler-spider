@@ -29,15 +29,12 @@ class LiveReleaseChecks(unittest.TestCase):
         self.assertIn('JSONEncoder().encode(resolved)', chains)
         self.assertNotIn('UserDefaults.standard.set(phrase', chains)
 
-    def test_spider_devnet_is_absent_or_explicitly_gated(self):
+    def test_spider_devnet_is_explicitly_test_only(self):
         home = source('Console/Features/Wallet/WalletHomeView.swift')
-        body = home.split('var body: some View {', 1)[1].split('private var spiderSection:', 1)[0]
-        if 'spiderSection' in body:
-            # Stage 2 additionally requires the portfolio view to be selected.
-            # Devnet stays closed by default, even when the backend is configured.
-            self.assertIn('@State private var showDevnet = false', home)
-            self.assertRegex(body, r'if\s+selectedSection\s*==\s*WalletHomeSection\.assets\.rawValue\s*&&\s*spider\.hasConfiguration\s*\{\s*DisclosureGroup\(isExpanded:\s*\$showDevnet\)\s*\{\s*spiderSection')
-        self.assertNotIn('WalletDemoLabel()', body)
+        self.assertIn('SPD · тестовая сеть', home)
+        self.assertIn('spider.hasConfiguration ? .details : .settings', home)
+        self.assertIn('spider.connected ? spider.balanceText', home)
+        self.assertNotIn('WalletDemoLabel()', home)
 
     def test_mainnet_ui_has_no_direct_broadcaster_and_requires_review(self):
         root = source('Console/WalletRootView.swift')

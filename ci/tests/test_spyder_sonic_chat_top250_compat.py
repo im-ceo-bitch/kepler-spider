@@ -11,7 +11,7 @@ class SpyderIntegrationCompat(unittest.TestCase):
         self.assertIn('WalletCatalogSection(catalog: catalog)', home)
         self.assertIn('WalletLiveStageView(ticker: selection.ticker)', home)
         self.assertIn('WalletCatalogStore()', home)
-        self.assertIn('if spider.hasConfiguration', home)
+        self.assertIn('spider.hasConfiguration ? .details : .settings', home)
         self.assertTrue((ROOT / 'Console/WalletCore/WalletCatalogModels.swift').exists())
     def test_wallet_animated_avatar_and_chat_profile(self):
         home = source('Console/Features/Wallet/WalletHomeView.swift')

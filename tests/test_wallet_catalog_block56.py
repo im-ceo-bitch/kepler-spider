@@ -19,7 +19,7 @@ class WalletCatalogBlock56Tests(unittest.TestCase):
         self.assertRegex(HOME, r'if selectedSection == WalletHomeSection\.cryptocurrencies\.rawValue\s*\{\s*marketNavigationHeader\s+marketStrip\s+WalletCatalogSection\(catalog: catalog\)')
         # Spyder ID is now an intentional wallet entry between actions and assets.
         # Still require every financial section in its original relative order.
-        self.assertRegex(HOME, r'else\s*\{\s*portfolioCard\s+quickActions\s+SpyderIDPreviewEntry\s*\{\s*showIDPreview = true\s*\}\s+assetsSection\s+recentSection\s+marketEntry')
+        self.assertRegex(HOME, r'else\s*\{\s*portfolioCard\s+quickActions\s+spdAssetEntry\s+networkPortfolioEntry\s+SpyderIDPreviewEntry\s*\{\s*showIDPreview = true\s*\}\s+assetsSection\s+recentSection\s+marketEntry')
         self.assertRegex(HOME, r'\.sheet\(isPresented: \$showIDPreview\)\s*\{\s*SpyderIDVisualPreview\(\)\s*\}')
         self.assertIn('selectedSection = WalletHomeSection.cryptocurrencies.rawValue', HOME)
         self.assertIn('selectedSection = WalletHomeSection.assets.rawValue', HOME)

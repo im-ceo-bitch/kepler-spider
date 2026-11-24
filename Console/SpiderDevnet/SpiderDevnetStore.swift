@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import CryptoKit
 import Security
+import LocalAuthentication
 
 // Device-only credentials; never put the token, signing key or mnemonic in UserDefaults.
 private enum SpiderDevnetCredentials {
@@ -95,6 +96,9 @@ final class SpiderDevnetStore: ObservableObject {
     private static let configurationKey = "spyder.devnet.v1.configuration"
     private static let pendingKey = "spyder.devnet.v1.pending"
     private var sessionEpoch = 0
+    private(set) var walletID = WalletVault.legacyID
+    @Published private(set) var configuring = false
+    @Published private(set) var refreshedAt: Date?
 
     @Published private(set) var address: String?
     @Published private(set) var busy = false
@@ -106,6 +110,7 @@ final class SpiderDevnetStore: ObservableObject {
     @Published private(set) var configuration: SpiderGatewayConfiguration?
     @Published private(set) var pending: SpiderPendingTransfer?
     @Published private(set) var latestConfirmed: SpiderCompletedTransfer?
+    @Published private(set) var latestExpired: String?
     @Published private(set) var activities: [SpiderCertifiedHistoryEntry] = []
     @Published var error: String?
 
@@ -126,7 +131,7 @@ final class SpiderDevnetStore: ObservableObject {
         return pending
     }
 
-    static func displayAmount(_ units: UInt64) -> String {
+    nonisolated static func displayAmount(_ units: UInt64) -> String {
         let whole = units / 1_000_000_000
         let remainder = units % 1_000_000_000
         if remainder == 0 { return String(whole) }
@@ -134,7 +139,7 @@ final class SpiderDevnetStore: ObservableObject {
         return "\(whole).\(tail.replacingOccurrences(of: "0+$", with: "", options: .regularExpression))"
     }
 
-    private static func validate(_ url: String, genesis: String, token: String) throws -> SpiderGatewayConfiguration {
+    nonisolated static func validate(_ url: String, genesis: String, token: String) throws -> SpiderGatewayConfiguration {
         guard let address = URL(string: url), address.absoluteString == url,
               address.scheme == "https", address.host != nil,
               !url.contains("@"), address.query == nil, address.fragment == nil,
@@ -149,8 +154,8 @@ final class SpiderDevnetStore: ObservableObject {
         return SpiderGatewayConfiguration(origin: url, genesisHash: hash)
     }
 
-    func configure(origin: String, genesis: String, token: String) throws {
-        guard pending == nil else { throw SpiderDevnetStoreError.pendingTransfer }
+    func configure(origin: String, genesis: String, token: String) async throws {
+        guard pending == nil, !sending, !configuring else { throw SpiderDevnetStoreError.pendingTransfer }
         let trimmedOrigin = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveToken: String
         if token.isEmpty {
@@ -162,15 +167,32 @@ final class SpiderDevnetStore: ObservableObject {
                 throw SpiderDevnetStoreError.wrongConfiguration
             }
             effectiveToken = try SpiderDevnetCredentials.load() ?? ""
-        } else { effectiveToken = token }
+        } else { effectiveToken = token.trimmingCharacters(in: .whitespacesAndNewlines) }
         let newConfiguration = try Self.validate(trimmedOrigin, genesis: genesis, token: effectiveToken)
+        configuring = true
+        let epoch = sessionEpoch
+        defer { configuring = false }
+        guard let endpoint = URL(string: newConfiguration.origin) else { throw SpiderDevnetStoreError.wrongConfiguration }
+        let candidate = try SpiderCertifiedWalletClient(readBaseURL: endpoint, submitBaseURL: endpoint,
+            expectedChainID: SpiderDevnetSigner.chainID, expectedGenesisHash: newConfiguration.genesisHash,
+            devnetBearerToken: effectiveToken)
+        _ = try await candidate.status()
+        try Task.checkCancellation()
+        guard epoch == sessionEpoch, pending == nil, !sending else { throw SpiderDevnetStoreError.pendingTransfer }
+        let configData = try JSONEncoder().encode(newConfiguration)
         if !token.isEmpty { try SpiderDevnetCredentials.save(effectiveToken) }
-        UserDefaults.standard.set(try JSONEncoder().encode(newConfiguration), forKey: Self.configurationKey)
+        UserDefaults.standard.set(configData, forKey: Self.configurationKey)
         configuration = newConfiguration
         sessionEpoch &+= 1  // invalidate responses from any previous network
         connected = false
         balanceAtomic = nil
         certifiedHeight = nil
+        activities = []
+        latestConfirmed = nil
+        latestExpired = nil
+        refreshedAt = nil
+        error = nil
+        // The candidate has verified identity, but balance must be read separately.
     }
 
     private func client() throws -> SpiderCertifiedWalletClient {
@@ -183,6 +205,12 @@ final class SpiderDevnetStore: ObservableObject {
                expectedGenesisHash: configuration.genesisHash, devnetBearerToken: token)
     }
 
+    func selectAccount(_ id: String) {
+        guard id != walletID else { return }
+        clear()
+        walletID = id
+    }
+
     func clear() {
         sessionEpoch &+= 1
         // Screen lock only clears public address and session state. Non-secret pending IDs
@@ -192,7 +220,11 @@ final class SpiderDevnetStore: ObservableObject {
         balanceAtomic = nil
         certifiedHeight = nil
         activities = []
-        busy = false
+        latestConfirmed = nil
+        latestExpired = nil
+        refreshedAt = nil
+        error = nil
+        // An in-flight authentication remains busy until its own defer runs.
     }
 
     func deriveAddress() {
@@ -200,13 +232,14 @@ final class SpiderDevnetStore: ObservableObject {
         busy = true
         error = nil
         let epoch = sessionEpoch
+        let selectedWalletID = walletID
         Task {
             defer { busy = false }
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try SpiderProtocolV1.verifyPublicTestVector()
                     guard SpiderDevnetSigner.verifyProtocolFixture() else { throw SpiderProtocolV1.Failure.badVector }
-                    var words = try WalletVault.revealForBackup()
+                    var words = try WalletVault.revealForSigning(id: selectedWalletID, reason: "Открыть адрес SPD", context: LAContext())
                     defer { words.removeAll(keepingCapacity: false) }
                     let key = try SpiderProtocolV1.devnetSigningKey(mnemonic: words.joined(separator: " "))
                     return SpiderDevnetSigner.address(for: key.publicKey.rawRepresentation)
@@ -221,22 +254,24 @@ final class SpiderDevnetStore: ObservableObject {
     }
 
     func refresh() async {
-        guard let address, hasConfiguration, !refreshing else { return }
+        guard let address, hasConfiguration, !refreshing, !configuring else { return }
         refreshing = true
         let epoch = sessionEpoch
         defer { refreshing = false }
         do {
             let client = try client()
-            let status = try await client.status()
+            _ = try await client.status()
             let account = try await client.account(address)
+            let history = try await client.history(address)
+            let status = try await client.status()
             guard epoch == sessionEpoch, self.address == address else { return }
-            guard account.height <= status.height else { throw SpiderWalletBridgeError.staleCertifiedState }
+            guard account.height <= status.height, history.allSatisfy({ $0.height <= status.height }),
+                  refreshedAt == nil || status.height >= (certifiedHeight ?? 0) else { throw SpiderWalletBridgeError.staleCertifiedState }
             balanceAtomic = account.balances["SPD", default: 0]
             certifiedHeight = status.height
-            let history = try await client.history(address)
-            guard epoch == sessionEpoch, self.address == address else { return }
-            activities = history.filter { $0.transaction.payload.asset_id == "SPD" }
+            activities = history.filter { $0.transaction.payload.asset_id == "SPD" }.sorted { $0.height > $1.height }
             connected = true
+            refreshedAt = Date()
             if let pending = pendingForAddress {
                 let proof = try await client.confirmation(pending.id)
                 guard epoch == sessionEpoch, self.address == address else { return }
@@ -245,11 +280,13 @@ final class SpiderDevnetStore: ObservableObject {
                     self.pending = nil
                     UserDefaults.standard.removeObject(forKey: Self.pendingKey)
                     let updated = try await client.account(address)
+                    guard epoch == sessionEpoch, self.address == address else { return }
                     balanceAtomic = updated.balances["SPD", default: 0]
-                } else if status.height > pending.expiryHeight, account.nonce == pending.nonce {
+                } else if account.height > pending.expiryHeight, account.nonce == pending.nonce {
                     // All certified heights at which this signed payload could be valid have
                     // passed. The canonical certified ledger still has the old nonce and the
                     // tx was never finalized. No future valid inclusion is possible.
+                    latestExpired = pending.id
                     self.pending = nil
                     UserDefaults.standard.removeObject(forKey: Self.pendingKey)
                 }
@@ -258,6 +295,8 @@ final class SpiderDevnetStore: ObservableObject {
         } catch {
             if epoch == sessionEpoch {
                 connected = false
+                balanceAtomic = nil
+                certifiedHeight = nil
                 self.error = error.localizedDescription
             }
         }
@@ -265,7 +304,7 @@ final class SpiderDevnetStore: ObservableObject {
 
     // Exact SPD atomic units, never floating point rounding.
     func send(to recipientInput: String, amountText: String) async throws {
-        guard !sending else { throw SpiderDevnetStoreError.pendingTransfer }
+        guard !sending, !configuring else { throw SpiderDevnetStoreError.pendingTransfer }
         guard let address else { throw SpiderDevnetStoreError.noWalletAddress }
         guard hasConfiguration else { throw SpiderDevnetStoreError.notConfigured }
         guard pending == nil else { throw SpiderDevnetStoreError.pendingTransfer }
@@ -277,12 +316,15 @@ final class SpiderDevnetStore: ObservableObject {
             throw SpiderDevnetStoreError.invalidAmount
         }
         sending = true
+        latestConfirmed = nil
+        latestExpired = nil
         let epoch = sessionEpoch
+        let selectedWalletID = walletID
         defer { sending = false }
         let client = try client()
         let signingKey = try await Task.detached(priority: .userInitiated) {
             try SpiderProtocolV1.verifyPublicTestVector()
-            var words = try WalletVault.revealForBackup()
+            var words = try WalletVault.revealForSigning(id: selectedWalletID, reason: "Подписать перевод тестовых SPD", context: LAContext())
             defer { words.removeAll(keepingCapacity: false) }
             return try SpiderProtocolV1.devnetSigningKey(mnemonic: words.joined(separator: " "))
         }.value
@@ -295,10 +337,10 @@ final class SpiderDevnetStore: ObservableObject {
         let bridge = SpiderWalletDevnetBridge(client: client)
         guard let genesis = configuration?.genesisHash else { throw SpiderDevnetStoreError.notConfigured }
         _ = try await bridge.sendTestSPD(to: recipient, amountAtomic: amount, signingKey: signingKey) { prepared in
-            try await self.recordPrepared(prepared, genesis: genesis)
+            try await self.recordPrepared(prepared, genesis: genesis, epoch: epoch)
         }
         // HTTP 202 is ONLY queued; keep pending until certified finality is observed.
-        if pending?.sender == address, pending?.recipient == recipient {
+        if pending?.sender == address, pending?.recipient == recipient, pending?.genesisHash == genesis {
             pending?.queued = true
             if let pending { UserDefaults.standard.set(try JSONEncoder().encode(pending), forKey: Self.pendingKey) }
         }
@@ -308,7 +350,7 @@ final class SpiderDevnetStore: ObservableObject {
     // On network timeout, replay only the previously signed transaction. Creating
     // another signature with the same certified nonce is forbidden until resolved.
     func retryPending() async throws {
-        guard !sending else { throw SpiderDevnetStoreError.pendingTransfer }
+        guard !sending, !configuring else { throw SpiderDevnetStoreError.pendingTransfer }
         guard let address, let original = pendingForAddress else {
             throw SpiderDevnetStoreError.noWalletAddress
         }
@@ -349,7 +391,9 @@ final class SpiderDevnetStore: ObservableObject {
         await refresh()
     }
 
-    private func recordPrepared(_ transfer: SpiderQueuedDevnetTransfer, genesis: String) throws {
+    private func recordPrepared(_ transfer: SpiderQueuedDevnetTransfer, genesis: String, epoch: Int) throws {
+        guard epoch == sessionEpoch, address == transfer.from, pending == nil,
+              configuration?.genesisHash == genesis else { throw SpiderDevnetStoreError.pendingTransfer }
         let item = SpiderPendingTransfer(id: transfer.id, sender: transfer.from,
                     recipient: transfer.to, amountAtomic: transfer.amountAtomic,
                     genesisHash: genesis, nonce: transfer.nonce,
