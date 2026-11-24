@@ -1,0 +1,44 @@
+name: Spyder Wallet — Sepolia compile hotfix
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: console-unpack-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Correct Swift catch shadowing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('Console/Features/Wallet/WalletSepoliaTransferView.swift')
+          old = p.read_bytes()
+          bad = b'catch { error = true }'
+          good = b'catch { self.error = true }'
+          if old.count(bad) == 1:
+              p.write_bytes(old.replace(bad, good, 1))
+          elif old.count(bad) == 0 and old.count(good) == 1:
+              print('Already fixed')
+          else:
+              raise SystemExit('Source differs from build log; refusing to modify it')
+          PY
+          git diff --check
+          git diff -- Console/Features/Wallet/WalletSepoliaTransferView.swift
+      - name: Commit exact source fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- Console/Features/Wallet/WalletSepoliaTransferView.swift
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: qualify Sepolia error state in catch'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
